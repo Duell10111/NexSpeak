@@ -26,6 +26,9 @@ import {
   Smile,
   SendHorizonal,
 } from "lucide-react"
+import { useMatrixClient } from "@/hooks/useMatrixClient"
+import { useRoomTimeline } from "@/hooks/useRoomTimeline"
+import type { MatrixMessage } from "@/lib/matrix/types"
 
 interface ChatAreaProps {
   activeServerId: string
@@ -99,6 +102,36 @@ function MessageItem({ message }: { message: Message }) {
   )
 }
 
+function MatrixMessageItem({ message }: { message: MatrixMessage }) {
+  const timestamp = new Date(message.timestamp)
+  const hours = timestamp.getHours().toString().padStart(2, "0")
+  const minutes = timestamp.getMinutes().toString().padStart(2, "0")
+
+  return (
+    <div className="group flex gap-4 px-4 py-1 hover:bg-nx-hover/50 transition-colors">
+      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
+        {message.senderName.charAt(0).toUpperCase()}
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold hover:underline cursor-pointer text-foreground">
+            {message.senderName}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            {hours}:{minutes}
+          </span>
+          {message.edited && (
+            <span className="text-[10px] text-muted-foreground">(bearbeitet)</span>
+          )}
+        </div>
+        <p className="text-sm text-foreground leading-relaxed break-words">
+          {message.content}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function getChannel(serverId: string, channelId: string): Channel | undefined {
   const cats = channelCategories[serverId] || []
   for (const cat of cats) {
@@ -116,10 +149,21 @@ export function ChatArea({
 }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState("")
   const [localMessages, setLocalMessages] = useState<Message[]>([])
+  const [isSending, setIsSending] = useState(false)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const channel = getChannel(activeServerId, activeChannelId)
-  const channelMessages = allMessages[activeChannelId] || []
-  const combinedMessages = [...channelMessages, ...localMessages.filter((m) => m.id.startsWith(`local-${activeChannelId}`))]
+
+  // Check if we're using Matrix or local data
+  const { client } = useMatrixClient()
+  const { messages: matrixMessages } = useRoomTimeline(client, activeChannelId)
+  const isMatrixRoom = client && matrixMessages.length > 0
+
+  // Determine which messages to display
+  const localChannelMessages = allMessages[activeChannelId] || []
+  const displayMessages = isMatrixRoom
+    ? matrixMessages
+    : [...localChannelMessages, ...localMessages.filter((m) => m.id.startsWith(`local-${activeChannelId}`))]
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -128,18 +172,33 @@ export function ChatArea({
         viewport.scrollTop = viewport.scrollHeight
       }
     }
-  }, [combinedMessages.length])
+  }, [displayMessages.length])
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!inputValue.trim()) return
-    const newMsg: Message = {
-      id: `local-${activeChannelId}-${Date.now()}`,
-      userId: "u1",
-      content: inputValue.trim(),
-      timestamp: new Date(),
+
+    if (isMatrixRoom && client) {
+      // Send to Matrix
+      setIsSending(true)
+      try {
+        await client.sendTextMessage(activeChannelId, inputValue.trim())
+        setInputValue("")
+      } catch (error) {
+        console.error("Failed to send message:", error)
+      } finally {
+        setIsSending(false)
+      }
+    } else {
+      // Add to local messages
+      const newMsg: Message = {
+        id: `local-${activeChannelId}-${Date.now()}`,
+        userId: "u1",
+        content: inputValue.trim(),
+        timestamp: new Date(),
+      }
+      setLocalMessages((prev) => [...prev, newMsg])
+      setInputValue("")
     }
-    setLocalMessages((prev) => [...prev, newMsg])
-    setInputValue("")
   }
 
   return (
@@ -237,9 +296,13 @@ export function ChatArea({
 
           {/* Messages list */}
           <div className="flex flex-col gap-0.5 pb-4">
-            {combinedMessages.map((msg) => (
+            {displayMessages.map((msg) => (
               <div key={msg.id} className="relative">
-                <MessageItem message={msg} />
+                {"userId" in msg ? (
+                  <MessageItem message={msg as Message} />
+                ) : (
+                  <MatrixMessageItem message={msg as MatrixMessage} />
+                )}
               </div>
             ))}
           </div>
@@ -249,7 +312,7 @@ export function ChatArea({
       {/* Message input */}
       <div className="px-4 pb-6 pt-1">
         <div className="flex items-center gap-2 rounded-lg bg-nx-chat-input px-4 py-2.5">
-          <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Datei anfuegen">
+          <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Datei anfuegen" disabled={isSending}>
             <PlusCircle className="h-5 w-5" />
           </button>
           <input
@@ -263,22 +326,24 @@ export function ChatArea({
               }
             }}
             placeholder={`Nachricht an #${channel?.name || "kanal"}`}
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50"
+            disabled={isSending}
           />
           <div className="flex items-center gap-2">
-            <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Geschenk">
+            <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Geschenk" disabled={isSending}>
               <Gift className="h-5 w-5" />
             </button>
-            <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Sticker">
+            <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Sticker" disabled={isSending}>
               <Sticker className="h-5 w-5" />
             </button>
-            <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Emoji">
+            <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Emoji" disabled={isSending}>
               <Smile className="h-5 w-5" />
             </button>
             {inputValue.trim() && (
               <button
                 onClick={handleSend}
-                className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 transition-colors"
+                disabled={isSending}
+                className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 aria-label="Senden"
               >
                 <SendHorizonal className="h-4 w-4" />
@@ -290,3 +355,5 @@ export function ChatArea({
     </div>
   )
 }
+
+
