@@ -18,8 +18,10 @@ import {
   Smile,
   SendHorizonal,
 } from "lucide-react"
+import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomTimeline } from "@/hooks/useRoomTimeline"
+import { CallArea } from "@/components/nexspeak/call-area"
 import type { MatrixMessage } from "@/lib/matrix/types"
 
 interface ChatAreaProps {
@@ -28,6 +30,8 @@ interface ChatAreaProps {
   showMembers: boolean
   onToggleMembers: () => void
 }
+
+// ...existing code...
 
 function MatrixMessageItem({ message }: { message: MatrixMessage }) {
   const timestamp = new Date(message.timestamp)
@@ -63,9 +67,24 @@ export function ChatArea({
   showMembers,
   onToggleMembers,
 }: ChatAreaProps) {
+  void _activeServerId
+
   const [inputValue, setInputValue] = useState("")
   const [isSending, setIsSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const {
+    isInCallInActiveChannel,
+    callParticipants,
+    callVideoFeeds,
+    isMicMuted,
+    isScreensharing,
+    isDeafened,
+    toggleMicrophone,
+    toggleScreenshare,
+    toggleHeadphones,
+    leaveActiveCall,
+  } = useCallContext()
 
   const { client, isCryptoReady } = useMatrixClient()
   const { messages: matrixMessages, isLoading: timelineLoading, hasMore, loadMore } = useRoomTimeline(
@@ -83,6 +102,7 @@ export function ChatArea({
   const roomTopic = roomTopicEvent?.getContent()?.topic
   const roomEncryptionState = room?.currentState.getStateEvents('m.room.encryption', '')
   const isEncryptedRoom = Boolean(roomEncryptionState)
+  const isInCall = isInCallInActiveChannel
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -176,6 +196,20 @@ export function ChatArea({
         </div>
       </header>
 
+      {isInCall ? (
+        <CallArea
+          participants={callParticipants}
+          videoFeeds={callVideoFeeds}
+          isMicMuted={isMicMuted}
+          isDeafened={isDeafened}
+          isScreensharing={isScreensharing}
+          onToggleMic={() => void toggleMicrophone()}
+          onToggleHeadphones={toggleHeadphones}
+          onToggleScreenshare={() => void toggleScreenshare()}
+          onLeaveCall={leaveActiveCall}
+        />
+      ) : (
+      <>
       {/* Messages */}
       <ScrollArea className="flex-1" ref={scrollRef}>
         <div className="flex flex-col">
@@ -259,6 +293,8 @@ export function ChatArea({
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

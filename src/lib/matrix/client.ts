@@ -7,6 +7,7 @@
 'use client'
 
 import { createClient } from 'matrix-js-sdk'
+import { GroupCallIntent, GroupCallType } from 'matrix-js-sdk'
 import type { MatrixClient, MatrixEvent } from 'matrix-js-sdk'
 
 export interface MatrixClientConfig {
@@ -22,6 +23,29 @@ interface CryptoCapableMatrixClient {
   getCrypto?: () => unknown
   initRustCrypto?: () => Promise<void>
   initCrypto?: () => Promise<void>
+}
+
+const groupCallStartInFlight = new Map<string, Promise<void>>()
+
+interface GroupCallLike {
+  state?: string
+  enter: () => Promise<void>
+  initLocalCallFeed?: () => Promise<void>
+}
+
+async function waitForGroupCallState(
+  groupCall: GroupCallLike,
+  allowedStates: string[],
+  timeoutMs: number = 6000,
+): Promise<void> {
+  const startedAt = Date.now()
+
+  while (!allowedStates.includes(groupCall.state || '')) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`Timed out waiting for group call state. Current state: ${groupCall.state || 'unknown'}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
 }
 
 export function createUnauthenticatedMatrixClient(homeserverUrl: string): MatrixClient {
@@ -164,5 +188,92 @@ export function getAvatarUrl(
   const [serverName, mediaId] = mxcUrl.replace('mxc://', '').split('/')
 
   return `${client.getHomeserverUrl()}/_matrix/media/r0/thumbnail/${serverName}/${mediaId}?width=${size}&height=${size}&method=crop`
+}
+
+export async function startOrJoinVoiceGroupCall(
+  client: MatrixClient,
+  roomId: string,
+): Promise<void> {
+  const existingStart = groupCallStartInFlight.get(roomId)
+  if (existingStart) {
+    await existingStart
+    return
+  }
+
+  const startPromise = (async () => {
+  const voipClient = client as unknown as {
+    supportsVoip?: () => boolean
+    waitUntilRoomReadyForGroupCalls?: (id: string) => Promise<void>
+    getGroupCallForRoom?: (id: string) => unknown | null
+    createGroupCall?: (
+      id: string,
+      type: GroupCallType,
+      isPtt: boolean,
+      intent: GroupCallIntent,
+    ) => Promise<unknown>
+  }
+
+  if (voipClient.supportsVoip && !voipClient.supportsVoip()) {
+    throw new Error('VoIP is not supported in this browser')
+  }
+
+  if (voipClient.waitUntilRoomReadyForGroupCalls) {
+    await voipClient.waitUntilRoomReadyForGroupCalls(roomId)
+  }
+
+  let groupCall = voipClient.getGroupCallForRoom?.(roomId) as
+    | { enter: () => Promise<void> }
+    | null
+    | undefined
+
+  if (!groupCall) {
+    if (!voipClient.createGroupCall) {
+      throw new Error('Group calls are not available on this client')
+    }
+
+    groupCall = (await voipClient.createGroupCall(
+      roomId,
+      GroupCallType.Voice,
+      false,
+      GroupCallIntent.Room,
+    )) as { enter: () => Promise<void> }
+  }
+
+    const enterableGroupCall = groupCall as GroupCallLike
+
+    if (enterableGroupCall.state === 'local_call_feed_uninitialized' && enterableGroupCall.initLocalCallFeed) {
+      await enterableGroupCall.initLocalCallFeed()
+    }
+
+    if (enterableGroupCall.state === 'initializing_local_call_feed') {
+      await waitForGroupCallState(enterableGroupCall, ['local_call_feed_initialized', 'entered'])
+    }
+
+    if (enterableGroupCall.state !== 'entered') {
+      try {
+        await enterableGroupCall.enter()
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('initializing_local_call_feed')
+        ) {
+          await waitForGroupCallState(enterableGroupCall, ['local_call_feed_initialized', 'entered'])
+          if (enterableGroupCall.state !== 'entered') {
+            await enterableGroupCall.enter()
+          }
+        } else {
+          throw error
+        }
+      }
+    }
+  })()
+
+  groupCallStartInFlight.set(roomId, startPromise)
+
+  try {
+    await startPromise
+  } finally {
+    groupCallStartInFlight.delete(roomId)
+  }
 }
 

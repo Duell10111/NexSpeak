@@ -220,7 +220,11 @@ export function useDirectRoomList(client: MatrixClient | null): UseDirectRoomLis
     }
 
     const recompute = () => {
-      const directData = client.getAccountData('m.direct')?.getContent() as
+      const accountDataClient = client as unknown as {
+        getAccountData: (eventType: string) => { getContent: () => unknown } | undefined
+      }
+
+      const directData = accountDataClient.getAccountData('m.direct')?.getContent() as
         | Record<string, string[]>
         | undefined
       const userId = client.getUserId()
@@ -234,6 +238,10 @@ export function useDirectRoomList(client: MatrixClient | null): UseDirectRoomLis
         .filter((room) => !isSpaceRoom(room))
         .filter((room) => {
           if (directRoomIds.has(room.roomId)) {
+            return true
+          }
+
+          if (room.getDMInviter()) {
             return true
           }
 
@@ -253,6 +261,8 @@ export function useDirectRoomList(client: MatrixClient | null): UseDirectRoomLis
     recompute()
 
     emitter.on('AccountData', recompute)
+    emitter.on('AccountData.events', recompute)
+    emitter.on('sync', recompute)
     emitter.on('Room', recompute)
     emitter.on('Room.timeline', recompute)
     emitter.on('Room.receipt', recompute)
@@ -260,6 +270,8 @@ export function useDirectRoomList(client: MatrixClient | null): UseDirectRoomLis
 
     return () => {
       emitter.removeListener('AccountData', recompute)
+      emitter.removeListener('AccountData.events', recompute)
+      emitter.removeListener('sync', recompute)
       emitter.removeListener('Room', recompute)
       emitter.removeListener('Room.timeline', recompute)
       emitter.removeListener('Room.receipt', recompute)

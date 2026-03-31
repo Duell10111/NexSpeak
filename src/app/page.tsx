@@ -6,6 +6,7 @@ import { ServerSidebar } from "@/components/nexspeak/server-sidebar"
 import { ChannelSidebar } from "@/components/nexspeak/channel-sidebar"
 import { ChatArea } from "@/components/nexspeak/chat-area"
 import { MemberList } from "@/components/nexspeak/member-list"
+import { CallProvider } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useDirectRoomList, useRoomList, useSpaceList } from "@/hooks/useRoomMembers"
 import { loadSession } from "@/lib/matrix/storage"
@@ -74,23 +75,25 @@ export default function NexSpeakApp() {
   }
 
   return (
-    <main className="flex h-screen w-screen overflow-hidden">
-      <ServerSidebar
-        activeServerId={effectiveServerId}
-        onServerSelect={handleServerSelect}
-      />
-      <ChannelSidebar
-        activeServerId={effectiveServerId}
-        activeChannelId={effectiveChannelId}
-        onChannelSelect={setActiveChannelId}
-      />
-      <ChatArea
-        activeServerId={effectiveServerId}
-        activeChannelId={effectiveChannelId}
-        showMembers={showMembers}
-        onToggleMembers={() => setShowMembers(!showMembers)}
-      />
-      {showMembers && <MemberList activeRoomId={effectiveChannelId} />}
-    </main>
+    <CallProvider client={client} activeChannelId={effectiveChannelId}>
+      <main className="flex h-screen w-screen overflow-hidden">
+        <ServerSidebar
+          activeServerId={effectiveServerId}
+          onServerSelect={handleServerSelect}
+        />
+        <ChannelSidebar
+          activeServerId={effectiveServerId}
+          activeChannelId={effectiveChannelId}
+          onChannelSelect={setActiveChannelId}
+        />
+        <ChatArea
+          activeServerId={effectiveServerId}
+          activeChannelId={effectiveChannelId}
+          showMembers={showMembers}
+          onToggleMembers={() => setShowMembers(!showMembers)}
+        />
+        {showMembers && <MemberList activeRoomId={effectiveChannelId} />}
+      </main>
+    </CallProvider>
   )
 }
