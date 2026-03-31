@@ -20,6 +20,7 @@ export interface CallVideoFeed {
   name: string
   stream: MediaStream
   hasVideo: boolean
+  isScreenshare: boolean
 }
 
 interface CallFeedLike {
@@ -35,6 +36,7 @@ interface GroupCallLike {
   room?: { roomId?: string }
   participants?: Map<unknown, Map<string, unknown>>
   userMediaFeeds?: CallFeedLike[]
+  screenshareFeeds?: CallFeedLike[]
   hasLocalParticipant?: () => boolean
   isMicrophoneMuted?: () => boolean
   isScreensharing?: () => boolean
@@ -123,18 +125,28 @@ function toCallParticipants(groupCall: GroupCallLike | null): CallParticipant[] 
 }
 
 function toCallVideoFeeds(groupCall: GroupCallLike | null): CallVideoFeed[] {
-  if (!groupCall?.userMediaFeeds) return []
+  if (!groupCall?.userMediaFeeds && !groupCall?.screenshareFeeds) return []
 
-  return groupCall.userMediaFeeds
-    .filter((feed) => !feed.isLocal?.())
-    .filter((feed): feed is CallFeedLike & { stream: MediaStream; userId: string } => Boolean(feed.stream && feed.userId))
-    .map((feed, index) => ({
-      id: `${feed.userId}-${index}`,
-      userId: feed.userId,
-      name: feed.getMember?.()?.name || feed.userId,
-      stream: feed.stream,
-      hasVideo: feed.stream.getVideoTracks().length > 0,
-    }))
+  const mapFeeds = (feeds: CallFeedLike[] | undefined, isScreenshare: boolean): CallVideoFeed[] => {
+    if (!feeds) return []
+
+    return feeds
+      .filter((feed) => !feed.isLocal?.())
+      .filter((feed): feed is CallFeedLike & { stream: MediaStream; userId: string } => Boolean(feed.stream && feed.userId))
+      .map((feed, index) => ({
+        id: `${isScreenshare ? 'ss' : 'cam'}-${feed.userId}-${index}`,
+        userId: feed.userId,
+        name: feed.getMember?.()?.name || feed.userId,
+        stream: feed.stream,
+        hasVideo: feed.stream.getVideoTracks().length > 0,
+        isScreenshare,
+      }))
+  }
+
+  return [
+    ...mapFeeds(groupCall.screenshareFeeds, true),
+    ...mapFeeds(groupCall.userMediaFeeds, false),
+  ]
 }
 
 function toRoomCallInfo(call: GroupCallLike | null): RoomCallInfo | null {
@@ -290,6 +302,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     activeCall.on("participants_changed", refreshActive)
     activeCall.on("group_call_state_changed", refreshActive)
     activeCall.on("user_media_feeds_changed", refreshActive)
+    activeCall.on("screenshare_feeds_changed", refreshActive)
+    activeCall.on("calls_changed", refreshActive)
     activeCall.on("local_mute_state_changed", refreshActive)
     activeCall.on("local_screenshare_state_changed", refreshActive)
 
@@ -314,10 +328,21 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     activeCall.on("group_call_error", onGroupCallError)
     refreshActive()
 
+    // Existing calls (especially with already running screenshare) can populate feeds slightly later.
+    // Re-sync briefly after join so remote screenshare appears without requiring a rejoin.
+    const retry1 = window.setTimeout(refreshActive, 250)
+    const retry2 = window.setTimeout(refreshActive, 900)
+    const retry3 = window.setTimeout(refreshActive, 1800)
+
     return () => {
+      window.clearTimeout(retry1)
+      window.clearTimeout(retry2)
+      window.clearTimeout(retry3)
       activeCall.removeListener?.("participants_changed", refreshActive)
       activeCall.removeListener?.("group_call_state_changed", refreshActive)
       activeCall.removeListener?.("user_media_feeds_changed", refreshActive)
+      activeCall.removeListener?.("screenshare_feeds_changed", refreshActive)
+      activeCall.removeListener?.("calls_changed", refreshActive)
       activeCall.removeListener?.("local_mute_state_changed", refreshActive)
       activeCall.removeListener?.("local_screenshare_state_changed", refreshActive)
       activeCall.removeListener?.("group_call_error", onGroupCallError)

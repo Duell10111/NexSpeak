@@ -16,6 +16,7 @@ export interface CallVideoFeed {
   name: string
   stream: MediaStream
   hasVideo: boolean
+  isScreenshare: boolean
 }
 
 interface CallAreaProps {
@@ -64,12 +65,15 @@ function VideoTile({ feed, isDeafened }: { feed: CallVideoFeed; isDeafened: bool
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-muted text-sm text-muted-foreground">
-          Keine Kamera
+          {feed.isScreenshare ? "Bildschirm ohne Video-Track" : "Keine Kamera"}
         </div>
       )}
 
-      <div className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 text-xs text-white">
-        {feed.name}
+      <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded bg-black/60 px-2 py-1 text-xs text-white">
+        <span>{feed.name}</span>
+        {feed.isScreenshare && (
+          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Screen</span>
+        )}
       </div>
     </div>
   )
@@ -89,6 +93,7 @@ export function CallArea({
   onLeaveCall,
 }: CallAreaProps) {
   const [speakingByUserId, setSpeakingByUserId] = useState<Record<string, boolean>>({})
+  const speakingHoldUntilRef = useRef<Record<string, number>>({})
   const featuredFeed = videoFeeds[0]
   const secondaryFeeds = videoFeeds.slice(1)
 
@@ -130,6 +135,9 @@ export function CallArea({
     }
 
     if (entries.length === 0) {
+      queueMicrotask(() => {
+        setSpeakingByUserId({})
+      })
       void audioContext.close()
       return
     }
@@ -151,7 +159,14 @@ export function CallArea({
 
         const rms = Math.sqrt(sum / entry.buffer.length)
         const speaking = rms > 0.055
-        nextSpeakingByUser[entry.userId] = Boolean(nextSpeakingByUser[entry.userId]) || speaking
+        if (speaking) {
+          speakingHoldUntilRef.current[entry.userId] = Date.now() + 350
+        }
+
+        const speakingWithHold = Boolean(
+          speaking || (speakingHoldUntilRef.current[entry.userId] || 0) > Date.now(),
+        )
+        nextSpeakingByUser[entry.userId] = Boolean(nextSpeakingByUser[entry.userId]) || speakingWithHold
       })
 
       setSpeakingByUserId((prev) => {
