@@ -85,6 +85,7 @@ interface CallContextValue {
   isMicMuted: boolean
   isScreensharing: boolean
   isDeafened: boolean
+  remoteAudioElement: HTMLAudioElement | null
   joinCall: (roomId: string) => Promise<void>
   leaveActiveCall: () => void
   toggleMicrophone: () => Promise<void>
@@ -198,6 +199,9 @@ interface CallProviderProps {
 
 export function CallProvider({ client, activeChannelId, children }: CallProviderProps) {
   const lastUnknownDeviceRecoveryAtRef = useRef(0)
+  const remoteAudioElementRef = useRef<HTMLAudioElement | null>(null)
+  const remoteAudioContextRef = useRef<AudioContext | null>(null)
+  const remoteAudioStreamRef = useRef<MediaStream | null>(null)
   const [activeCall, setActiveCall] = useState<GroupCallLike | null>(null)
   const [callInfoByRoom, setCallInfoByRoom] = useState<Record<string, RoomCallInfo>>({})
   const [callParticipants, setCallParticipants] = useState<CallParticipant[]>([])
@@ -206,6 +210,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const [isMicMuted, setIsMicMuted] = useState(false)
   const [isScreensharing, setIsScreensharing] = useState(false)
   const [isDeafened, setIsDeafened] = useState(false)
+  const [remoteAudioElement, setRemoteAudioElement] = useState<HTMLAudioElement | null>(null)
 
   const syncRoomCallInfo = useCallback(() => {
     if (!client) {
@@ -349,6 +354,89 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [activeCall, syncRoomCallInfo, syncActiveChannelCall])
 
+  // Manage remote audio playback
+  useEffect(() => {
+    // Initialize audio element once
+    if (!remoteAudioElementRef.current) {
+      const audioElement = new Audio()
+      audioElement.autoplay = true
+      audioElement.setAttribute('aria-label', 'Remote call audio')
+      // Add to DOM but keep it hidden
+      audioElement.style.display = 'none'
+      document.body.appendChild(audioElement)
+      remoteAudioElementRef.current = audioElement
+      setRemoteAudioElement(audioElement)
+    }
+
+    return () => {
+      // Cleanup on unmount
+      if (remoteAudioElementRef.current && remoteAudioElementRef.current.parentNode) {
+        remoteAudioElementRef.current.pause()
+        remoteAudioElementRef.current.srcObject = null
+        remoteAudioElementRef.current.parentNode.removeChild(remoteAudioElementRef.current)
+        remoteAudioElementRef.current = null
+      }
+    }
+  }, [])
+
+  // Update remote audio stream based on call state
+  useEffect(() => {
+    const audioElement = remoteAudioElementRef.current
+    if (!audioElement) return
+
+    // Create a combined audio stream from all remote feeds
+    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextCtor) return
+
+    // Stop previous context
+    if (remoteAudioContextRef.current) {
+      void remoteAudioContextRef.current.close().catch(() => {
+        // Ignore errors on close
+      })
+    }
+
+    const audioContext = new AudioContextCtor()
+    remoteAudioContextRef.current = audioContext
+
+    // Collect all remote user media feeds (not screenshare, not local)
+    const remoteFeeds = callVideoFeeds.filter((feed) => !feed.isScreenshare && feed.userId !== (client?.getUserId() || ""))
+
+    if (remoteFeeds.length === 0) {
+      audioElement.srcObject = null
+      audioElement.muted = true
+      return
+    }
+
+    // Create a new MediaStream combining all remote audio tracks
+    const combinedStream = new MediaStream()
+
+    remoteFeeds.forEach((feed) => {
+      feed.stream.getAudioTracks().forEach((track) => {
+        combinedStream.addTrack(track)
+      })
+    })
+
+    // Set stream to audio element and respect deafened state
+    audioElement.srcObject = combinedStream
+    audioElement.muted = isDeafened
+
+    const playPromise = audioElement.play()
+    if (playPromise) {
+      playPromise.catch(() => {
+        // Autoplay can be blocked by browser policy
+      })
+    }
+
+    remoteAudioStreamRef.current = combinedStream
+
+    return () => {
+      // Cleanup tracks when effect re-runs
+      combinedStream.getTracks().forEach((track) => {
+        track.stop()
+      })
+    }
+  }, [callVideoFeeds, isDeafened, client])
+
   const joinCall = useCallback(async (roomId: string) => {
     if (!client || !roomId) return
 
@@ -420,6 +508,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       isMicMuted,
       isScreensharing,
       isDeafened,
+      remoteAudioElement,
       joinCall,
       leaveActiveCall,
       toggleMicrophone,
@@ -437,6 +526,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     isMicMuted,
     isScreensharing,
     isDeafened,
+    remoteAudioElement,
     joinCall,
     leaveActiveCall,
     toggleMicrophone,
