@@ -10,7 +10,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import type { MatrixClient, Room } from 'matrix-js-sdk'
+import type { MatrixClient, MatrixEvent, Room } from 'matrix-js-sdk'
 import { eventToMatrixMessage } from '@/lib/matrix/types'
 import type { MatrixMessage } from '@/lib/matrix/types'
 
@@ -36,6 +36,11 @@ export function useRoomTimeline(
   // Load initial messages from room timeline
   useEffect(() => {
     if (!client || !roomId) return
+
+    const emitter = client as unknown as {
+      on: (event: string, listener: (...args: unknown[]) => void) => void
+      removeListener: (event: string, listener: (...args: unknown[]) => void) => void
+    }
 
     const room = client.getRoom(roomId)
     if (!room) return
@@ -65,7 +70,7 @@ export function useRoomTimeline(
     setMessages(sortedMessages)
 
     // Subscribe to new messages
-    const handleTimelineEvent = (event: any) => {
+    const handleTimelineEvent = (event: MatrixEvent) => {
       const msg = eventToMatrixMessage(event, roomId)
       if (!msg) return
 
@@ -83,17 +88,23 @@ export function useRoomTimeline(
     }
 
     // Listen to room timeline
-    const wrappedHandler = (event: any, room: any) => {
+    const wrappedHandler = (event: unknown, eventRoom: unknown) => {
+      if (!eventRoom || typeof eventRoom !== 'object' || !('roomId' in eventRoom)) return
+      if (!event || typeof event !== 'object' || !('getType' in event)) return
+
+      const matrixRoom = eventRoom as Room
+      const matrixEvent = event as MatrixEvent
+
       // Only process events for this room
-      if (room && room.roomId === roomId) {
-        handleTimelineEvent(event)
+      if (matrixRoom.roomId === roomId) {
+        handleTimelineEvent(matrixEvent)
       }
     }
 
-    client.on('Room.timeline' as any, wrappedHandler)
+    emitter.on('Room.timeline', wrappedHandler)
 
     unsubscribeRef.current = () => {
-      client.removeListener('Room.timeline' as any, wrappedHandler)
+      emitter.removeListener('Room.timeline', wrappedHandler)
     }
 
     return () => {
@@ -120,23 +131,32 @@ export function useRoomTimeline(
         return
       }
 
-      // Get oldest event
-      const oldestEvent = events[0]
+      const previousEventIds = new Set(
+        events
+          .map((event) => event.getId())
+          .filter((id): id is string => Boolean(id)),
+      )
 
       // Paginate backwards
-      const result = await client.paginateEventTimeline(timeline, {
+      const didPaginate = await client.paginateEventTimeline(timeline, {
         backwards: true,
         limit: BACKFILL_LIMIT,
       })
 
-      if (!result || result.length === 0) {
+      if (!didPaginate) {
         setHasMore(false)
         return
       }
 
+      const updatedEvents = timeline.getEvents()
+      const newlyLoadedEvents = updatedEvents.filter((event) => {
+        const eventId = event.getId()
+        return !!eventId && !previousEventIds.has(eventId)
+      })
+
       // Add new messages to map
       const newMessages: MatrixMessage[] = []
-      result.forEach((event) => {
+      newlyLoadedEvents.forEach((event) => {
         const msg = eventToMatrixMessage(event, roomId)
         if (msg && !messageMapRef.current.has(msg.id)) {
           messageMapRef.current.set(msg.id, msg)
@@ -152,7 +172,7 @@ export function useRoomTimeline(
         })
       }
 
-      if (result.length < BACKFILL_LIMIT) {
+      if (newlyLoadedEvents.length < BACKFILL_LIMIT) {
         setHasMore(false)
       }
     } catch (error) {
