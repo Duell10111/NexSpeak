@@ -29,7 +29,52 @@ export interface MatrixMessage {
   reactions?: { emoji: string; count: number; reacted: boolean }[]
 }
 
+export interface MatrixSpace {
+  id: string
+  name: string
+  avatar?: string
+  unread: number
+  mentions: number
+  childRoomIds: string[]
+}
+
 export type SyncStatus = 'INITIAL' | 'SYNCING' | 'SYNCED' | 'ERROR'
+
+export function isSpaceRoom(room: Room): boolean {
+  const createEvent = room.currentState.getStateEvents('m.room.create', '')
+  const createContent = createEvent?.getContent()
+  return createContent?.type === 'm.space'
+}
+
+export function getSpaceChildRoomIds(spaceRoom: Room): string[] {
+  const childEvents = spaceRoom.currentState.getStateEvents('m.space.child')
+  if (!Array.isArray(childEvents)) {
+    return []
+  }
+
+  return childEvents
+    .map((event) => event.getStateKey())
+    .filter((id): id is string => Boolean(id))
+}
+
+export function roomToMatrixSpace(spaceRoom: Room, childRooms: Room[]): MatrixSpace {
+  const getHighlightCount = (room: Room): number => {
+    const countGetter = room.getUnreadNotificationCount as unknown as (this: Room, type?: string) => number
+    return countGetter.call(room, 'highlight') || 0
+  }
+
+  const unread = childRooms.reduce((sum, room) => sum + (room.getUnreadNotificationCount() || 0), 0)
+  const mentions = childRooms.reduce((sum, room) => sum + getHighlightCount(room), 0)
+
+  return {
+    id: spaceRoom.roomId,
+    name: spaceRoom.name || spaceRoom.getCanonicalAlias() || 'Unnamed space',
+    avatar: spaceRoom.getAvatarUrl(spaceRoom.client.getHomeserverUrl(), 32, 32, 'crop') || undefined,
+    unread,
+    mentions,
+    childRoomIds: childRooms.map((room) => room.roomId),
+  }
+}
 
 /**
  * Convert matrix-js-sdk Room to MatrixRoom

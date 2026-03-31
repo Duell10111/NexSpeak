@@ -2,14 +2,6 @@
 
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import {
-  messages as allMessages,
-  getUserById,
-  formatTimestamp,
-  channelCategories,
-  type Message,
-  type Channel,
-} from "@/lib/nexspeak-data"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -37,71 +29,6 @@ interface ChatAreaProps {
   onToggleMembers: () => void
 }
 
-function MessageItem({ message }: { message: Message }) {
-  const user = getUserById(message.userId)
-  if (!user) return null
-
-  const roleColor =
-    user.role === "admin"
-      ? "text-primary"
-      : user.role === "moderator"
-      ? "text-chart-2"
-      : "text-foreground"
-
-  return (
-    <div className="group flex gap-4 px-4 py-1 hover:bg-nx-hover/50 transition-colors">
-      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
-        {user.avatar}
-      </div>
-      <div className="flex-1 overflow-hidden">
-        <div className="flex items-baseline gap-2">
-          <span className={cn("text-sm font-semibold hover:underline cursor-pointer", roleColor)}>
-            {user.name}
-          </span>
-          <span className="text-[11px] text-muted-foreground">
-            {formatTimestamp(message.timestamp)}
-          </span>
-          {message.edited && (
-            <span className="text-[10px] text-muted-foreground">(bearbeitet)</span>
-          )}
-        </div>
-        <p className="text-sm text-foreground leading-relaxed break-words">
-          {message.content}
-        </p>
-        {message.reactions && message.reactions.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {message.reactions.map((reaction, i) => (
-              <button
-                key={i}
-                className={cn(
-                  "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors",
-                  reaction.reacted
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border bg-muted text-muted-foreground hover:border-muted-foreground"
-                )}
-              >
-                <span>{reaction.emoji}</span>
-                <span>{reaction.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      {/* Hover actions */}
-      <div className="absolute right-4 -top-3 hidden group-hover:flex items-center gap-0.5 rounded-md border border-border bg-secondary px-1 py-0.5 shadow-sm">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors">
-              <Smile className="h-4 w-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Reaktion</TooltipContent>
-        </Tooltip>
-      </div>
-    </div>
-  )
-}
-
 function MatrixMessageItem({ message }: { message: MatrixMessage }) {
   const timestamp = new Date(message.timestamp)
   const hours = timestamp.getHours().toString().padStart(2, "0")
@@ -110,7 +37,7 @@ function MatrixMessageItem({ message }: { message: MatrixMessage }) {
   return (
     <div className="group flex gap-4 px-4 py-1 hover:bg-nx-hover/50 transition-colors">
       <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
-        {message.senderName.charAt(0).toUpperCase()}
+        {message.senderName?.charAt(0).toUpperCase() || "?"}
       </div>
       <div className="flex-1 overflow-hidden">
         <div className="flex items-baseline gap-2">
@@ -124,21 +51,10 @@ function MatrixMessageItem({ message }: { message: MatrixMessage }) {
             <span className="text-[10px] text-muted-foreground">(bearbeitet)</span>
           )}
         </div>
-        <p className="text-sm text-foreground leading-relaxed break-words">
-          {message.content}
-        </p>
+        <p className="text-sm text-foreground leading-relaxed break-words">{message.content}</p>
       </div>
     </div>
   )
-}
-
-function getChannel(serverId: string, channelId: string): Channel | undefined {
-  const cats = channelCategories[serverId] || []
-  for (const cat of cats) {
-    const found = cat.channels.find((ch) => ch.id === channelId)
-    if (found) return found
-  }
-  return undefined
 }
 
 export function ChatArea({
@@ -148,22 +64,21 @@ export function ChatArea({
   onToggleMembers,
 }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState("")
-  const [localMessages, setLocalMessages] = useState<Message[]>([])
   const [isSending, setIsSending] = useState(false)
-
   const scrollRef = useRef<HTMLDivElement>(null)
-  const channel = getChannel(activeServerId, activeChannelId)
 
-  // Check if we're using Matrix or local data
   const { client } = useMatrixClient()
-  const { messages: matrixMessages } = useRoomTimeline(client, activeChannelId)
-  const isMatrixRoom = client && matrixMessages.length > 0
+  const { messages: matrixMessages, isLoading: timelineLoading, hasMore, loadMore } = useRoomTimeline(
+    client,
+    activeChannelId,
+  )
 
-  // Determine which messages to display
-  const localChannelMessages = allMessages[activeChannelId] || []
-  const displayMessages = isMatrixRoom
-    ? matrixMessages
-    : [...localChannelMessages, ...localMessages.filter((m) => m.id.startsWith(`local-${activeChannelId}`))]
+  // Only use matrix timeline; do not use any mock/local messages
+  const displayMessages: MatrixMessage[] = matrixMessages || []
+
+  // Get room info for header
+  const room = client ? client.getRoom(activeChannelId) : undefined
+  const roomName = room?.name || (room && room.getCanonicalAlias ? room.getCanonicalAlias() : activeChannelId)
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -175,29 +90,21 @@ export function ChatArea({
   }, [displayMessages.length])
 
   const handleSend = async () => {
-    if (!inputValue.trim()) return
+    if (!inputValue.trim() || !client || !activeChannelId) return
 
-    if (isMatrixRoom && client) {
-      // Send to Matrix
-      setIsSending(true)
-      try {
-        await client.sendTextMessage(activeChannelId, inputValue.trim())
-        setInputValue("")
-      } catch (error) {
-        console.error("Failed to send message:", error)
-      } finally {
-        setIsSending(false)
-      }
-    } else {
-      // Add to local messages
-      const newMsg: Message = {
-        id: `local-${activeChannelId}-${Date.now()}`,
-        userId: "u1",
-        content: inputValue.trim(),
-        timestamp: new Date(),
-      }
-      setLocalMessages((prev) => [...prev, newMsg])
+    setIsSending(true)
+    try {
+      // Send as m.room.message
+      await client.sendEvent(activeChannelId, 'm.room.message', {
+        msgtype: 'm.text',
+        body: inputValue.trim(),
+      })
+      // Clear composer; message will appear via timeline when echoed by server
       setInputValue("")
+    } catch (error) {
+      console.error('Failed to send message:', error)
+    } finally {
+      setIsSending(false)
     }
   }
 
@@ -207,15 +114,11 @@ export function ChatArea({
       <header className="flex h-12 items-center justify-between border-b border-border px-4 shadow-sm">
         <div className="flex items-center gap-2">
           <Hash className="h-5 w-5 text-muted-foreground" />
-          <h3 className="text-[15px] font-semibold text-foreground">
-            {channel?.name || "kanal"}
-          </h3>
-          {channel?.description && (
+          <h3 className="text-[15px] font-semibold text-foreground">{roomName || 'Unnamed room'}</h3>
+          {room?.getTopic && room.getTopic() && (
             <>
               <div className="mx-2 h-6 w-px bg-border" />
-              <span className="truncate text-sm text-muted-foreground">
-                {channel.description}
-              </span>
+              <span className="truncate text-sm text-muted-foreground">{room.getTopic()}</span>
             </>
           )}
         </div>
@@ -240,10 +143,7 @@ export function ChatArea({
             <TooltipTrigger asChild>
               <button
                 onClick={onToggleMembers}
-                className={cn(
-                  "transition-colors",
-                  showMembers ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                )}
+                className={cn("transition-colors", showMembers ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
                 aria-label="Mitgliederliste"
               >
                 <Users className="h-5 w-5" />
@@ -252,11 +152,7 @@ export function ChatArea({
             <TooltipContent>Mitgliederliste</TooltipContent>
           </Tooltip>
           <div className="relative">
-            <input
-              type="text"
-              placeholder="Suchen"
-              className="h-7 w-36 rounded-md bg-input px-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:w-52 transition-all"
-            />
+            <input type="text" placeholder="Suchen" className="h-7 w-36 rounded-md bg-input px-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:w-52 transition-all" />
             <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <Tooltip>
@@ -286,25 +182,28 @@ export function ChatArea({
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
               <Hash className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h2 className="mt-2 text-2xl font-bold text-foreground text-balance">
-              {"Willkommen bei #"}{channel?.name || "kanal"}{"!"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {"Das ist der Anfang des #"}{channel?.name || "kanal"}{" Kanals."}
-            </p>
+            <h2 className="mt-2 text-2xl font-bold text-foreground text-balance">{roomName ? `Willkommen bei #${roomName}!` : 'Willkommen'}</h2>
+            <p className="text-sm text-muted-foreground">{roomName ? `Das ist der Anfang des #${roomName} Kanals.` : 'Wähle einen Raum.'}</p>
           </div>
 
           {/* Messages list */}
           <div className="flex flex-col gap-0.5 pb-4">
+            {timelineLoading && <div className="p-4 text-center text-muted-foreground">Lade Nachrichten…</div>}
+            {!timelineLoading && displayMessages.length === 0 && (
+              <div className="p-4 text-center text-muted-foreground">Keine Nachrichten</div>
+            )}
+
             {displayMessages.map((msg) => (
               <div key={msg.id} className="relative">
-                {"userId" in msg ? (
-                  <MessageItem message={msg as Message} />
-                ) : (
-                  <MatrixMessageItem message={msg as MatrixMessage} />
-                )}
+                <MatrixMessageItem message={msg} />
               </div>
             ))}
+
+            {hasMore && (
+              <div className="px-4 py-2 text-center">
+                <button onClick={() => loadMore()} className="text-sm text-primary hover:underline">Mehr laden</button>
+              </div>
+            )}
           </div>
         </div>
       </ScrollArea>
@@ -325,9 +224,9 @@ export function ChatArea({
                 handleSend()
               }
             }}
-            placeholder={`Nachricht an #${channel?.name || "kanal"}`}
+            placeholder={roomName ? `Nachricht an #${roomName}` : 'Nachricht'}
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50"
-            disabled={isSending}
+            disabled={isSending || !client || !room}
           />
           <div className="flex items-center gap-2">
             <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Geschenk" disabled={isSending}>
@@ -342,7 +241,7 @@ export function ChatArea({
             {inputValue.trim() && (
               <button
                 onClick={handleSend}
-                disabled={isSending}
+                disabled={isSending || !client || !room}
                 className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 aria-label="Senden"
               >
@@ -355,5 +254,3 @@ export function ChatArea({
     </div>
   )
 }
-
-

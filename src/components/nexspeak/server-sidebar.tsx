@@ -1,14 +1,28 @@
 "use client"
 
+import { useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { servers, type Server } from "@/lib/nexspeak-data"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
 import { Plus, Compass } from "lucide-react"
+import { useMatrixClient } from "@/hooks/useMatrixClient"
+import { useSpaceList } from "@/hooks/useRoomMembers"
+import type { MatrixSpace } from "@/lib/matrix/types"
 
 interface ServerSidebarProps {
   activeServerId: string
   onServerSelect: (id: string) => void
+}
+
+const SPACE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
+
+function getSpaceColor(spaceId: string): string {
+  let hash = 0
+  for (let i = 0; i < spaceId.length; i += 1) {
+    hash = (hash << 5) - hash + spaceId.charCodeAt(i)
+    hash |= 0
+  }
+  return SPACE_COLORS[Math.abs(hash) % SPACE_COLORS.length]
 }
 
 function ServerIcon({
@@ -16,10 +30,13 @@ function ServerIcon({
   isActive,
   onClick,
 }: {
-  server: Server
+  server: MatrixSpace
   isActive: boolean
   onClick: () => void
 }) {
+  const spaceColor = getSpaceColor(server.id)
+  const label = server.name || "Unnamed space"
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -39,46 +56,58 @@ function ServerIcon({
                 ? "rounded-[16px]"
                 : "rounded-[24px] hover:rounded-[16px]"
             )}
-            style={{ backgroundColor: isActive ? server.color : undefined }}
-            aria-label={server.name}
+            style={{ backgroundColor: isActive ? spaceColor : undefined }}
+            aria-label={label}
           >
             {!isActive && (
               <div
                 className="flex h-full w-full items-center justify-center rounded-[inherit] bg-nx-guild-bar text-foreground hover:text-primary-foreground transition-colors"
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = server.color
+                  e.currentTarget.style.backgroundColor = spaceColor
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = ""
                 }}
               >
-                {server.icon}
+                {server.avatar ? (
+                  <img src={server.avatar} alt={label} className="h-full w-full rounded-[inherit] object-cover" />
+                ) : (
+                  label.charAt(0).toUpperCase()
+                )}
               </div>
             )}
             {isActive && (
-              <span className="text-primary-foreground">{server.icon}</span>
+              <span className="text-primary-foreground">{label.charAt(0).toUpperCase()}</span>
             )}
             {/* Mention badge */}
-            {server.mentions && server.mentions > 0 && (
+            {server.mentions > 0 && (
               <span className="absolute -bottom-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
                 {server.mentions}
               </span>
             )}
             {/* Unread dot */}
-            {!server.mentions && server.unread && !isActive && (
+            {server.mentions === 0 && server.unread > 0 && !isActive && (
               <span className="absolute left-0 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-foreground" />
             )}
           </button>
         </div>
       </TooltipTrigger>
       <TooltipContent side="right" className="font-semibold">
-        {server.name}
+        {label}
       </TooltipContent>
     </Tooltip>
   )
 }
 
 export function ServerSidebar({ activeServerId, onServerSelect }: ServerSidebarProps) {
+  const { client } = useMatrixClient()
+  const { spaces } = useSpaceList(client)
+
+  useEffect(() => {
+    if (activeServerId || spaces.length === 0) return
+    onServerSelect(spaces[0].id)
+  }, [activeServerId, spaces, onServerSelect])
+
   return (
     <nav
       className="flex h-full w-[72px] flex-col items-center bg-nx-guild-bar py-3 overflow-y-auto"
@@ -106,7 +135,7 @@ export function ServerSidebar({ activeServerId, onServerSelect }: ServerSidebarP
       </div>
 
       <div className="mt-2 flex flex-col items-center gap-2">
-        {servers.map((server) => (
+        {spaces.map((server) => (
           <ServerIcon
             key={server.id}
             server={server}

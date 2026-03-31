@@ -6,9 +6,11 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react'
-import { createClient } from 'matrix-js-sdk'
 import { saveSession, clearSession, type MatrixSession } from '@/lib/matrix/storage'
-import { createMatrixClient as initializeMatrixClient } from '@/lib/matrix/client'
+import {
+  createMatrixClient as initializeMatrixClient,
+  createUnauthenticatedMatrixClient,
+} from '@/lib/matrix/client'
 
 interface MatrixAuthContextType {
   // Auth state
@@ -39,9 +41,7 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
 
       try {
         // Create temporary client for authentication
-        const tempClient = createClient({
-          baseUrl: homeserverUrl,
-        })
+        const tempClient = createUnauthenticatedMatrixClient(homeserverUrl)
 
         // Perform login
         const loginResponse = await tempClient.loginWithPassword(username, password)

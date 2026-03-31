@@ -4,6 +4,8 @@
  * Handles SDK initialization, event subscription, and lifecycle.
  */
 
+'use client'
+
 import { createClient } from 'matrix-js-sdk'
 import type { MatrixClient, MatrixEvent } from 'matrix-js-sdk'
 
@@ -15,6 +17,16 @@ export interface MatrixClientConfig {
 }
 
 let matrixClientInstance: MatrixClient | null = null
+
+export function createUnauthenticatedMatrixClient(homeserverUrl: string): MatrixClient {
+  if (typeof window === 'undefined') {
+    throw new Error('Matrix client can only be created in browser context')
+  }
+
+  return createClient({
+    baseUrl: homeserverUrl,
+  })
+}
 
 export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
   if (typeof window === 'undefined') {
@@ -58,14 +70,19 @@ export function subscribeToRoomTimeline(
   roomId: string,
   callback: (event: MatrixEvent) => void,
 ): () => void {
+  const emitter = client as unknown as {
+    on: (event: string, listener: (...args: unknown[]) => void) => void
+    removeListener: (event: string, listener: (...args: unknown[]) => void) => void
+  }
+
   const handler = (event: MatrixEvent) => {
     callback(event)
   }
 
-  client.on('Room.timeline' as any, handler)
+  emitter.on('Room.timeline', handler)
 
   return () => {
-    client.removeListener('Room.timeline' as any, handler)
+    emitter.removeListener('Room.timeline', handler)
   }
 }
 
@@ -81,12 +98,12 @@ export function subscribeSyncStatus(
 
   client.on('sync', handlers.sync)
   client.on('prepared', handlers.prepared)
-  client.on('Client.sync', handlers.sync as any)
+  client.on('Client.sync', handlers.sync)
 
   return () => {
     client.removeListener('sync', handlers.sync)
     client.removeListener('prepared', handlers.prepared)
-    client.removeListener('Client.sync', handlers.sync as any)
+    client.removeListener('Client.sync', handlers.sync)
   }
 }
 
