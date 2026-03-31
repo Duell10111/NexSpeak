@@ -58,7 +58,7 @@ function MatrixMessageItem({ message }: { message: MatrixMessage }) {
 }
 
 export function ChatArea({
-  activeServerId,
+  activeServerId: _activeServerId,
   activeChannelId,
   showMembers,
   onToggleMembers,
@@ -67,7 +67,7 @@ export function ChatArea({
   const [isSending, setIsSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const { client } = useMatrixClient()
+  const { client, isCryptoReady } = useMatrixClient()
   const { messages: matrixMessages, isLoading: timelineLoading, hasMore, loadMore } = useRoomTimeline(
     client,
     activeChannelId,
@@ -79,6 +79,10 @@ export function ChatArea({
   // Get room info for header
   const room = client ? client.getRoom(activeChannelId) : undefined
   const roomName = room?.name || (room && room.getCanonicalAlias ? room.getCanonicalAlias() : activeChannelId)
+  const roomTopicEvent = room?.currentState.getStateEvents('m.room.topic', '')
+  const roomTopic = roomTopicEvent?.getContent()?.topic
+  const roomEncryptionState = room?.currentState.getStateEvents('m.room.encryption', '')
+  const isEncryptedRoom = Boolean(roomEncryptionState)
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -91,14 +95,12 @@ export function ChatArea({
 
   const handleSend = async () => {
     if (!inputValue.trim() || !client || !activeChannelId) return
+    if (isEncryptedRoom && !isCryptoReady) return
 
     setIsSending(true)
     try {
-      // Send as m.room.message
-      await client.sendEvent(activeChannelId, 'm.room.message', {
-        msgtype: 'm.text',
-        body: inputValue.trim(),
-      })
+      // sendMessage respects room encryption when crypto is initialized.
+      await client.sendTextMessage(activeChannelId, inputValue.trim())
       // Clear composer; message will appear via timeline when echoed by server
       setInputValue("")
     } catch (error) {
@@ -115,10 +117,10 @@ export function ChatArea({
         <div className="flex items-center gap-2">
           <Hash className="h-5 w-5 text-muted-foreground" />
           <h3 className="text-[15px] font-semibold text-foreground">{roomName || 'Unnamed room'}</h3>
-          {room?.getTopic && room.getTopic() && (
+          {roomTopic && (
             <>
               <div className="mx-2 h-6 w-px bg-border" />
-              <span className="truncate text-sm text-muted-foreground">{room.getTopic()}</span>
+              <span className="truncate text-sm text-muted-foreground">{roomTopic}</span>
             </>
           )}
         </div>
@@ -224,9 +226,15 @@ export function ChatArea({
                 handleSend()
               }
             }}
-            placeholder={roomName ? `Nachricht an #${roomName}` : 'Nachricht'}
+            placeholder={
+              isEncryptedRoom && !isCryptoReady
+                ? 'Verschluesselung wird initialisiert...'
+                : roomName
+                  ? `Nachricht an #${roomName}`
+                  : 'Nachricht'
+            }
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50"
-            disabled={isSending || !client || !room}
+            disabled={isSending || !client || !room || (isEncryptedRoom && !isCryptoReady)}
           />
           <div className="flex items-center gap-2">
             <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Geschenk" disabled={isSending}>
@@ -241,7 +249,7 @@ export function ChatArea({
             {inputValue.trim() && (
               <button
                 onClick={handleSend}
-                disabled={isSending || !client || !room}
+                disabled={isSending || !client || !room || (isEncryptedRoom && !isCryptoReady)}
                 className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 aria-label="Senden"
               >

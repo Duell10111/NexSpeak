@@ -70,21 +70,21 @@ export function useRoomTimeline(
     setMessages(sortedMessages)
 
     // Subscribe to new messages
+    const syncMessagesFromMap = () => {
+      setMessages(
+        Array.from(messageMapRef.current.values()).sort(
+          (a, b) => a.timestamp - b.timestamp,
+        ),
+      )
+    }
+
     const handleTimelineEvent = (event: MatrixEvent) => {
       const msg = eventToMatrixMessage(event, roomId)
       if (!msg) return
 
-      // Avoid duplicates: only add if not already in map
-      if (!messageMapRef.current.has(msg.id)) {
-        messageMapRef.current.set(msg.id, msg)
-
-        // Update state with new message
-        setMessages((prev) => {
-          const newMessages = [...prev]
-          newMessages.push(msg)
-          return newMessages.sort((a, b) => a.timestamp - b.timestamp)
-        })
-      }
+      // Upsert by event ID to support decrypted/edited updates.
+      messageMapRef.current.set(msg.id, msg)
+      syncMessagesFromMap()
     }
 
     // Listen to room timeline
@@ -101,10 +101,21 @@ export function useRoomTimeline(
       }
     }
 
+    const decryptedHandler = (event: unknown) => {
+      if (!event || typeof event !== 'object' || !('getRoomId' in event)) return
+
+      const matrixEvent = event as MatrixEvent
+      if (matrixEvent.getRoomId() !== roomId) return
+
+      handleTimelineEvent(matrixEvent)
+    }
+
     emitter.on('Room.timeline', wrappedHandler)
+    emitter.on('Event.decrypted', decryptedHandler)
 
     unsubscribeRef.current = () => {
       emitter.removeListener('Room.timeline', wrappedHandler)
+      emitter.removeListener('Event.decrypted', decryptedHandler)
     }
 
     return () => {
@@ -158,9 +169,12 @@ export function useRoomTimeline(
       const newMessages: MatrixMessage[] = []
       newlyLoadedEvents.forEach((event) => {
         const msg = eventToMatrixMessage(event, roomId)
-        if (msg && !messageMapRef.current.has(msg.id)) {
+        if (msg) {
+          const exists = messageMapRef.current.has(msg.id)
           messageMapRef.current.set(msg.id, msg)
-          newMessages.push(msg)
+          if (!exists) {
+            newMessages.push(msg)
+          }
         }
       })
 

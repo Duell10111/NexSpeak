@@ -13,17 +13,18 @@ import { useEffect, useState, useCallback } from 'react'
 import type { MatrixClient } from 'matrix-js-sdk'
 import {
   createMatrixClient,
-  getMatrixClient,
   disposeMatrixClient,
+  initMatrixCrypto,
   subscribeSyncStatus,
 } from '@/lib/matrix/client'
-import { loadSession, saveSession, clearSession } from '@/lib/matrix/storage'
-import type { MatrixSession, SyncStatus } from '@/lib/matrix/types'
+import { loadSession, clearSession } from '@/lib/matrix/storage'
+import type { SyncStatus } from '@/lib/matrix/types'
 
 export interface UseMatrixClientReturn {
   client: MatrixClient | null
   isReady: boolean
   isSyncing: boolean
+  isCryptoReady: boolean
   syncStatus: SyncStatus
   error: Error | null
   logout: () => Promise<void>
@@ -33,6 +34,7 @@ export function useMatrixClient(): UseMatrixClientReturn {
   const [client, setClient] = useState<MatrixClient | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isCryptoReady, setIsCryptoReady] = useState(false)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('INITIAL')
   const [error, setError] = useState<Error | null>(null)
 
@@ -71,14 +73,21 @@ export function useMatrixClient(): UseMatrixClientReturn {
         }
       })
 
-      // Start sync
-      matrixClient
-        .startClient({ initialSyncLimit: 10 })
-        .catch((err) => {
-          console.error('Failed to start Matrix client:', err)
-          setError(err)
-          setSyncStatus('ERROR')
-        })
+      void (async () => {
+        try {
+          await initMatrixCrypto(matrixClient)
+          setIsCryptoReady(true)
+        } catch (cryptoError) {
+          console.warn('Matrix crypto initialization failed:', cryptoError)
+          setIsCryptoReady(false)
+        }
+
+        await matrixClient.startClient({ initialSyncLimit: 10 })
+      })().catch((err) => {
+        console.error('Failed to start Matrix client:', err)
+        setError(err)
+        setSyncStatus('ERROR')
+      })
 
       return () => {
         unsubscribeSyncStatus()
@@ -106,6 +115,7 @@ export function useMatrixClient(): UseMatrixClientReturn {
     clearSession()
     setClient(null)
     setIsReady(false)
+    setIsCryptoReady(false)
     setSyncStatus('INITIAL')
     setError(null)
   }, [client])
@@ -122,6 +132,7 @@ export function useMatrixClient(): UseMatrixClientReturn {
     client,
     isReady,
     isSyncing,
+    isCryptoReady,
     syncStatus,
     error,
     logout,

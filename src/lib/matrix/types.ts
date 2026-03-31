@@ -119,22 +119,46 @@ export function eventToMatrixMessage(
 ): MatrixMessage | null {
   const type = event.getType()
 
-  // Only text messages for now
-  if (type !== 'm.room.message') return null
+  // Plain messages and encrypted payloads that decrypt to m.room.message content.
+  if (type !== 'm.room.message' && type !== 'm.room.encrypted') return null
 
-  const content = event.getContent()
-  if (content.msgtype !== 'm.text') return null
+  const clearContentGetter = event as unknown as {
+    getClearContent?: () => Record<string, unknown> | null
+  }
+
+  const content =
+    type === 'm.room.message'
+      ? event.getContent()
+      : clearContentGetter.getClearContent?.() ?? null
+
+  if (!content || content.msgtype !== 'm.text') {
+    if (type !== 'm.room.encrypted') return null
+
+    const encryptedSenderAvatarGetter = event.sender as unknown as {
+      getMxcAvatarUrl?: () => string | null
+    }
+
+    return {
+      id: event.getId() || `${roomId}-${event.getTs()}-${event.getSender() || 'unknown'}`,
+      roomId,
+      senderId: event.getSender() || '',
+      senderName: event.sender?.name || event.getSender() || 'Unknown',
+      senderAvatar: encryptedSenderAvatarGetter?.getMxcAvatarUrl?.() || undefined,
+      content: '[Verschluesselte Nachricht konnte nicht entschluesselt werden]',
+      timestamp: event.getTs(),
+      edited: false,
+    }
+  }
 
   const senderMember = event.sender
   const senderName = senderMember?.name || event.getSender() || 'Unknown'
-  let senderAvatar: string | undefined = undefined
-
-  if (senderMember?.avatarUrl) {
-    senderAvatar = senderMember.avatarUrl
+  const senderAvatarGetter = senderMember as unknown as {
+    getMxcAvatarUrl?: () => string | null
   }
+  const senderAvatar = senderAvatarGetter?.getMxcAvatarUrl?.() || undefined
 
   return {
-    id: event.getId() || `fallback-${Date.now()}`,
+    id: event.getId() || `${roomId}-${event.getTs()}-${event.getSender() || 'unknown'}`,
     roomId,
     senderId: event.getSender() || '',
     senderName,
