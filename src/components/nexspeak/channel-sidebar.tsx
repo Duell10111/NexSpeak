@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -10,6 +10,7 @@ import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useDirectRoomList, useRoomList, useSpaceList } from "@/hooks/useRoomMembers"
 import { getDisplayName, getAvatarUrl } from "@/lib/matrix/client"
 import { DIRECT_MESSAGES_ID, type MatrixRoom } from '@/lib/matrix/types'
+import { SettingsDialog } from "@/components/nexspeak/settings-dialog"
 
 interface ChannelSidebarProps {
   activeServerId: string
@@ -90,6 +91,7 @@ export function ChannelSidebar({
   onChannelSelect,
   onChannelDoubleClick,
 }: ChannelSidebarProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const { client } = useMatrixClient()
   const {
     callInfoByRoom,
@@ -246,7 +248,11 @@ export function ChannelSidebar({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Einstellungen">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                aria-label="Einstellungen"
+              >
                 <Settings className="h-4 w-4" />
               </button>
             </TooltipTrigger>
@@ -254,6 +260,11 @@ export function ChannelSidebar({
           </Tooltip>
         </div>
       </div>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   )
 }
+
+
+
