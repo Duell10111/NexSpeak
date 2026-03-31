@@ -31,6 +31,38 @@ interface GroupCallLike {
   state?: string
   enter: () => Promise<void>
   initLocalCallFeed?: () => Promise<void>
+  cleanMemberState?: () => Promise<void>
+  participants?: Map<unknown, Map<string, unknown>>
+}
+
+async function refreshParticipantKeysForGroupCall(
+  client: MatrixClient,
+  groupCall: GroupCallLike,
+): Promise<void> {
+  if (!groupCall.participants || groupCall.participants.size === 0) return
+
+  const userIds = new Set<string>()
+  groupCall.participants.forEach((_, member) => {
+    if (!member || typeof member !== 'object') return
+    const userId = (member as { userId?: string }).userId
+    if (userId) {
+      userIds.add(userId)
+    }
+  })
+
+  if (userIds.size === 0) return
+
+  const keyClient = client as unknown as {
+    downloadKeys?: (userIds: string[], forceDownload?: boolean) => Promise<unknown>
+  }
+
+  if (!keyClient.downloadKeys) return
+
+  try {
+    await keyClient.downloadKeys(Array.from(userIds), true)
+  } catch (error) {
+    console.warn('Failed to refresh participant keys before group call enter:', error)
+  }
 }
 
 async function waitForGroupCallState(
@@ -72,6 +104,8 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
     userId: config.userId,
     accessToken: config.accessToken,
     deviceId: config.deviceId,
+    // Avoid device-to-device call signalling issues for mixed clients/sessions.
+    useE2eForGroupCall: false,
   })
 
   return matrixClientInstance
@@ -249,6 +283,18 @@ export async function startOrJoinVoiceGroupCall(
       await waitForGroupCallState(enterableGroupCall, ['local_call_feed_initialized', 'entered'])
     }
 
+    // Clean stale device entries before placing outgoing calls.
+    // This helps when remote users changed devices/sessions and room member call state is outdated.
+    if (enterableGroupCall.cleanMemberState) {
+      try {
+        await enterableGroupCall.cleanMemberState()
+      } catch (error) {
+        console.warn('Failed to clean group call member state before enter:', error)
+      }
+    }
+
+    await refreshParticipantKeysForGroupCall(client, enterableGroupCall)
+
     if (enterableGroupCall.state !== 'entered') {
       try {
         await enterableGroupCall.enter()
@@ -258,6 +304,21 @@ export async function startOrJoinVoiceGroupCall(
           error.message.includes('initializing_local_call_feed')
         ) {
           await waitForGroupCallState(enterableGroupCall, ['local_call_feed_initialized', 'entered'])
+          if (enterableGroupCall.state !== 'entered') {
+            await enterableGroupCall.enter()
+          }
+        } else if (error instanceof Error && error.message.includes('No device found')) {
+          if (enterableGroupCall.cleanMemberState) {
+            try {
+              await enterableGroupCall.cleanMemberState()
+            } catch (cleanupError) {
+              console.warn('Failed to clean member state after No device found:', cleanupError)
+            }
+          }
+
+          await refreshParticipantKeysForGroupCall(client, enterableGroupCall)
+          await new Promise((resolve) => setTimeout(resolve, 300))
+
           if (enterableGroupCall.state !== 'entered') {
             await enterableGroupCall.enter()
           }

@@ -74,9 +74,11 @@ export function ChatArea({
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const {
+    selfUserId,
     isInCallInActiveChannel,
     callParticipants,
     callVideoFeeds,
+    localUserMediaStream,
     isMicMuted,
     isScreensharing,
     isDeafened,
@@ -198,8 +200,10 @@ export function ChatArea({
 
       {isInCall ? (
         <CallArea
+          selfUserId={selfUserId}
           participants={callParticipants}
           videoFeeds={callVideoFeeds}
+          localUserMediaStream={localUserMediaStream}
           isMicMuted={isMicMuted}
           isDeafened={isDeafened}
           isScreensharing={isScreensharing}

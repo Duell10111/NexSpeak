@@ -77,7 +77,7 @@ function RoomItem({
       {callInfo && (
         <div className="mt-1 flex items-center gap-1.5 pl-5 text-[11px] text-muted-foreground/90">
           <Phone className="h-3 w-3" />
-          <span className="truncate">{callInfo.names.join(", ")}</span>
+          <span className="truncate">{callInfo.names.length > 0 ? callInfo.names.join(", ") : "Aktiver Call"}</span>
         </div>
       )}
     </button>

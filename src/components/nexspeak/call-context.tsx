@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { MatrixClient } from "matrix-js-sdk"
 import { startOrJoinVoiceGroupCall } from "@/lib/matrix/client"
 
@@ -31,6 +31,7 @@ interface CallFeedLike {
 
 interface GroupCallLike {
   state?: string
+  creationTs?: number | null
   room?: { roomId?: string }
   participants?: Map<unknown, Map<string, unknown>>
   userMediaFeeds?: CallFeedLike[]
@@ -39,6 +40,7 @@ interface GroupCallLike {
   isScreensharing?: () => boolean
   setMicrophoneMuted?: (muted: boolean) => Promise<boolean>
   setScreensharingEnabled?: (enabled: boolean) => Promise<boolean>
+  cleanMemberState?: () => Promise<void>
   leave?: () => void
   on?: (event: string, listener: (...args: unknown[]) => void) => void
   removeListener?: (event: string, listener: (...args: unknown[]) => void) => void
@@ -70,12 +72,14 @@ function getJoinedLocalCalls(client: MatrixClient): GroupCallLike[] {
 }
 
 interface CallContextValue {
+  selfUserId: string
   callInfoByRoom: Record<string, RoomCallInfo>
   activeCall: GroupCallLike | null
   activeCallRoomId: string
   isInCallInActiveChannel: boolean
   callParticipants: CallParticipant[]
   callVideoFeeds: CallVideoFeed[]
+  localUserMediaStream: MediaStream | null
   isMicMuted: boolean
   isScreensharing: boolean
   isDeafened: boolean
@@ -134,17 +138,26 @@ function toCallVideoFeeds(groupCall: GroupCallLike | null): CallVideoFeed[] {
 }
 
 function toRoomCallInfo(call: GroupCallLike | null): RoomCallInfo | null {
-  if (!call || call.state === "ended" || !call.participants) return null
+  if (!call || call.state === "ended") return null
+
+  // Some SDK states can exist before a real room call is actually active.
+  // Only surface a call badge when we have evidence of a real call instance.
+  const hasCreationTs = typeof call.creationTs === "number"
+  const hasParticipants = (call.participants?.size || 0) > 0
+  const isEntered = call.state === "entered"
+  if (!hasCreationTs && !hasParticipants && !isEntered) {
+    return null
+  }
 
   const names = new Set<string>()
-  call.participants.forEach((_, member) => {
+  call.participants?.forEach((_, member) => {
     if (!member || typeof member !== "object") return
     const memberObj = member as { name?: string; userId?: string }
     names.add(memberObj.name || memberObj.userId || "Unbekannt")
   })
 
   const normalizedNames = Array.from(names).sort((a, b) => a.localeCompare(b))
-  return normalizedNames.length > 0 ? { names: normalizedNames } : null
+  return { names: normalizedNames }
 }
 
 function areRoomCallInfosEqual(
@@ -172,10 +185,12 @@ interface CallProviderProps {
 }
 
 export function CallProvider({ client, activeChannelId, children }: CallProviderProps) {
+  const lastUnknownDeviceRecoveryAtRef = useRef(0)
   const [activeCall, setActiveCall] = useState<GroupCallLike | null>(null)
   const [callInfoByRoom, setCallInfoByRoom] = useState<Record<string, RoomCallInfo>>({})
   const [callParticipants, setCallParticipants] = useState<CallParticipant[]>([])
   const [callVideoFeeds, setCallVideoFeeds] = useState<CallVideoFeed[]>([])
+  const [localUserMediaStream, setLocalUserMediaStream] = useState<MediaStream | null>(null)
   const [isMicMuted, setIsMicMuted] = useState(false)
   const [isScreensharing, setIsScreensharing] = useState(false)
   const [isDeafened, setIsDeafened] = useState(false)
@@ -204,6 +219,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       setActiveCall(null)
       setCallParticipants([])
       setCallVideoFeeds([])
+      setLocalUserMediaStream(null)
       setIsMicMuted(false)
       setIsScreensharing(false)
       return
@@ -219,6 +235,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     setActiveCall(scopedCall)
     setCallParticipants(toCallParticipants(scopedCall))
     setCallVideoFeeds(toCallVideoFeeds(scopedCall))
+    setLocalUserMediaStream(
+      scopedCall?.userMediaFeeds?.find((feed) => feed.isLocal?.())?.stream || null,
+    )
     setIsMicMuted(scopedCall?.isMicrophoneMuted?.() ?? false)
     setIsScreensharing(scopedCall?.isScreensharing?.() ?? false)
   }, [client, activeChannelId])
@@ -252,8 +271,17 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     if (!activeCall?.on || !activeCall.removeListener) return
 
     const refreshActive = () => {
+      if (activeCall.cleanMemberState) {
+        void activeCall.cleanMemberState().catch((error) => {
+          console.warn("Failed to clean group call member state on update:", error)
+        })
+      }
+
       setCallParticipants(toCallParticipants(activeCall))
       setCallVideoFeeds(toCallVideoFeeds(activeCall))
+      setLocalUserMediaStream(
+        activeCall.userMediaFeeds?.find((feed) => feed.isLocal?.())?.stream || null,
+      )
       setIsMicMuted(activeCall.isMicrophoneMuted?.() ?? false)
       setIsScreensharing(activeCall.isScreensharing?.() ?? false)
       syncRoomCallInfo()
@@ -264,6 +292,26 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     activeCall.on("user_media_feeds_changed", refreshActive)
     activeCall.on("local_mute_state_changed", refreshActive)
     activeCall.on("local_screenshare_state_changed", refreshActive)
+
+    const onGroupCallError = (error: unknown) => {
+      if (!(error instanceof Error)) return
+      if (!error.message.includes("No device found")) return
+
+      const now = Date.now()
+      if (now - lastUnknownDeviceRecoveryAtRef.current < 2000) return
+      lastUnknownDeviceRecoveryAtRef.current = now
+
+      if (activeCall.cleanMemberState) {
+        void activeCall.cleanMemberState().catch((cleanupError) => {
+          console.warn("Failed to clean member state after unknown device error:", cleanupError)
+        })
+      }
+
+      syncRoomCallInfo()
+      syncActiveChannelCall()
+    }
+
+    activeCall.on("group_call_error", onGroupCallError)
     refreshActive()
 
     return () => {
@@ -272,8 +320,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       activeCall.removeListener?.("user_media_feeds_changed", refreshActive)
       activeCall.removeListener?.("local_mute_state_changed", refreshActive)
       activeCall.removeListener?.("local_screenshare_state_changed", refreshActive)
+      activeCall.removeListener?.("group_call_error", onGroupCallError)
     }
-  }, [activeCall, syncRoomCallInfo])
+  }, [activeCall, syncRoomCallInfo, syncActiveChannelCall])
 
   const joinCall = useCallback(async (roomId: string) => {
     if (!client || !roomId) return
@@ -325,6 +374,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   }, [])
 
   const value = useMemo<CallContextValue>(() => {
+    const selfUserId = client?.getUserId() || ""
     const activeCallRoomId = activeCall?.room?.roomId || ""
     const isInCallInActiveChannel = Boolean(
       activeCall &&
@@ -334,12 +384,14 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     )
 
     return {
+      selfUserId,
       callInfoByRoom,
       activeCall,
       activeCallRoomId,
       isInCallInActiveChannel,
       callParticipants,
       callVideoFeeds,
+      localUserMediaStream,
       isMicMuted,
       isScreensharing,
       isDeafened,
@@ -351,10 +403,12 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [
     callInfoByRoom,
+    client,
     activeCall,
     activeChannelId,
     callParticipants,
     callVideoFeeds,
+    localUserMediaStream,
     isMicMuted,
     isScreensharing,
     isDeafened,

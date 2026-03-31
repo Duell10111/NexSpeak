@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Headphones, Mic, MicOff, Phone, PhoneOff, ScreenShare, ScreenShareOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -19,8 +19,10 @@ export interface CallVideoFeed {
 }
 
 interface CallAreaProps {
+  selfUserId: string
   participants: CallParticipant[]
   videoFeeds: CallVideoFeed[]
+  localUserMediaStream: MediaStream | null
   isMicMuted: boolean
   isDeafened: boolean
   isScreensharing: boolean
@@ -74,8 +76,10 @@ function VideoTile({ feed, isDeafened }: { feed: CallVideoFeed; isDeafened: bool
 }
 
 export function CallArea({
+  selfUserId,
   participants,
   videoFeeds,
+  localUserMediaStream,
   isMicMuted,
   isDeafened,
   isScreensharing,
@@ -84,8 +88,99 @@ export function CallArea({
   onToggleScreenshare,
   onLeaveCall,
 }: CallAreaProps) {
+  const [speakingByUserId, setSpeakingByUserId] = useState<Record<string, boolean>>({})
   const featuredFeed = videoFeeds[0]
   const secondaryFeeds = videoFeeds.slice(1)
+
+  useEffect(() => {
+    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextCtor) {
+      return
+    }
+
+    const audioContext = new AudioContextCtor()
+    const entries: Array<{
+      userId: string
+      source: MediaStreamAudioSourceNode
+      analyser: AnalyserNode
+      buffer: Uint8Array
+    }> = []
+
+    const addStream = (userId: string, stream: MediaStream, disabled: boolean = false) => {
+      if (disabled) return
+      if (stream.getAudioTracks().length === 0) return
+
+      const source = audioContext.createMediaStreamSource(stream)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 1024
+      analyser.smoothingTimeConstant = 0.35
+      source.connect(analyser)
+
+      entries.push({
+        userId,
+        source,
+        analyser,
+        buffer: new Uint8Array(analyser.fftSize),
+      })
+    }
+
+    videoFeeds.forEach((feed) => addStream(feed.userId, feed.stream))
+    if (localUserMediaStream) {
+      addStream(selfUserId, localUserMediaStream, isMicMuted)
+    }
+
+    if (entries.length === 0) {
+      void audioContext.close()
+      return
+    }
+
+    let rafId = 0
+    let destroyed = false
+
+    const loop = () => {
+      const nextSpeakingByUser: Record<string, boolean> = {}
+
+      entries.forEach((entry) => {
+        entry.analyser.getByteTimeDomainData(entry.buffer)
+
+        let sum = 0
+        for (let i = 0; i < entry.buffer.length; i += 1) {
+          const sample = (entry.buffer[i] - 128) / 128
+          sum += sample * sample
+        }
+
+        const rms = Math.sqrt(sum / entry.buffer.length)
+        const speaking = rms > 0.055
+        nextSpeakingByUser[entry.userId] = Boolean(nextSpeakingByUser[entry.userId]) || speaking
+      })
+
+      setSpeakingByUserId((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(nextSpeakingByUser)
+        if (prevKeys.length === nextKeys.length) {
+          const unchanged = nextKeys.every((key) => prev[key] === nextSpeakingByUser[key])
+          if (unchanged) return prev
+        }
+        return nextSpeakingByUser
+      })
+
+      if (!destroyed) {
+        rafId = window.requestAnimationFrame(loop)
+      }
+    }
+
+    rafId = window.requestAnimationFrame(loop)
+
+    return () => {
+      destroyed = true
+      window.cancelAnimationFrame(rafId)
+      entries.forEach((entry) => {
+        entry.source.disconnect()
+        entry.analyser.disconnect()
+      })
+      void audioContext.close()
+    }
+  }, [videoFeeds, localUserMediaStream, selfUserId, isMicMuted])
 
   return (
     <div className="flex flex-1 flex-col bg-[#1e1f22] p-4">
@@ -131,7 +226,15 @@ export function CallArea({
           <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Im Anruf</h4>
           <div className="space-y-2">
             {participants.map((participant) => (
-              <div key={participant.userId} className="flex items-center gap-3 rounded-lg bg-[#232428] px-3 py-2">
+              <div
+                key={participant.userId}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg bg-[#232428] px-3 py-2 transition-all",
+                  speakingByUserId[participant.userId]
+                    ? "ring-2 ring-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.45)]"
+                    : "ring-1 ring-transparent",
+                )}
+              >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
                   {participant.name.charAt(0).toUpperCase()}
                 </div>
