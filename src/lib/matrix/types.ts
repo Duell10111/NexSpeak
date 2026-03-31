@@ -38,6 +38,8 @@ export interface MatrixSpace {
   childRoomIds: string[]
 }
 
+export const DIRECT_MESSAGES_ID = '__dm__'
+
 export type SyncStatus = 'INITIAL' | 'SYNCING' | 'SYNCED' | 'ERROR'
 
 export function isSpaceRoom(room: Room): boolean {

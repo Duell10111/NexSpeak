@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator"
 import { Plus, Compass } from "lucide-react"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useSpaceList } from "@/hooks/useRoomMembers"
-import type { MatrixSpace } from "@/lib/matrix/types"
+import { DIRECT_MESSAGES_ID, type MatrixSpace } from "@/lib/matrix/types"
 
 interface ServerSidebarProps {
   activeServerId: string
@@ -117,7 +117,13 @@ export function ServerSidebar({ activeServerId, onServerSelect }: ServerSidebarP
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            className="mx-3 mb-2 flex h-12 w-12 items-center justify-center rounded-[16px] bg-primary text-primary-foreground font-bold text-lg transition-all hover:rounded-[12px]"
+            onClick={() => onServerSelect(DIRECT_MESSAGES_ID)}
+            className={cn(
+              "mx-3 mb-2 flex h-12 w-12 items-center justify-center rounded-[16px] font-bold text-lg transition-all hover:rounded-[12px]",
+              activeServerId === DIRECT_MESSAGES_ID
+                ? "bg-primary text-primary-foreground"
+                : "bg-nx-guild-bar text-foreground hover:bg-primary hover:text-primary-foreground",
+            )}
             aria-label="Startseite"
           >
             <svg width="28" height="20" viewBox="0 0 28 20" fill="none" xmlns="http://www.w3.org/2000/svg">

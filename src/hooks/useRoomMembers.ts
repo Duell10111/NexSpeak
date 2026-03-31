@@ -31,6 +31,11 @@ interface UseSpaceListReturn {
   isLoading: boolean
 }
 
+interface UseDirectRoomListReturn {
+  rooms: MatrixRoom[]
+  isLoading: boolean
+}
+
 export function useRoomList(client: MatrixClient | null): UseRoomListReturn {
   const [rooms, setRooms] = useState<MatrixRoom[]>([])
   const [isLoading, setIsLoading] = useState(!!client)
@@ -198,6 +203,72 @@ export function useSpaceList(client: MatrixClient | null): UseSpaceListReturn {
   return {
     spaces,
     roomsBySpace,
+    isLoading,
+  }
+}
+
+export function useDirectRoomList(client: MatrixClient | null): UseDirectRoomListReturn {
+  const [rooms, setRooms] = useState<MatrixRoom[]>([])
+  const [isLoading, setIsLoading] = useState(!!client)
+
+  useEffect(() => {
+    if (!client) return
+
+    const emitter = client as unknown as {
+      on: (event: string, listener: (...args: unknown[]) => void) => void
+      removeListener: (event: string, listener: (...args: unknown[]) => void) => void
+    }
+
+    const recompute = () => {
+      const directData = client.getAccountData('m.direct')?.getContent() as
+        | Record<string, string[]>
+        | undefined
+      const userId = client.getUserId()
+
+      const directRoomIds = new Set<string>(
+        Object.values(directData || {}).flatMap((ids) => ids || []),
+      )
+
+      const directRooms = client
+        .getRooms()
+        .filter((room) => !isSpaceRoom(room))
+        .filter((room) => {
+          if (directRoomIds.has(room.roomId)) {
+            return true
+          }
+
+          // Fallback: treat joined 1:1 rooms as DMs when m.direct is missing or delayed.
+          if (!userId) return false
+          const joinedMembers = room.getMembers().filter((member) => member.membership === 'join')
+          const otherJoinedMembers = joinedMembers.filter((member) => member.userId !== userId)
+          return joinedMembers.length <= 2 && otherJoinedMembers.length === 1
+        })
+        .map((room) => roomToMatrixRoom(room))
+        .sort((a, b) => (b.lastMessage?.timestamp || 0) - (a.lastMessage?.timestamp || 0))
+
+      setRooms(directRooms)
+      setIsLoading(false)
+    }
+
+    recompute()
+
+    emitter.on('AccountData', recompute)
+    emitter.on('Room', recompute)
+    emitter.on('Room.timeline', recompute)
+    emitter.on('Room.receipt', recompute)
+    emitter.on('Room.myMembership', recompute)
+
+    return () => {
+      emitter.removeListener('AccountData', recompute)
+      emitter.removeListener('Room', recompute)
+      emitter.removeListener('Room.timeline', recompute)
+      emitter.removeListener('Room.receipt', recompute)
+      emitter.removeListener('Room.myMembership', recompute)
+    }
+  }, [client])
+
+  return {
+    rooms,
     isLoading,
   }
 }

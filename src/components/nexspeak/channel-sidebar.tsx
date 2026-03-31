@@ -5,9 +5,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Hash, ChevronDown, Settings, Mic, Headphones, Search } from "lucide-react"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
-import { useRoomList, useSpaceList } from "@/hooks/useRoomMembers"
+import { useDirectRoomList, useRoomList, useSpaceList } from "@/hooks/useRoomMembers"
 import { getDisplayName, getAvatarUrl } from "@/lib/matrix/client"
-import type { MatrixRoom } from '@/lib/matrix/types'
+import { DIRECT_MESSAGES_ID, type MatrixRoom } from '@/lib/matrix/types'
 
 interface ChannelSidebarProps {
   activeServerId: string
@@ -60,10 +60,20 @@ function RoomItem({ room, isActive, onSelect }: { room: MatrixRoom; isActive: bo
 export function ChannelSidebar({ activeServerId, activeChannelId, onChannelSelect }: ChannelSidebarProps) {
   const { client } = useMatrixClient()
   const { rooms } = useRoomList(client)
+  const { rooms: directRooms } = useDirectRoomList(client)
   const { spaces, roomsBySpace } = useSpaceList(client)
 
+  const isDirectMessages = activeServerId === DIRECT_MESSAGES_ID
   const selectedSpaceRooms = activeServerId ? roomsBySpace[activeServerId] : undefined
-  const roomList = selectedSpaceRooms && selectedSpaceRooms.length > 0 ? selectedSpaceRooms : rooms
+  const directRoomIds = new Set(directRooms.map((room) => room.id))
+  const nonDirectRooms = rooms.filter((room) => !directRoomIds.has(room.id))
+
+  // Important: in a space context never fall back to the full room list, otherwise DMs can leak into server view.
+  const roomList = isDirectMessages
+    ? directRooms
+    : selectedSpaceRooms
+      ? selectedSpaceRooms
+      : nonDirectRooms
   const activeSpace = spaces.find((space) => space.id === activeServerId)
 
   // Display current user's info if available
@@ -75,7 +85,9 @@ export function ChannelSidebar({ activeServerId, activeChannelId, onChannelSelec
     <div className="flex h-full w-60 flex-col bg-secondary">
       {/* Server header - keep simple */}
       <div className="flex h-12 items-center justify-between border-b border-border px-4 shadow-sm">
-        <h2 className="truncate text-[15px] font-semibold text-foreground">{activeSpace?.name || "Rooms"}</h2>
+        <h2 className="truncate text-[15px] font-semibold text-foreground">
+          {isDirectMessages ? "Direktnachrichten" : activeSpace?.name || "Rooms"}
+        </h2>
         <ChevronDown className="h-4 w-4 text-foreground" />
       </div>
 
