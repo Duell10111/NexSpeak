@@ -36,6 +36,8 @@ import {
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
+/** Upper bound for waiting on our own media key before publishing anyway. */
+const OWN_KEY_TIMEOUT_MS = 10_000
 
 /** Verbose call logging, enabled with localStorage["nexspeak:debug"] = "1". */
 function isDebugEnabled(): boolean {
@@ -110,11 +112,18 @@ class MatrixKeyProvider extends BaseKeyProvider {
     super({ ratchetWindowSize: 10, keyringSize: 256 })
   }
 
-  setMediaKey(key: Uint8Array<ArrayBuffer>, index: number, participantIdentity: string): void {
-    crypto.subtle
+  /** Resolves true once the key is handed to LiveKit. */
+  setMediaKey(key: Uint8Array<ArrayBuffer>, index: number, participantIdentity: string): Promise<boolean> {
+    return crypto.subtle
       .importKey('raw', key, 'HKDF', false, ['deriveBits', 'deriveKey'])
-      .then((material) => this.onSetEncryptionKey(material, participantIdentity, index))
-      .catch((error: unknown) => console.error('Failed to import call media key:', error))
+      .then((material) => {
+        this.onSetEncryptionKey(material, participantIdentity, index)
+        return true
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to import call media key:', error)
+        return false
+      })
   }
 }
 
@@ -139,6 +148,14 @@ export class CallSession {
   private isLeaving = false
   private readonly cleanups: Array<() => void> = []
 
+  /**
+   * Resolves once our own media key is in LiveKit. The SDK only creates it after our call
+   * membership came back from the homeserver; frames sent before that can't be encrypted
+   * (LiveKit: "MissingKey ... at index 0") and are dropped.
+   */
+  private readonly ownKeyReady: Promise<void>
+  private resolveOwnKey: () => void = () => {}
+
   /** Called once when the session ends for any reason (left, kicked, connection lost). */
   onEnded?: (reason: string | null) => void
 
@@ -146,8 +163,14 @@ export class CallSession {
     private readonly rtcSession: MatrixRTCSession,
     private readonly livekitRoom: LivekitRoom,
     private readonly keyProvider: MatrixKeyProvider | null,
+    private readonly ownIdentity: string,
     audio: CallAudioOptions,
   ) {
+    this.ownKeyReady = keyProvider
+      ? new Promise((resolve) => {
+          this.resolveOwnKey = resolve
+        })
+      : Promise.resolve()
     this.roomId = rtcSession.room.roomId
     this.isEncrypted = keyProvider !== null
     this.outputVolume = audio.outputVolume
@@ -183,7 +206,8 @@ export class CallSession {
       adaptiveStream: true,
       dynacast: true,
       audioCaptureDefaults: {
-        deviceId: audio.inputDeviceId || undefined,
+        // A preference, not a requirement: a remembered device may be unplugged by now.
+        deviceId: audio.inputDeviceId ? { ideal: audio.inputDeviceId } : undefined,
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
@@ -194,7 +218,8 @@ export class CallSession {
         : undefined,
     })
 
-    const session = new CallSession(rtcSession, livekitRoom, keyProvider, audio)
+    const ownIdentity = `${userId}:${client.getDeviceId() ?? ''}`
+    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio)
     try {
       await session.connect(serviceUrl, sfu)
     } catch (error) {
@@ -221,18 +246,29 @@ export class CallSession {
     this.connectionState = 'connected'
     this.changed()
 
-    if (this.startMuted) {
-      this.changed()
-      return
-    }
+    // Publish in the background: in encrypted calls this waits for our media key.
+    if (!this.startMuted) void this.publishInitialMicrophone()
+  }
+
+  private async publishInitialMicrophone(): Promise<void> {
     try {
-      await this.livekitRoom.localParticipant.setMicrophoneEnabled(true)
+      await this.setMicrophoneEnabled(true)
       debug('microphone published')
     } catch (error) {
       // Joining without a microphone (denied or missing) is still useful for listening.
       console.warn('Microphone unavailable:', error)
     }
-    this.changed()
+  }
+
+  /** Publishing before our key exists would send nothing but undecryptable frames. */
+  private async waitForOwnKey(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), OWN_KEY_TIMEOUT_MS)
+    })
+    const result = await Promise.race([this.ownKeyReady, timeout])
+    clearTimeout(timer)
+    if (result === 'timeout') console.warn('Own call media key not available yet; publishing anyway.')
   }
 
   private attachListeners(): void {
@@ -292,7 +328,9 @@ export class CallSession {
     simpleEvents.forEach((event) => room.on(event, changed))
 
     const onKey = (key: Uint8Array<ArrayBuffer>, index: number, _membership: unknown, rtcBackendIdentity: string) => {
-      this.keyProvider?.setMediaKey(key, index, rtcBackendIdentity)
+      void this.keyProvider?.setMediaKey(key, index, rtcBackendIdentity).then((imported) => {
+        if (imported && rtcBackendIdentity === this.ownIdentity) this.resolveOwnKey()
+      })
     }
     const onManagerError = (error: unknown) => {
       console.error('MatrixRTC membership error:', error)
@@ -449,16 +487,22 @@ export class CallSession {
   }
 
   async setMicrophoneEnabled(enabled: boolean): Promise<void> {
+    if (enabled) await this.waitForOwnKey()
+    if (this.isLeaving) return
     await this.livekitRoom.localParticipant.setMicrophoneEnabled(enabled)
     this.changed()
   }
 
   async setCameraEnabled(enabled: boolean): Promise<void> {
+    if (enabled) await this.waitForOwnKey()
+    if (this.isLeaving) return
     await this.livekitRoom.localParticipant.setCameraEnabled(enabled)
     this.changed()
   }
 
   async setScreenShareEnabled(enabled: boolean): Promise<void> {
+    if (enabled) await this.waitForOwnKey()
+    if (this.isLeaving) return
     await this.livekitRoom.localParticipant.setScreenShareEnabled(enabled, { audio: true })
     this.changed()
   }
@@ -475,7 +519,11 @@ export class CallSession {
   }
 
   async setDevice(kind: 'audioinput' | 'audiooutput', deviceId: string): Promise<void> {
-    await this.livekitRoom.switchActiveDevice(kind, deviceId || 'default')
+    const target = deviceId || 'default'
+    if (this.livekitRoom.getActiveDevice(kind) === target) return
+    // Not exact: LiveKit would otherwise keep requiring this device, and every later unmute
+    // fails with "Constraints could not be satisfied" once it is gone.
+    await this.livekitRoom.switchActiveDevice(kind, target, false)
   }
 
   async startAudio(): Promise<void> {
