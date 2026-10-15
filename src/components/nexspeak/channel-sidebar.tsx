@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Check, Hash, Headphones, Mic, MicOff, Phone, PhoneOff, Settings, X } from "lucide-react"
+import { Check, Hash, HeadphoneOff, Headphones, Mic, MicOff, Phone, PhoneOff, Settings, X } from "lucide-react"
 import { useCallContext, type RoomCallInfo } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { describeMatrixError } from "@/lib/matrix/errors"
@@ -174,26 +174,9 @@ export function ChannelSidebar({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { client } = useMatrixClient()
   const profile = useOwnProfile(client)
-  const {
-    callInfoByRoom,
-    activeCall,
-    activeCallRoomId,
-    isMicMuted,
-    isDeafened,
-    joinCall,
-    leaveActiveCall,
-    toggleMicrophone,
-    toggleHeadphones,
-  } = useCallContext()
-
-  const handleJoinVoice = async (roomId: string) => {
-    try {
-      await joinCall(roomId)
-    } catch (error) {
-      console.error("Failed to join voice call:", error)
-      toast.error(describeMatrixError(error, "Dem Sprachkanal konnte nicht beigetreten werden."))
-    }
-  }
+  const { callInfoByRoom, call, joinCall, leaveCall, toggleMicrophone, toggleDeafen } = useCallContext()
+  const isMicMuted = call?.isMicMuted ?? false
+  const isDeafened = call?.isDeafened ?? false
 
   const isEmpty = sections.every((section) => section.rooms.length === 0) && invites.length === 0
 
@@ -233,7 +216,7 @@ export function ChannelSidebar({
                       isDirectMessages={isDirectMessages}
                       callInfo={callInfoByRoom[room.id]}
                       onSelect={() => onChannelSelect(room.id)}
-                      onDoubleClick={isDirectMessages ? undefined : () => void handleJoinVoice(room.id)}
+                      onDoubleClick={isDirectMessages ? undefined : () => void joinCall(room.id)}
                     />
                   ))}
                 </div>
@@ -251,21 +234,23 @@ export function ChannelSidebar({
       </ScrollArea>
 
       {/* Voice connection panel */}
-      {activeCall && (
+      {call && (
         <div className="flex items-center gap-2 border-t border-border bg-popover px-3 py-2">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-nx-online">Sprachverbindung aktiv</p>
+            <p className={cn("text-xs font-semibold", call.connectionState === "reconnecting" ? "text-nx-idle" : "text-nx-online")}>
+              {call.connectionState === "reconnecting" ? "Verbindung wird wiederhergestellt…" : "Sprachverbindung aktiv"}
+            </p>
             <button
-              onClick={() => onChannelSelect(activeCallRoomId)}
+              onClick={() => onChannelSelect(call.roomId)}
               className="block max-w-full truncate text-[11px] text-muted-foreground hover:underline"
             >
-              {client?.getRoom(activeCallRoomId)?.name || "Sprachkanal"}
+              {client?.getRoom(call.roomId)?.name || "Sprachkanal"}
             </button>
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={leaveActiveCall}
+                onClick={leaveCall}
                 className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
                 aria-label="Verbindung trennen"
               >
@@ -289,7 +274,7 @@ export function ChannelSidebar({
             <TooltipTrigger asChild>
               <button
                 onClick={() => void toggleMicrophone()}
-                disabled={!activeCall}
+                disabled={!call}
                 className={cn(
                   "rounded p-1 transition-colors disabled:opacity-40",
                   isMicMuted
@@ -303,15 +288,16 @@ export function ChannelSidebar({
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              {!activeCall ? "Kein aktiver Call" : isMicMuted ? "Mikrofon aktivieren" : "Mikrofon stummschalten"}
+              {!call ? "Kein aktiver Call" : isMicMuted ? "Mikrofon aktivieren" : "Mikrofon stummschalten"}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={toggleHeadphones}
+                onClick={toggleDeafen}
+                disabled={!call}
                 className={cn(
-                  "rounded p-1 transition-colors",
+                  "rounded p-1 transition-colors disabled:opacity-40",
                   isDeafened
                     ? "text-destructive hover:bg-destructive/10"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -319,7 +305,7 @@ export function ChannelSidebar({
                 aria-label={isDeafened ? "Ton aktivieren" : "Ton stummschalten"}
                 aria-pressed={isDeafened}
               >
-                <Headphones className="h-4 w-4" />
+                {isDeafened ? <HeadphoneOff className="h-4 w-4" /> : <Headphones className="h-4 w-4" />}
               </button>
             </TooltipTrigger>
             <TooltipContent>{isDeafened ? "Ton aktivieren" : "Ton stummschalten"}</TooltipContent>

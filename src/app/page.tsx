@@ -9,14 +9,19 @@ import { ChannelSidebar, type RoomSection } from "@/components/nexspeak/channel-
 import { ChatArea } from "@/components/nexspeak/chat-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { CallProvider } from "@/components/nexspeak/call-context"
+import { SecurityProvider } from "@/components/nexspeak/security-context"
+import { SecurityBanner } from "@/components/nexspeak/security-panel"
 import { useMatrix } from "@/components/matrix-provider"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { useRoomDirectory, type RoomDirectory } from "@/hooks/useRoomDirectory"
 import { describeMatrixError } from "@/lib/matrix/errors"
 import { DIRECT_MESSAGES_ID } from "@/lib/matrix/types"
 
 const SELECTION_KEY = "nexspeak_selection"
+// Matches Tailwind's lg breakpoint, where the member list fits next to the chat.
+const WIDE_LAYOUT_QUERY = "(min-width: 1024px)"
 
 interface Selection {
   /** Empty: derive the server from the selected channel. */
@@ -62,6 +67,8 @@ export default function NexSpeakApp() {
   )
   const [lastChannelByServer, setLastChannelByServer] = useState<Record<string, string>>({})
   const [showMembers, setShowMembers] = useState(true)
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false)
+  const [isMemberSheetOpen, setIsMemberSheetOpen] = useState(false)
 
   useEffect(() => {
     if (session === null) router.replace("/login")
@@ -107,7 +114,16 @@ export default function NexSpeakApp() {
     setSelection({ serverId: nextServerId, channelId: lastChannelByServer[nextServerId] || "" })
   }
 
+  const handleToggleMembers = () => {
+    if (window.matchMedia(WIDE_LAYOUT_QUERY).matches) {
+      setShowMembers((value) => !value)
+    } else {
+      setIsMemberSheetOpen(true)
+    }
+  }
+
   const handleChannelSelect = (roomId: string) => {
+    setIsNavigationOpen(false)
     const targetServer = findServerFor(directory, roomId)
     // Unknown yet (e.g. just joined): let the server be derived once the directory catches up.
     setSelection({ serverId: targetServer ?? "", channelId: roomId })
@@ -160,43 +176,69 @@ export default function NexSpeakApp() {
 
   const isConnectionLost = syncState === SyncState.Error || syncState === SyncState.Reconnecting
 
+  const navigation = (
+    <>
+      <ServerSidebar
+        spaces={directory.spaces}
+        activeServerId={serverId}
+        homeUnread={homeUnread}
+        onServerSelect={handleServerSelect}
+        onRoomJoined={handleRoomJoined}
+      />
+      <ChannelSidebar
+        title={title}
+        sections={sections}
+        invites={isDirectMessages ? directory.invites : []}
+        isDirectMessages={isDirectMessages}
+        activeChannelId={channelId}
+        onChannelSelect={handleChannelSelect}
+      />
+    </>
+  )
+
   return (
-    <CallProvider client={client} activeChannelId={channelId}>
-      <div className="flex h-dvh w-screen flex-col overflow-hidden">
-        {isConnectionLost && (
-          <div
-            className="flex shrink-0 items-center justify-center gap-2 bg-destructive px-4 py-1 text-xs font-medium text-destructive-foreground"
-            role="status"
-          >
-            <WifiOff className="h-3.5 w-3.5" />
-            Verbindung zum Server unterbrochen – neuer Versuch läuft…
-          </div>
-        )}
-        <main className="flex min-h-0 flex-1">
-          <ServerSidebar
-            spaces={directory.spaces}
-            activeServerId={serverId}
-            homeUnread={homeUnread}
-            onServerSelect={handleServerSelect}
-            onRoomJoined={handleRoomJoined}
-          />
-          <ChannelSidebar
-            title={title}
-            sections={sections}
-            invites={isDirectMessages ? directory.invites : []}
-            isDirectMessages={isDirectMessages}
-            activeChannelId={channelId}
-            onChannelSelect={handleChannelSelect}
-          />
-          <ChatArea
-            key={channelId}
-            activeChannelId={channelId}
-            showMembers={showMembers}
-            onToggleMembers={() => setShowMembers((value) => !value)}
-          />
-          {showMembers && channelId && <MemberList activeRoomId={channelId} />}
-        </main>
-      </div>
-    </CallProvider>
+    <SecurityProvider client={client}>
+      <CallProvider client={client} activeChannelId={channelId}>
+        <div className="flex h-dvh w-screen flex-col overflow-hidden">
+          <SecurityBanner />
+          {isConnectionLost && (
+            <div
+              className="flex shrink-0 items-center justify-center gap-2 bg-destructive px-4 py-1 text-xs font-medium text-destructive-foreground"
+              role="status"
+            >
+              <WifiOff className="h-3.5 w-3.5" />
+              Verbindung zum Server unterbrochen – neuer Versuch läuft…
+            </div>
+          )}
+          <main className="flex min-h-0 flex-1">
+            <div className="hidden md:flex">{navigation}</div>
+            <ChatArea
+              key={channelId}
+              activeChannelId={channelId}
+              showMembers={showMembers}
+              onToggleMembers={handleToggleMembers}
+              onOpenNavigation={() => setIsNavigationOpen(true)}
+            />
+            {showMembers && channelId && <MemberList activeRoomId={channelId} className="hidden lg:flex" />}
+          </main>
+
+          {/* Mobile: navigation and member list as slide-in panels */}
+          <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
+            <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none">
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <SheetDescription className="sr-only">Server und Räume</SheetDescription>
+              <div className="flex h-full">{navigation}</div>
+            </SheetContent>
+          </Sheet>
+          <Sheet open={isMemberSheetOpen} onOpenChange={setIsMemberSheetOpen}>
+            <SheetContent side="right" className="w-auto gap-0 p-0">
+              <SheetTitle className="sr-only">Mitglieder</SheetTitle>
+              <SheetDescription className="sr-only">Mitglieder des Raums</SheetDescription>
+              {channelId && <MemberList activeRoomId={channelId} />}
+            </SheetContent>
+          </Sheet>
+        </div>
+      </CallProvider>
+    </SecurityProvider>
   )
 }

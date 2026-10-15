@@ -4,6 +4,7 @@
  */
 
 import { EventStatus, NotificationCountType, type MatrixEvent, type Room } from 'matrix-js-sdk'
+import { isEncryptedFile, type EncryptedFile } from '@/lib/matrix/attachments'
 
 export interface MatrixRoom {
   id: string
@@ -33,6 +34,20 @@ export type MessageKind =
 
 export type MessageStatus = 'sent' | 'sending' | 'failed'
 
+export interface MessageReaction {
+  key: string
+  count: number
+  senderIds: string[]
+  /** Our own reaction event, needed to take the reaction back. */
+  ownEventId?: string
+}
+
+export interface MessageReply {
+  eventId: string
+  senderName: string
+  body: string
+}
+
 export interface MatrixMessage {
   id: string
   roomId: string
@@ -46,13 +61,15 @@ export interface MatrixMessage {
   status: MessageStatus
   media?: {
     mxc?: string
-    /** Encrypted attachments need client-side decryption, which is not supported yet. */
-    encrypted: boolean
+    /** Set for end-to-end encrypted attachments. */
+    file?: EncryptedFile
     mimetype?: string
     width?: number
     height?: number
     size?: number
   }
+  reactions: MessageReaction[]
+  replyTo?: MessageReply
   /** The underlying event, needed to retry or cancel failed local echoes. */
   event: MatrixEvent
 }
@@ -126,11 +143,65 @@ function toStatus(event: MatrixEvent): MessageStatus {
   return 'sending'
 }
 
+const REPLY_FALLBACK_PATTERN = /^(>.*(\n|$))+\n?/
+
+/** Older clients prepend a quote of the replied-to message ("> <@alice:x> hi"); hide it. */
+export function stripReplyFallback(body: string): string {
+  return body.replace(REPLY_FALLBACK_PATTERN, '')
+}
+
+function summarizeEvent(event: MatrixEvent): string {
+  if (event.isRedacted()) return 'Nachricht gelöscht'
+  if (event.isDecryptionFailure()) return 'Verschlüsselte Nachricht'
+  const content = event.getContent()
+  switch (content.msgtype) {
+    case 'm.image':
+      return 'Bild'
+    case 'm.video':
+      return 'Video'
+    case 'm.audio':
+      return 'Audio'
+    case 'm.file':
+      return 'Datei'
+    default:
+      return typeof content.body === 'string' ? stripReplyFallback(content.body) : ''
+  }
+}
+
+function collectReactions(room: Room, eventId: string, ownUserId: string | null): MessageReaction[] {
+  const annotations = room.relations
+    .getChildEventsForEvent(eventId, 'm.annotation', 'm.reaction')
+    ?.getSortedAnnotationsByKey()
+  if (!annotations) return []
+
+  return annotations
+    .map(([key, events]) => {
+      const live = Array.from(events).filter((event) => !event.isRedacted())
+      const own = live.find((event) => event.getSender() === ownUserId)
+      return {
+        key,
+        count: live.length,
+        senderIds: live.map((event) => event.getSender() ?? ''),
+        ownEventId: own?.getId(),
+      }
+    })
+    .filter((reaction) => reaction.count > 0)
+}
+
+export interface MessageContext {
+  room?: Room
+  ownUserId?: string | null
+}
+
 /**
  * Convert matrix-js-sdk MatrixEvent to MatrixMessage.
  * Returns null for events that should not show up in the chat (state, reactions, edits, ...).
  */
-export function eventToMatrixMessage(event: MatrixEvent, roomId: string): MatrixMessage | null {
+export function eventToMatrixMessage(
+  event: MatrixEvent,
+  roomId: string,
+  context: MessageContext = {},
+): MatrixMessage | null {
   // Edits are folded into the original event by the SDK; don't show them twice.
   if (event.isRelation('m.replace')) return null
 
@@ -139,8 +210,12 @@ export function eventToMatrixMessage(event: MatrixEvent, roomId: string): Matrix
   if (type !== 'm.room.message' && !isEncryptedPlaceholder) return null
 
   const senderId = event.getSender() || ''
+  const eventId = event.getId()
+  const replyEventId = event.replyEventId
+  const repliedEvent = replyEventId ? context.room?.findEventById(replyEventId) : undefined
+
   const base = {
-    id: event.getId() || event.getTxnId() || `${roomId}-${event.getTs()}-${senderId}`,
+    id: eventId || event.getTxnId() || `${roomId}-${event.getTs()}-${senderId}`,
     roomId,
     senderId,
     senderName: event.sender?.name || senderId || 'Unbekannt',
@@ -148,11 +223,19 @@ export function eventToMatrixMessage(event: MatrixEvent, roomId: string): Matrix
     timestamp: event.getTs(),
     edited: Boolean(event.replacingEventId()),
     status: toStatus(event),
+    reactions: context.room && eventId ? collectReactions(context.room, eventId, context.ownUserId ?? null) : [],
+    replyTo: replyEventId
+      ? {
+          eventId: replyEventId,
+          senderName: repliedEvent ? repliedEvent.sender?.name || repliedEvent.getSender() || '' : '',
+          body: repliedEvent ? summarizeEvent(repliedEvent) : 'Ursprüngliche Nachricht nicht geladen',
+        }
+      : undefined,
     event,
   }
 
   if (event.isRedacted()) {
-    return { ...base, kind: 'redacted', body: 'Nachricht gelöscht', edited: false }
+    return { ...base, kind: 'redacted', body: 'Nachricht gelöscht', edited: false, reactions: [], replyTo: undefined }
   }
 
   if (event.isDecryptionFailure()) {
@@ -164,7 +247,8 @@ export function eventToMatrixMessage(event: MatrixEvent, roomId: string): Matrix
   }
 
   const content = event.getContent()
-  const body = typeof content.body === 'string' ? content.body : ''
+  const rawBody = typeof content.body === 'string' ? content.body : ''
+  const body = replyEventId ? stripReplyFallback(rawBody) : rawBody
 
   switch (content.msgtype) {
     case 'm.text':
@@ -178,14 +262,14 @@ export function eventToMatrixMessage(event: MatrixEvent, roomId: string): Matrix
     case 'm.audio':
     case 'm.file': {
       const info = (content.info ?? {}) as { mimetype?: string; w?: number; h?: number; size?: number }
-      const encryptedFile = content.file as { url?: string } | undefined
+      const file = isEncryptedFile(content.file) ? content.file : undefined
       return {
         ...base,
         kind: content.msgtype.slice(2) as 'image' | 'video' | 'audio' | 'file',
         body: (typeof content.filename === 'string' && content.filename) || body || 'Datei',
         media: {
-          mxc: typeof content.url === 'string' ? content.url : encryptedFile?.url,
-          encrypted: Boolean(encryptedFile),
+          mxc: typeof content.url === 'string' ? content.url : undefined,
+          file,
           mimetype: info.mimetype,
           width: info.w,
           height: info.h,

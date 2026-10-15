@@ -14,6 +14,7 @@ import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 
 interface MemberListProps {
   activeRoomId: string
+  className?: string
 }
 
 type Presence = "online" | "unavailable" | "offline" | "unknown"
@@ -162,13 +163,13 @@ function MemberSection({ title, members }: { title: string; members: UiMember[] 
   )
 }
 
-export function MemberList({ activeRoomId }: MemberListProps) {
+export function MemberList({ activeRoomId, className }: MemberListProps) {
   const { client } = useMatrixClient()
   const members = useJoinedMembers(client, activeRoomId)
   const presenceKnown = members.some((member) => member.presence !== "unknown")
 
   return (
-    <aside className="hidden h-full w-60 flex-col bg-secondary lg:flex" aria-label="Mitglieder">
+    <aside className={cn("flex h-full w-60 flex-col bg-secondary", className)} aria-label="Mitglieder">
       <ScrollArea className="flex-1 px-2 pt-4">
         {presenceKnown ? (
           <>

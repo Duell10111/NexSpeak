@@ -40,9 +40,10 @@ interface TimelineState {
 
 function buildMessages(room: Room): MatrixMessage[] {
   const events = [...room.getLiveTimeline().getEvents(), ...room.getPendingEvents()]
+  const context = { room, ownUserId: room.client.getUserId() }
   const messages: MatrixMessage[] = []
   events.forEach((event) => {
-    const message = eventToMatrixMessage(event, room.roomId)
+    const message = eventToMatrixMessage(event, room.roomId, context)
     if (message) messages.push(message)
   })
   return messages

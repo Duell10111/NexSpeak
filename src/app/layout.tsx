@@ -28,7 +28,8 @@ export default function RootLayout({
           </MatrixAuthProvider>
           <Toaster position="bottom-right" richColors closeButton />
         </ThemeProvider>
-        <Analytics />
+        {/* Only on Vercel; elsewhere the analytics script doesn't exist and just 404s. */}
+        {process.env.VERCEL && <Analytics />}
       </body>
     </html>
   )

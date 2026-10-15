@@ -18,6 +18,8 @@ import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
 import { Headphones, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
+import { useSecurity } from "@/components/nexspeak/security-context"
+import { SecurityPanel } from "@/components/nexspeak/security-panel"
 import {
   getDefaultAudioSettings,
   loadAudioSettings,
@@ -154,6 +156,7 @@ function playTestTone(volume: number, outputDeviceId: string) {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { session, logout } = useMatrix()
+  const { status: securityStatus } = useSecurity()
   const settings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
   const { inputs, outputs, permissionError } = useAudioDevices(open)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -177,10 +180,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </DialogHeader>
 
         <Tabs defaultValue="audio" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="audio">Audio</TabsTrigger>
+            <TabsTrigger value="security">Sicherheit</TabsTrigger>
             <TabsTrigger value="account">Konto</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="security">
+            <SecurityPanel />
+          </TabsContent>
 
           <TabsContent value="audio" className="space-y-6">
             {permissionError && (
@@ -282,10 +290,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               {isLoggingOut ? <Spinner className="mr-2 h-4 w-4" /> : <LogOut className="mr-2 h-4 w-4" />}
               Abmelden
             </Button>
-            <p className="text-xs text-muted-foreground">
-              Beim Abmelden werden die lokalen Schlüssel dieses Geräts gelöscht. Ohne Schlüssel-Backup sind ältere
-              verschlüsselte Nachrichten danach nicht mehr lesbar.
-            </p>
+            {securityStatus?.backupVersion ? (
+              <p className="text-xs text-muted-foreground">
+                Deine Nachrichtenschlüssel sind im Backup gesichert. Auf einem neuen Gerät stellst du sie mit deinem
+                Recovery-Schlüssel wieder her.
+              </p>
+            ) : (
+              <p className="rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+                Achtung: Es ist kein Schlüssel-Backup aktiv. Nach dem Abmelden kannst du ältere verschlüsselte Nachrichten
+                nicht mehr lesen. Richte vorher unter „Sicherheit“ einen Recovery-Schlüssel ein.
+              </p>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>
