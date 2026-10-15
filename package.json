@@ -2,9 +2,16 @@
   "name": "nexspeak-web",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
+    "check-node": "node scripts/check-node.mjs",
+    "predev": "npm run -s check-node",
     "dev": "next dev",
+    "prebuild": "npm run -s check-node",
     "build": "next build",
+    "prestart": "npm run -s check-node",
     "start": "next start",
     "lint": "eslint"
   },
@@ -62,7 +69,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.13",
-    "@types/node": "^22",
+    "@types/node": "^24",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "babel-plugin-react-compiler": "1.0.0",
