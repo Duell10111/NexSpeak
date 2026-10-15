@@ -10,7 +10,8 @@ dazu Direktnachrichten, Sprach-/Videoanrufe und Bildschirmfreigabe.
 - **Anrufe:** MatrixRTC mit LiveKit, kompatibel mit Element Call; in verschlüsselten Räumen sind auch
   die Medien Ende-zu-Ende-verschlüsselt. Bedienung wie bei Discord: Kachelansicht mit Sprech-Anzeige,
   Fokus auf Kamera oder Bildschirmfreigabe, Lautstärke pro Person (Rechtsklick), Chat neben dem Anruf,
-  Stummschalten auch vor dem Beitreten
+  Stummschalten auch vor dem Beitreten, Bildschirmübertragung mit wählbarer Auflösung (bis Quelle) und
+  Bildrate (bis 60 FPS), auch während des Streams änderbar
 - **Mobile Ansicht:** Navigation und Mitgliederliste als ausklappbare Panels
 
 ## Voraussetzungen

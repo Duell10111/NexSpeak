@@ -37,6 +37,16 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { RoomChat } from "@/components/nexspeak/room-chat"
 import { useCallContext, type CallParticipant, type CallVideoFeed } from "@/components/nexspeak/call-context"
@@ -44,6 +54,13 @@ import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { enableCallsInRoom, membersCanJoinCalls } from "@/lib/matrix/rtc"
 import { describeMatrixError } from "@/lib/matrix/errors"
 import { fitGrid, TILE_ASPECT, TILE_GAP_PX } from "@/lib/call-layout"
+import {
+  resolutionLabel,
+  SCREENSHARE_FRAMERATES,
+  SCREENSHARE_RESOLUTIONS,
+  type ScreenShareFramerate,
+  type ScreenShareResolution,
+} from "@/lib/screenshare-quality"
 
 
 /** One tile on the stage: a participant (with camera, if on) or a screenshare. */
@@ -344,6 +361,19 @@ function CallPermissionHint({ roomId }: { roomId: string }) {
   )
 }
 
+/** "on": a feature is active (white, like Discord); "off": muted (red icon). */
+type ControlVariant = "default" | "on" | "off" | "danger"
+
+function controlButtonClass(variant: ControlVariant) {
+  return cn(
+    "flex h-12 w-12 items-center justify-center rounded-full transition-colors sm:h-14 sm:w-14",
+    variant === "danger" && "bg-nx-dnd text-white hover:bg-nx-dnd/85",
+    variant === "on" && "bg-white text-black hover:bg-white/85",
+    variant === "off" && "bg-white/10 text-nx-dnd hover:bg-white/15",
+    variant === "default" && "bg-white/10 text-white hover:bg-white/15",
+  )
+}
+
 function ControlButton({
   label,
   variant = "default",
@@ -351,8 +381,7 @@ function ControlButton({
   children,
 }: {
   label: string
-  /** "on": a feature is active (white, like Discord); "off": muted (red icon). */
-  variant?: "default" | "on" | "off" | "danger"
+  variant?: ControlVariant
   onClick: () => void
   children: ReactNode
 }) {
@@ -361,13 +390,7 @@ function ControlButton({
       <TooltipTrigger asChild>
         <button
           onClick={onClick}
-          className={cn(
-            "flex h-12 w-12 items-center justify-center rounded-full transition-colors sm:h-14 sm:w-14",
-            variant === "danger" && "bg-nx-dnd text-white hover:bg-nx-dnd/85",
-            variant === "on" && "bg-white text-black hover:bg-white/85",
-            variant === "off" && "bg-white/10 text-nx-dnd hover:bg-white/15",
-            variant === "default" && "bg-white/10 text-white hover:bg-white/15",
-          )}
+          className={controlButtonClass(variant)}
           aria-label={label}
           aria-pressed={variant === "on" || variant === "off" ? true : undefined}
         >
@@ -376,6 +399,71 @@ function ControlButton({
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  )
+}
+
+/**
+ * Screenshare button. While streaming it opens Discord's stream menu: change the quality
+ * on the fly or end the stream.
+ */
+function ScreenshareControl() {
+  const { call, toggleScreenshare, screenShareQuality, changeScreenShareQuality } = useCallContext()
+  // In fullscreen only the fullscreen element is visible, so the menu has to live there.
+  const container = typeof document !== "undefined" ? (document.fullscreenElement as HTMLElement | null) : null
+  if (!call?.isScreensharing) {
+    return (
+      <ControlButton label="Bildschirm teilen" onClick={() => void toggleScreenshare()}>
+        <MonitorUp className="h-6 w-6" />
+      </ControlButton>
+    )
+  }
+  return (
+    <DropdownMenu modal={false}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button className={controlButtonClass("on")} aria-label="Stream-Einstellungen">
+              <ScreenShareOff className="h-6 w-6" />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Stream-Einstellungen</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent container={container} side="top" align="center" className="w-56">
+        <DropdownMenuLabel>Auflösung</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={screenShareQuality.resolution}
+          onValueChange={(value) =>
+            void changeScreenShareQuality({ ...screenShareQuality, resolution: value as ScreenShareResolution })
+          }
+        >
+          {SCREENSHARE_RESOLUTIONS.map((resolution) => (
+            <DropdownMenuRadioItem key={resolution} value={resolution} onSelect={(event) => event.preventDefault()}>
+              {resolutionLabel(resolution)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Bildrate</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={String(screenShareQuality.fps)}
+          onValueChange={(value) =>
+            void changeScreenShareQuality({ ...screenShareQuality, fps: Number(value) as ScreenShareFramerate })
+          }
+        >
+          {SCREENSHARE_FRAMERATES.map((fps) => (
+            <DropdownMenuRadioItem key={fps} value={String(fps)} onSelect={(event) => event.preventDefault()}>
+              {fps} FPS
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={() => void toggleScreenshare()}>
+          <ScreenShareOff className="h-4 w-4" />
+          Stream beenden
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -428,7 +516,6 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
     toggleMicrophone,
     toggleDeafen,
     toggleCamera,
-    toggleScreenshare,
     leaveCall,
     resumeAudio,
   } = useCallContext()
@@ -530,13 +617,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
           >
             {call.isCameraOn ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
           </ControlButton>
-          <ControlButton
-            label={call.isScreensharing ? "Bildschirmfreigabe beenden" : "Bildschirm teilen"}
-            variant={call.isScreensharing ? "on" : "default"}
-            onClick={() => void toggleScreenshare()}
-          >
-            {call.isScreensharing ? <ScreenShareOff className="h-6 w-6" /> : <MonitorUp className="h-6 w-6" />}
-          </ControlButton>
+          <ScreenshareControl />
           <div className="mx-1 h-8 w-px bg-white/15 sm:mx-2" />
           <ControlButton
             label={isMicMuted ? "Mikrofon aktivieren" : "Mikrofon stummschalten"}

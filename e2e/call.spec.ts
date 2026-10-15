@@ -138,3 +138,93 @@ test("mute and deafen work before joining and apply to the call", async ({ brows
   await page.getByRole("button", { name: "Ton aktivieren" }).last().click()
   await expect(tiles(page).getByLabel("Stummgeschaltet")).toHaveCount(0, { timeout: 15_000 })
 })
+
+test("screenshare with chosen resolution and frame rate, adjustable while live", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Stream ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob], encrypted: true })
+
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  // Keep the peer connections reachable to inspect what is actually sent.
+  await alicePage.addInitScript(() => {
+    const connections: RTCPeerConnection[] = []
+    ;(window as unknown as { __pcs: RTCPeerConnection[] }).__pcs = connections
+    const Original = window.RTCPeerConnection
+    window.RTCPeerConnection = class extends Original {
+      constructor(...args: ConstructorParameters<typeof RTCPeerConnection>) {
+        super(...args)
+        connections.push(this)
+      }
+    }
+  })
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, roomName)
+  await joinVoice(alicePage)
+  await joinVoice(bobPage)
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+
+  // Discord's "Go Live" flow: pick the quality first, then the browser picker.
+  await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+  const dialog = alicePage.getByRole("dialog", { name: "Bildschirm teilen" })
+  await dialog.getByRole("radio", { name: "720p" }).click()
+  await dialog.getByRole("radio", { name: "60 FPS" }).click()
+  await dialog.getByRole("button", { name: "Live gehen" }).click()
+  await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+
+  const screenSender = () =>
+    alicePage.evaluate(() => {
+      const pcs = (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs
+      for (const pc of pcs) {
+        for (const sender of pc.getSenders()) {
+          const settings = sender.track?.getSettings()
+          if (sender.track?.kind !== "video" || !settings?.displaySurface) continue
+          const encodings = sender.getParameters().encodings
+          return {
+            height: settings.height ?? 0,
+            maxFramerate: Math.max(...encodings.map((encoding) => encoding.maxFramerate ?? 0)),
+            maxBitrate: Math.max(...encodings.map((encoding) => encoding.maxBitrate ?? 0)),
+          }
+        }
+      }
+      return null
+    })
+
+  await expect.poll(screenSender, { timeout: 30_000 }).toMatchObject({ maxFramerate: 60, maxBitrate: 4_000_000 })
+  expect((await screenSender())!.height).toBeLessThanOrEqual(720)
+
+  // Bob watches the stream: it takes the stage and frames decode (E2EE).
+  await expect(tiles(bobPage)).toHaveCount(3, { timeout: 30_000 })
+  await expect
+    .poll(
+      () =>
+        bobPage.evaluate(() =>
+          Math.max(
+            0,
+            ...Array.from(document.querySelectorAll("video")).map((video) => video.getVideoPlaybackQuality().totalVideoFrames),
+          ),
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(10)
+
+  // Changing the quality while live needs no new picker.
+  await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
+  await alicePage.getByRole("menuitemradio", { name: "15 FPS" }).click()
+  await expect.poll(screenSender).toMatchObject({ maxFramerate: 15 })
+  await alicePage.keyboard.press("Escape")
+  await expect(alicePage.getByRole("menu")).toBeHidden()
+
+  await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
+  await expect(alicePage.getByRole("menu")).toBeVisible({ timeout: 5_000 })
+  await alicePage.getByRole("menuitem", { name: "Stream beenden" }).click()
+  await expect(alicePage.getByRole("button", { name: "Bildschirm teilen" }).last()).toBeVisible()
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+
+  // The choice is remembered for the next stream.
+  await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+  await expect(alicePage.getByRole("radio", { name: "15 FPS" })).toHaveAttribute("aria-checked", "true")
+})

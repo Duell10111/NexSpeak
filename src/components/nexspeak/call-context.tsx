@@ -18,6 +18,13 @@ import { describeMatrixError } from "@/lib/matrix/errors"
 import { CallPermissionError, enableCallsInRoom } from "@/lib/matrix/rtc"
 import { getDefaultAudioSettings, loadAudioSettings, subscribeAudioSettings } from "@/lib/audio-settings"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
+import {
+  DEFAULT_SCREENSHARE_QUALITY,
+  loadScreenShareQuality,
+  saveScreenShareQuality,
+  type ScreenShareQuality,
+} from "@/lib/screenshare-quality"
+import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@/lib/matrix/call-session"
@@ -37,7 +44,12 @@ interface CallContextValue {
   leaveCall: () => void
   toggleMicrophone: () => Promise<void>
   toggleCamera: () => Promise<void>
+  /** Stops a running screenshare, otherwise opens the quality dialog (like Discord's "Go Live"). */
   toggleScreenshare: () => Promise<void>
+  /** Last chosen stream quality; applies to the next and the running screenshare. */
+  screenShareQuality: ScreenShareQuality
+  startScreenshare: (quality: ScreenShareQuality) => Promise<void>
+  changeScreenShareQuality: (quality: ScreenShareQuality) => Promise<void>
   toggleDeafen: () => void
   resumeAudio: () => Promise<void>
   setParticipantVolume: (identity: string, volume: number) => void
@@ -99,6 +111,10 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     typeof window === "undefined" ? DEFAULT_VOICE_PREFS : loadVoicePrefs(),
   )
   const voicePrefsRef = useRef(voicePrefs)
+  const [screenShareQuality, setScreenShareQuality] = useState<ScreenShareQuality>(() =>
+    typeof window === "undefined" ? DEFAULT_SCREENSHARE_QUALITY : loadScreenShareQuality(),
+  )
+  const [isScreenshareDialogOpen, setIsScreenshareDialogOpen] = useState(false)
   const sessionRef = useRef<CallSession | null>(null)
   const callInfoByRoom = useRtcCallInfo(client)
   const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
@@ -202,14 +218,50 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const toggleScreenshare = useCallback(async () => {
     const current = sessionRef.current
     if (!current) return
+    if (!current.getSnapshot().isScreensharing) {
+      setIsScreenshareDialogOpen(true)
+      return
+    }
     try {
-      await current.setScreenShareEnabled(!current.getSnapshot().isScreensharing)
+      await current.setScreenShareEnabled(false)
     } catch (error) {
-      // Closing the browser's picker is not an error worth reporting.
-      if (error instanceof DOMException && error.name === "NotAllowedError") return
-      reportError(error, "Bildschirmfreigabe konnte nicht umgeschaltet werden.")
+      reportError(error, "Bildschirmfreigabe konnte nicht beendet werden.")
     }
   }, [])
+
+  const updateScreenShareQuality = useCallback((quality: ScreenShareQuality) => {
+    setScreenShareQuality(quality)
+    saveScreenShareQuality(quality)
+  }, [])
+
+  const startScreenshare = useCallback(
+    async (quality: ScreenShareQuality) => {
+      setIsScreenshareDialogOpen(false)
+      updateScreenShareQuality(quality)
+      const current = sessionRef.current
+      if (!current) return
+      try {
+        await current.setScreenShareEnabled(true, quality)
+      } catch (error) {
+        // Closing the browser's picker is not an error worth reporting.
+        if (error instanceof DOMException && error.name === "NotAllowedError") return
+        reportError(error, "Bildschirmfreigabe konnte nicht gestartet werden.")
+      }
+    },
+    [updateScreenShareQuality],
+  )
+
+  const changeScreenShareQuality = useCallback(
+    async (quality: ScreenShareQuality) => {
+      updateScreenShareQuality(quality)
+      try {
+        await sessionRef.current?.setScreenShareQuality(quality)
+      } catch (error) {
+        reportError(error, "Stream-Qualität konnte nicht geändert werden.")
+      }
+    },
+    [updateScreenShareQuality],
+  )
 
   const toggleDeafen = useCallback(() => {
     const current = sessionRef.current
@@ -293,6 +345,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       toggleMicrophone,
       toggleCamera,
       toggleScreenshare,
+      screenShareQuality,
+      startScreenshare,
+      changeScreenShareQuality,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
@@ -309,6 +364,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       toggleMicrophone,
       toggleCamera,
       toggleScreenshare,
+      screenShareQuality,
+      startScreenshare,
+      changeScreenShareQuality,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
@@ -316,7 +374,17 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     ],
   )
 
-  return <CallContext.Provider value={value}>{children}</CallContext.Provider>
+  return (
+    <CallContext.Provider value={value}>
+      {children}
+      <ScreenshareDialog
+        open={isScreenshareDialogOpen && Boolean(call)}
+        onOpenChange={setIsScreenshareDialogOpen}
+        initialQuality={screenShareQuality}
+        onStart={(quality) => void startScreenshare(quality)}
+      />
+    </CallContext.Provider>
+  )
 }
 
 export function useCallContext(): CallContextValue {

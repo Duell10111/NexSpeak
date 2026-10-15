@@ -14,6 +14,7 @@ import {
   RoomEvent as LivekitRoomEvent,
   setLogLevel,
   Track,
+  type LocalVideoTrack,
   type Participant,
   type RemoteTrack,
   type VideoTrack,
@@ -33,6 +34,12 @@ import {
   selectActiveServiceUrl,
   userIdFromIdentity,
 } from '@/lib/matrix/rtc'
+import {
+  screenShareBitrate,
+  screenShareConstraints,
+  screenShareTuning,
+  type ScreenShareQuality,
+} from '@/lib/screenshare-quality'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -500,10 +507,57 @@ export class CallSession {
     this.changed()
   }
 
-  async setScreenShareEnabled(enabled: boolean): Promise<void> {
+  async setScreenShareEnabled(enabled: boolean, quality?: ScreenShareQuality): Promise<void> {
     if (enabled) await this.waitForOwnKey()
     if (this.isLeaving) return
-    await this.livekitRoom.localParticipant.setScreenShareEnabled(enabled, { audio: true })
+    if (!enabled || !quality) {
+      await this.livekitRoom.localParticipant.setScreenShareEnabled(enabled, { audio: true })
+      this.changed()
+      return
+    }
+    const tuning = screenShareTuning(quality)
+    await this.livekitRoom.localParticipant.setScreenShareEnabled(
+      true,
+      {
+        audio: true,
+        // Our own constraints instead of LiveKit's `resolution`, which drops the frame
+        // rate when the resolution is uncapped and asks for an ideal (upscaled) size.
+        resolution: { width: 0, height: 0 },
+        video: screenShareConstraints(quality) as { displaySurface?: 'window' | 'browser' | 'monitor' },
+        contentHint: tuning.contentHint || undefined,
+      },
+      {
+        // LiveKit's default is 1080p at 15 fps and 2.5 Mbit/s: too choppy for games.
+        screenShareEncoding: { maxBitrate: screenShareBitrate(quality), maxFramerate: quality.fps, priority: 'high' },
+        degradationPreference: tuning.degradationPreference,
+      },
+    )
+    this.changed()
+  }
+
+  /** Change resolution and frame rate of a running screenshare without a new picker. */
+  async setScreenShareQuality(quality: ScreenShareQuality): Promise<void> {
+    const track = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track as
+      | LocalVideoTrack
+      | undefined
+    if (!track) return
+    const tuning = screenShareTuning(quality)
+    track.mediaStreamTrack.contentHint = tuning.contentHint
+    await track.mediaStreamTrack.applyConstraints(screenShareConstraints(quality))
+
+    const sender = track.sender
+    if (sender) {
+      const params = sender.getParameters()
+      const bitrate = screenShareBitrate(quality)
+      for (const encoding of params.encodings) {
+        // Simulcast layers are downscaled copies; scale their budget with the pixel count.
+        const scale = encoding.scaleResolutionDownBy ?? 1
+        encoding.maxBitrate = Math.max(150_000, Math.round(bitrate / (scale * scale)))
+        encoding.maxFramerate = quality.fps
+      }
+      await sender.setParameters(params)
+    }
+    await track.setDegradationPreference(tuning.degradationPreference)
     this.changed()
   }
 
