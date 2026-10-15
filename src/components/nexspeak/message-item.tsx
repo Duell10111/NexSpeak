@@ -188,10 +188,10 @@ function Reactions({ message }: { message: MatrixMessage }) {
             <button
               onClick={() => react(reaction.key, reaction.ownEventId)}
               className={cn(
-                "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors",
+                "flex h-6 items-center gap-1.5 rounded-lg border px-1.5 text-sm transition-colors",
                 reaction.ownEventId
                   ? "border-primary bg-primary/15 text-foreground"
-                  : "border-transparent bg-muted text-muted-foreground hover:border-border",
+                  : "border-transparent bg-secondary text-muted-foreground hover:border-muted-foreground/40",
               )}
               aria-pressed={Boolean(reaction.ownEventId)}
               aria-label={`${reaction.key} ${reaction.count}`}
@@ -336,14 +336,14 @@ export const MessageItem = memo(function MessageItem({
     <div
       id={`msg-${message.id}`}
       className={cn(
-        "group relative flex gap-4 px-4 transition-colors hover:bg-nx-hover/50",
-        showHeader ? "mt-3 py-0.5" : "py-0.5",
+        "group relative flex gap-4 py-0.5 pr-12 pl-4 hover:bg-black/[0.06]",
+        showHeader && "mt-[17px]",
         message.status === "sending" && "opacity-60",
-        isEditing && "bg-nx-hover/50",
+        isEditing && "bg-black/[0.06]",
       )}
     >
       {isInteractive && !isEditing && (
-        <div className="absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-border bg-popover shadow-sm group-focus-within:flex group-hover:flex">
+        <div className="absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex">
           <EmojiPicker onSelect={react}>
             <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Reaktion hinzufügen">
               <SmilePlus className="h-4 w-4" />
@@ -369,7 +369,7 @@ export const MessageItem = memo(function MessageItem({
         {showHeader ? (
           <MatrixAvatar mxcUrl={message.senderAvatarMxc} name={message.senderName} size={40} className={cn(message.replyTo ? "mt-5" : "mt-0.5")} />
         ) : (
-          <span className="invisible block pt-1 text-right text-[10px] text-muted-foreground group-hover:visible">
+          <span className="invisible block pt-[3px] text-right text-[11px] text-muted-foreground group-hover:visible">
             {formatTime(message.timestamp)}
           </span>
         )}
@@ -378,16 +378,16 @@ export const MessageItem = memo(function MessageItem({
         {message.replyTo && <ReplyPreview reply={message.replyTo} />}
         {showHeader && (
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-foreground" title={message.senderId}>
+            <span className="cursor-default text-[15px] leading-[22px] font-medium text-foreground hover:underline" title={message.senderId}>
               {message.senderName}
             </span>
-            <span className="text-[11px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+            <span className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</span>
           </div>
         )}
         {isEditing ? (
           <InlineEditor message={message} onDone={actions.onEditEnd} />
         ) : (
-          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground" data-testid="message-body">
+          <div className="whitespace-pre-wrap break-words text-[15px] leading-[22px] text-foreground" data-testid="message-body">
             <MessageBody message={message} />
             {message.edited && <span className="ml-1 text-[10px] text-muted-foreground">(bearbeitet)</span>}
           </div>
@@ -408,9 +408,9 @@ export function DateDivider({ timestamp }: { timestamp: number }) {
   })
 
   return (
-    <div className="my-4 flex items-center gap-2 px-4" role="separator">
+    <div className="mx-4 mt-6 mb-2 flex items-center gap-1" role="separator">
       <div className="h-px flex-1 bg-border" />
-      <span className="text-[11px] font-semibold text-muted-foreground">{label}</span>
+      <span className="px-1 text-xs font-semibold text-muted-foreground">{label}</span>
       <div className="h-px flex-1 bg-border" />
     </div>
   )

@@ -180,6 +180,7 @@ export default function NexSpeakApp() {
     <>
       <ServerSidebar
         spaces={directory.spaces}
+        roomsBySpace={directory.roomsBySpace}
         activeServerId={serverId}
         homeUnread={homeUnread}
         onServerSelect={handleServerSelect}
@@ -219,19 +220,18 @@ export default function NexSpeakApp() {
               onToggleMembers={handleToggleMembers}
               onOpenNavigation={() => setIsNavigationOpen(true)}
             />
-            {showMembers && channelId && <MemberList activeRoomId={channelId} className="hidden lg:flex" />}
           </main>
 
-          {/* Mobile: navigation and member list as slide-in panels */}
+          {/* Mobile: navigation and member list as slide-in panels, closed by tapping outside (their X would cover the headers). */}
           <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
-            <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none">
+            <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none [&>button:last-child]:hidden">
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <SheetDescription className="sr-only">Server und Räume</SheetDescription>
               <div className="flex h-full">{navigation}</div>
             </SheetContent>
           </Sheet>
           <Sheet open={isMemberSheetOpen} onOpenChange={setIsMemberSheetOpen}>
-            <SheetContent side="right" className="w-auto gap-0 p-0">
+            <SheetContent side="right" className="w-auto gap-0 p-0 [&>button:last-child]:hidden">
               <SheetTitle className="sr-only">Mitglieder</SheetTitle>
               <SheetDescription className="sr-only">Mitglieder des Raums</SheetDescription>
               {channelId && <MemberList activeRoomId={channelId} />}

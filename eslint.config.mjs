@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Copied from livekit-client at build time (scripts/copy-livekit-worker.mjs).
+    "public/livekit-e2ee-worker.mjs",
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

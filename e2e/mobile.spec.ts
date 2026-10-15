@@ -13,7 +13,7 @@ test("mobile layout: navigation and members as slide-in panels", async ({ browse
   // Sidebars are hidden on small screens, the chat uses the full width.
   await expect(page.getByRole("navigation", { name: "Server-Liste" })).toBeHidden()
   await page.getByRole("button", { name: "Navigation öffnen" }).first().click()
-  await page.getByRole("dialog").getByRole("button", { name: new RegExp(roomName) }).click()
+  await page.getByRole("dialog").getByRole("button", { name: roomName, exact: true }).click()
   await expect(page.getByRole("dialog")).toBeHidden()
   await expect(page.getByRole("heading", { level: 3, name: roomName })).toBeVisible()
 

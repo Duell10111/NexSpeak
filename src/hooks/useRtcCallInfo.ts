@@ -7,28 +7,54 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { MatrixClient } from 'matrix-js-sdk'
+import { ClientEvent, KnownMembership, RoomEvent, type MatrixClient } from 'matrix-js-sdk'
 import {
   MatrixRTCSessionEvent,
   MatrixRTCSessionManagerEvents,
   type MatrixRTCSession,
 } from 'matrix-js-sdk/lib/matrixrtc'
 
-export interface RoomCallInfo {
-  names: string[]
+export interface RoomCallMember {
+  userId: string
+  name: string
+  avatarMxc?: string
 }
 
-function readCallInfo(client: MatrixClient): Record<string, RoomCallInfo> {
-  const result: Record<string, RoomCallInfo> = {}
-  client.getRooms().forEach((room) => {
-    const session = client.matrixRTC.getActiveRoomSession(room)
-    if (!session || session.memberships.length === 0) return
+export interface RoomCallInfo {
+  /** One entry per user, even when they joined with several devices. */
+  members: RoomCallMember[]
+}
 
-    const names = new Set<string>()
+/**
+ * The session manager only registers sessions it sees starting after the initial sync:
+ * its start() checks memberships before they are computed (matrix-js-sdk 41). So calls that
+ * were already running at login would never show up. Ask for every joined room's session
+ * ourselves instead; the manager keeps exactly one session object per room either way.
+ */
+function joinedRoomSessions(client: MatrixClient): MatrixRTCSession[] {
+  return client
+    .getRooms()
+    .filter((room) => room.getMyMembership() === KnownMembership.Join)
+    .map((room) => client.matrixRTC.getRoomSession(room))
+}
+
+function readCallInfo(sessions: MatrixRTCSession[]): Record<string, RoomCallInfo> {
+  const result: Record<string, RoomCallInfo> = {}
+  sessions.forEach((session) => {
+    if (session.memberships.length === 0) return
+    const room = session.room
+
+    const members = new Map<string, RoomCallMember>()
     session.memberships.forEach((membership) => {
-      names.add(room.getMember(membership.sender)?.name || membership.sender)
+      if (!membership.sender || members.has(membership.sender)) return
+      const member = room.getMember(membership.sender)
+      members.set(membership.sender, {
+        userId: membership.sender,
+        name: member?.name || membership.sender,
+        avatarMxc: member?.getMxcAvatarUrl() || undefined,
+      })
     })
-    result[room.roomId] = { names: Array.from(names).sort((a, b) => a.localeCompare(b)) }
+    result[room.roomId] = { members: Array.from(members.values()).sort((a, b) => a.name.localeCompare(b.name)) }
   })
   return result
 }
@@ -43,22 +69,33 @@ export function useRtcCallInfo(client: MatrixClient | null): Record<string, Room
     if (!client) return
 
     const watched = new Set<MatrixRTCSession>()
+    let frame: number | null = null
+
     const refresh = () => {
-      client.getRooms().forEach((room) => {
-        const session = client.matrixRTC.getActiveRoomSession(room)
-        if (session && !watched.has(session)) {
+      if (frame !== null) return
+      frame = requestAnimationFrame(() => {
+        frame = null
+        const sessions = joinedRoomSessions(client)
+        sessions.forEach((session) => {
+          if (watched.has(session)) return
+          // Memberships are computed asynchronously; this fires once they are known.
           session.on(MatrixRTCSessionEvent.MembershipsChanged, refresh)
           watched.add(session)
-        }
+        })
+        setState({ client, info: readCallInfo(sessions) })
       })
-      setState({ client, info: readCallInfo(client) })
     }
 
-    queueMicrotask(refresh)
+    refresh()
+    client.on(ClientEvent.Room, refresh)
+    client.on(RoomEvent.MyMembership, refresh)
     client.matrixRTC.on(MatrixRTCSessionManagerEvents.SessionStarted, refresh)
     client.matrixRTC.on(MatrixRTCSessionManagerEvents.SessionEnded, refresh)
 
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      client.off(ClientEvent.Room, refresh)
+      client.off(RoomEvent.MyMembership, refresh)
       client.matrixRTC.off(MatrixRTCSessionManagerEvents.SessionStarted, refresh)
       client.matrixRTC.off(MatrixRTCSessionManagerEvents.SessionEnded, refresh)
       watched.forEach((session) => session.off(MatrixRTCSessionEvent.MembershipsChanged, refresh))

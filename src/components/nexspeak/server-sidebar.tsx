@@ -17,14 +17,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { Plus } from "lucide-react"
+import { Plus, Volume2 } from "lucide-react"
+import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useMediaUrl } from "@/hooks/useMediaUrl"
 import { describeMatrixError } from "@/lib/matrix/errors"
-import { DIRECT_MESSAGES_ID, type MatrixSpace } from "@/lib/matrix/types"
+import { DIRECT_MESSAGES_ID, type MatrixRoom, type MatrixSpace } from "@/lib/matrix/types"
 
 interface ServerSidebarProps {
   spaces: MatrixSpace[]
+  roomsBySpace: Record<string, MatrixRoom[]>
   activeServerId: string
   homeUnread: number
   onServerSelect: (id: string) => void
@@ -56,13 +58,27 @@ function UnreadBadge({ mentions, unread, isActive }: { mentions: number; unread:
   return null
 }
 
+/** Discord marks the server you are talking in with a small speaker. */
+function VoiceBadge() {
+  return (
+    <span
+      className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-[3px] border-nx-guild-bar bg-nx-online text-white"
+      aria-label="Aktiver Sprachkanal"
+    >
+      <Volume2 className="h-2.5 w-2.5" />
+    </span>
+  )
+}
+
 function ServerIcon({
   server,
   isActive,
+  hasVoice,
   onClick,
 }: {
   server: MatrixSpace
   isActive: boolean
+  hasVoice: boolean
   onClick: () => void
 }) {
   const { client } = useMatrixClient()
@@ -110,7 +126,11 @@ function ServerIcon({
                 label.charAt(0).toUpperCase()
               )}
             </div>
-            <UnreadBadge mentions={server.mentions} unread={server.unread} isActive={isActive} />
+            {hasVoice && server.mentions === 0 ? (
+              <VoiceBadge />
+            ) : (
+              <UnreadBadge mentions={server.mentions} unread={server.unread} isActive={isActive} />
+            )}
           </button>
         </div>
       </TooltipTrigger>
@@ -189,9 +209,20 @@ function JoinRoomDialog({
   )
 }
 
-export function ServerSidebar({ spaces, activeServerId, homeUnread, onServerSelect, onRoomJoined }: ServerSidebarProps) {
+export function ServerSidebar({
+  spaces,
+  roomsBySpace,
+  activeServerId,
+  homeUnread,
+  onServerSelect,
+  onRoomJoined,
+}: ServerSidebarProps) {
   const [joinOpen, setJoinOpen] = useState(false)
+  const { call } = useCallContext()
   const isHomeActive = activeServerId === DIRECT_MESSAGES_ID
+  const callServerId = call
+    ? (spaces.find((space) => roomsBySpace[space.id]?.some((room) => room.id === call.roomId))?.id ?? DIRECT_MESSAGES_ID)
+    : null
 
   return (
     <nav
@@ -215,7 +246,11 @@ export function ServerSidebar({ spaces, activeServerId, homeUnread, onServerSele
             <svg width="28" height="20" viewBox="0 0 28 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
               <path d="M5.88 0h2.68l3.22 11.02L15.1 0h2.5l3.32 11.02L24.14 0h2.68L22.2 20h-2.48L16.3 8.58 12.88 20h-2.48L5.88 0z" fill="currentColor" />
             </svg>
-            <UnreadBadge mentions={homeUnread} unread={0} isActive={isHomeActive} />
+            {callServerId === DIRECT_MESSAGES_ID && homeUnread === 0 ? (
+              <VoiceBadge />
+            ) : (
+              <UnreadBadge mentions={homeUnread} unread={0} isActive={isHomeActive} />
+            )}
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" className="font-semibold">
@@ -233,6 +268,7 @@ export function ServerSidebar({ spaces, activeServerId, homeUnread, onServerSele
             key={server.id}
             server={server}
             isActive={activeServerId === server.id}
+            hasVoice={callServerId === server.id}
             onClick={() => onServerSelect(server.id)}
           />
         ))}

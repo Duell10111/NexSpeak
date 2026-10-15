@@ -61,10 +61,16 @@ export interface CallParticipant {
   isSpeaking: boolean
   isMicMuted: boolean
   isScreensharing: boolean
+  /** Local playback volume for this participant, 0..1. */
+  volume: number
+  /** Muted locally, only for us. */
+  isLocallyMuted: boolean
 }
 
 export interface CallVideoFeed {
   id: string
+  /** LiveKit identity of the publishing participant. */
+  identity: string
   userId: string
   name: string
   track: VideoTrack
@@ -93,6 +99,9 @@ export interface CallAudioOptions {
   outputDeviceId: string
   /** 0..1 */
   outputVolume: number
+  /** Join with the microphone off / sound off (the user's self-mute preference). */
+  startMuted?: boolean
+  startDeafened?: boolean
 }
 
 /** Feeds MatrixRTC media keys into LiveKit's per-participant frame encryption. */
@@ -119,8 +128,12 @@ export class CallSession {
   private snapshot: CallSnapshot
   private snapshotDirty = true
   private connectionState: CallConnectionState = 'connecting'
-  private isDeafened = false
+  private isDeafened: boolean
   private outputVolume: number
+  private readonly startMuted: boolean
+  /** Per-participant playback volume (0..1) and local mutes, by identity. */
+  private readonly participantVolumes = new Map<string, number>()
+  private readonly locallyMuted = new Set<string>()
   private readonly audioElements = new Map<string, HTMLMediaElement>()
   private readonly audioContainer: HTMLDivElement
   private isLeaving = false
@@ -138,6 +151,8 @@ export class CallSession {
     this.roomId = rtcSession.room.roomId
     this.isEncrypted = keyProvider !== null
     this.outputVolume = audio.outputVolume
+    this.isDeafened = audio.startDeafened ?? false
+    this.startMuted = audio.startMuted ?? false
     this.audioContainer = document.createElement('div')
     this.audioContainer.hidden = true
     document.body.appendChild(this.audioContainer)
@@ -206,6 +221,10 @@ export class CallSession {
     this.connectionState = 'connected'
     this.changed()
 
+    if (this.startMuted) {
+      this.changed()
+      return
+    }
     try {
       await this.livekitRoom.localParticipant.setMicrophoneEnabled(true)
       debug('microphone published')
@@ -331,6 +350,8 @@ export class CallSession {
       isSpeaking: participant.isSpeaking,
       isMicMuted: !participant.isMicrophoneEnabled,
       isScreensharing: participant.isScreenShareEnabled,
+      volume: this.participantVolumes.get(participant.identity) ?? 1,
+      isLocallyMuted: this.locallyMuted.has(participant.identity),
     }
   }
 
@@ -357,6 +378,8 @@ export class CallSession {
         isSpeaking: false,
         isMicMuted: true,
         isScreensharing: false,
+        volume: this.participantVolumes.get(identity) ?? 1,
+        isLocallyMuted: this.locallyMuted.has(identity),
       })
     })
 
@@ -371,6 +394,7 @@ export class CallSession {
         if (!track || publication.isMuted) continue
         videoFeeds.push({
           id: `${participant.identity}-${source}`,
+          identity: participant.identity,
           userId,
           name,
           track,
@@ -399,8 +423,29 @@ export class CallSession {
   }
 
   private applyRemoteVolume(): void {
-    const volume = this.isDeafened ? 0 : this.outputVolume
-    this.livekitRoom.remoteParticipants.forEach((participant) => participant.setVolume(volume))
+    this.livekitRoom.remoteParticipants.forEach((participant) => {
+      const muted = this.isDeafened || this.locallyMuted.has(participant.identity)
+      const volume = muted ? 0 : this.outputVolume * (this.participantVolumes.get(participant.identity) ?? 1)
+      participant.setVolume(volume, Track.Source.Microphone)
+      participant.setVolume(volume, Track.Source.ScreenShareAudio)
+    })
+  }
+
+  /**
+   * Discord's per-user volume: only changes what we hear. Capped at 1, because without
+   * LiveKit's WebAudio mix the volume goes straight to the audio element.
+   */
+  setParticipantVolume(identity: string, volume: number): void {
+    this.participantVolumes.set(identity, Math.min(1, Math.max(0, volume)))
+    this.applyRemoteVolume()
+    this.changed()
+  }
+
+  setParticipantMuted(identity: string, muted: boolean): void {
+    if (muted) this.locallyMuted.add(identity)
+    else this.locallyMuted.delete(identity)
+    this.applyRemoteVolume()
+    this.changed()
   }
 
   async setMicrophoneEnabled(enabled: boolean): Promise<void> {

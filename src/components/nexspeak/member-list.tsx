@@ -10,7 +10,9 @@ import {
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
+import { Volume2 } from "lucide-react"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
+import { useCallContext } from "@/components/nexspeak/call-context"
 
 interface MemberListProps {
   activeRoomId: string
@@ -114,14 +116,14 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
   return state && state.roomId === roomId ? state.members : []
 }
 
-function MemberItem({ member }: { member: UiMember }) {
+function MemberItem({ member, voiceRoomName }: { member: UiMember; voiceRoomName?: string }) {
   const isAway = member.presence === "offline"
 
   return (
     <div
       className={cn(
-        "group flex w-full items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-nx-hover",
-        isAway && "opacity-50 hover:opacity-100",
+        "group mx-2 flex h-[42px] items-center gap-3 rounded px-2 transition-colors hover:bg-nx-hover",
+        isAway && !voiceRoomName && "opacity-40 hover:opacity-100",
       )}
       title={member.userId}
     >
@@ -130,55 +132,92 @@ function MemberItem({ member }: { member: UiMember }) {
         {member.presence !== "unknown" && (
           <span
             className={cn(
-              "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-[2.5px] border-nx-member-bg",
+              "absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-secondary group-hover:border-nx-hover",
               PRESENCE_COLORS[member.presence],
             )}
+            aria-label={PRESENCE_LABELS[member.presence]}
           />
         )}
       </div>
-      <div className="flex-1 overflow-hidden text-left">
-        <p className="truncate text-sm font-medium text-foreground">{member.name}</p>
-        {PRESENCE_LABELS[member.presence] && (
-          <p className="truncate text-[11px] leading-tight text-muted-foreground">{PRESENCE_LABELS[member.presence]}</p>
+      <div className="min-w-0 flex-1 text-left">
+        <p className="truncate text-[15px] leading-5 font-medium text-muted-foreground group-hover:text-foreground">
+          {member.name}
+        </p>
+        {voiceRoomName && (
+          <p className="flex items-center gap-1 truncate text-xs leading-4 text-muted-foreground">
+            <Volume2 className="h-3 w-3 shrink-0 text-nx-online" />
+            <span className="truncate">Im Sprachkanal {voiceRoomName}</span>
+          </p>
         )}
       </div>
     </div>
   )
 }
 
-function MemberSection({ title, members }: { title: string; members: UiMember[] }) {
+function MemberSection({
+  title,
+  members,
+  voiceRoomByUser,
+}: {
+  title: string
+  members: UiMember[]
+  voiceRoomByUser: Map<string, string>
+}) {
   if (members.length === 0) return null
 
   return (
-    <div className="mb-2">
-      <h4 className="px-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+    <div>
+      <h4 className="truncate px-4 pt-6 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         {title} — {members.length}
       </h4>
-      <div className="mt-1 flex flex-col">
+      <div className="flex flex-col gap-0.5">
         {members.map((member) => (
-          <MemberItem key={member.userId} member={member} />
+          <MemberItem key={member.userId} member={member} voiceRoomName={voiceRoomByUser.get(member.userId)} />
         ))}
       </div>
     </div>
   )
 }
 
+/** Discord groups members by their highest role; power levels are Matrix' roles. */
+function roleTitle(powerLevel: number): string | null {
+  if (powerLevel >= 100) return "Admin"
+  if (powerLevel >= 50) return "Moderator"
+  return null
+}
+
+function groupMembers(members: UiMember[], presenceKnown: boolean): Array<{ title: string; members: UiMember[] }> {
+  const groups = new Map<string, UiMember[]>()
+  const add = (title: string, member: UiMember) => groups.set(title, [...(groups.get(title) ?? []), member])
+
+  members.forEach((member) => {
+    // Like Discord, offline members are listed together regardless of their role.
+    if (presenceKnown && member.presence === "offline") return
+    add(roleTitle(member.powerLevel) ?? (presenceKnown ? "Online" : "Mitglieder"), member)
+  })
+  if (presenceKnown) members.filter((member) => member.presence === "offline").forEach((member) => add("Offline", member))
+
+  return Array.from(groups, ([title, grouped]) => ({ title, members: grouped }))
+}
+
 export function MemberList({ activeRoomId, className }: MemberListProps) {
   const { client } = useMatrixClient()
+  const { callInfoByRoom } = useCallContext()
   const members = useJoinedMembers(client, activeRoomId)
   const presenceKnown = members.some((member) => member.presence !== "unknown")
 
+  const voiceRoomByUser = new Map<string, string>()
+  Object.entries(callInfoByRoom).forEach(([roomId, info]) => {
+    const roomName = client?.getRoom(roomId)?.name || ""
+    info.members.forEach((member) => voiceRoomByUser.set(member.userId, roomName))
+  })
+
   return (
-    <aside className={cn("flex h-full w-60 flex-col bg-secondary", className)} aria-label="Mitglieder">
-      <ScrollArea className="flex-1 px-2 pt-4">
-        {presenceKnown ? (
-          <>
-            <MemberSection title="Anwesend" members={members.filter((member) => member.presence !== "offline")} />
-            <MemberSection title="Offline" members={members.filter((member) => member.presence === "offline")} />
-          </>
-        ) : (
-          <MemberSection title="Mitglieder" members={members} />
-        )}
+    <aside className={cn("flex h-full w-60 shrink-0 flex-col bg-secondary", className)} aria-label="Mitglieder">
+      <ScrollArea className="min-h-0 flex-1">
+        {groupMembers(members, presenceKnown).map((group) => (
+          <MemberSection key={group.title} title={group.title} members={group.members} voiceRoomByUser={voiceRoomByUser} />
+        ))}
         <div className="h-4" />
       </ScrollArea>
     </aside>

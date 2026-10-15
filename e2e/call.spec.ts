@@ -3,7 +3,12 @@ import { createRoom, login, newPage, openRoom, registerUser } from "./helpers"
 
 async function joinVoice(page: Page) {
   await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
-  await expect(page.getByText("Sprachkanal verbunden")).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeVisible({ timeout: 30_000 })
+}
+
+/** Participant tiles on the call stage (no screenshares in these tests). */
+function tiles(page: Page) {
+  return page.getByTestId("call-tile")
 }
 
 for (const encrypted of [false, true]) {
@@ -26,8 +31,8 @@ for (const encrypted of [false, true]) {
     await joinVoice(bobPage)
 
     for (const page of [alicePage, bobPage]) {
-      await expect(page.getByText("2 Teilnehmer")).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByText("Verbindet…")).toHaveCount(0, { timeout: 30_000 })
+      await expect(tiles(page)).toHaveCount(2, { timeout: 30_000 })
+      await expect(page.locator('[data-testid="call-tile"][data-connecting]')).toHaveCount(0, { timeout: 30_000 })
       if (encrypted) await expect(page.getByLabel("Ende-zu-Ende-verschlüsselt").first()).toBeVisible()
     }
 
@@ -59,11 +64,13 @@ for (const encrypted of [false, true]) {
 
     // Mute shows up for the other participant.
     await alicePage.getByRole("button", { name: "Mikrofon stummschalten" }).last().click()
-    await expect(bobPage.getByLabel("Stummgeschaltet")).toBeVisible()
+    await expect(tiles(bobPage).filter({ hasText: alice.username }).getByLabel("Stummgeschaltet")).toBeVisible()
+    // ... and in the voice channel's member list in the sidebar.
+    await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`).getByLabel("Stummgeschaltet")).toBeVisible()
 
     // Leaving updates the other side.
     await alicePage.getByRole("button", { name: "Anruf verlassen" }).click()
-    await expect(bobPage.getByText("1 Teilnehmer")).toBeVisible({ timeout: 30_000 })
+    await expect(tiles(bobPage)).toHaveCount(1, { timeout: 30_000 })
   })
 }
 
@@ -90,5 +97,44 @@ test("calls in rooms without call permission can be enabled by an admin", async 
   await expect(alicePage.getByText("Anrufe sind jetzt für alle Mitglieder erlaubt.")).toBeVisible()
 
   await joinVoice(bobPage)
-  await expect(bobPage.getByText("2 Teilnehmer")).toBeVisible({ timeout: 30_000 })
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+})
+
+test("calls that are already running at login show up in the channel list", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Laufend ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob] })
+
+  const alicePage = await newPage(browser)
+  await login(alicePage, alice)
+  await openRoom(alicePage, roomName)
+  await joinVoice(alicePage)
+
+  // Bob logs in only now: the call must be listed without any further membership change.
+  const bobPage = await newPage(browser)
+  await login(bobPage, bob)
+  await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`).getByText(alice.username)).toBeVisible({ timeout: 30_000 })
+})
+
+test("mute and deafen work before joining and apply to the call", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const roomName = `Vorher stumm ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [] })
+
+  const page = await newPage(browser)
+  await login(page, alice)
+  await openRoom(page, roomName)
+
+  await page.getByRole("button", { name: "Ton stummschalten" }).click()
+  // Deafening mutes as well, like Discord.
+  await expect(page.getByRole("button", { name: "Mikrofon aktivieren" })).toBeVisible()
+
+  await joinVoice(page)
+  await expect(tiles(page).getByLabel("Stummgeschaltet")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ton aktivieren" }).first()).toBeVisible()
+
+  // Undeafening restores the microphone that deafening turned off.
+  await page.getByRole("button", { name: "Ton aktivieren" }).last().click()
+  await expect(tiles(page).getByLabel("Stummgeschaltet")).toHaveCount(0, { timeout: 15_000 })
 })

@@ -30,6 +30,9 @@ interface CallContextValue {
   /** Room we are currently connecting to. */
   joiningRoomId: string
   isInCallInActiveChannel: boolean
+  /** Self-mute/deafen, also before joining (applied on join, like Discord). */
+  isMicMuted: boolean
+  isDeafened: boolean
   joinCall: (roomId: string) => Promise<void>
   leaveCall: () => void
   toggleMicrophone: () => Promise<void>
@@ -37,12 +40,42 @@ interface CallContextValue {
   toggleScreenshare: () => Promise<void>
   toggleDeafen: () => void
   resumeAudio: () => Promise<void>
+  setParticipantVolume: (identity: string, volume: number) => void
+  setParticipantMuted: (identity: string, muted: boolean) => void
 }
 
 const CallContext = createContext<CallContextValue | undefined>(undefined)
 
 const noopSubscribe = () => () => {}
 const nullSnapshot = () => null
+
+const VOICE_PREFS_KEY = "nexspeak:voice-prefs"
+
+interface VoicePrefs {
+  muted: boolean
+  deafened: boolean
+  /** Muted only because of deafening: undeafening unmutes again (Discord behaviour). */
+  mutedByDeafen: boolean
+}
+
+const DEFAULT_VOICE_PREFS: VoicePrefs = { muted: false, deafened: false, mutedByDeafen: false }
+
+function loadVoicePrefs(): VoicePrefs {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(VOICE_PREFS_KEY) || "null") as Partial<VoicePrefs> | null
+    return { ...DEFAULT_VOICE_PREFS, ...parsed }
+  } catch {
+    return DEFAULT_VOICE_PREFS
+  }
+}
+
+function saveVoicePrefs(prefs: VoicePrefs): void {
+  try {
+    localStorage.setItem(VOICE_PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    // Remembering mute across reloads is a convenience only.
+  }
+}
 
 interface CallProviderProps {
   client: MatrixClient | null
@@ -62,6 +95,10 @@ function reportError(error: unknown, fallback: string) {
 export function CallProvider({ client, activeChannelId, children }: CallProviderProps) {
   const [session, setSession] = useState<CallSession | null>(null)
   const [joiningRoomId, setJoiningRoomId] = useState("")
+  const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(() =>
+    typeof window === "undefined" ? DEFAULT_VOICE_PREFS : loadVoicePrefs(),
+  )
+  const voicePrefsRef = useRef(voicePrefs)
   const sessionRef = useRef<CallSession | null>(null)
   const callInfoByRoom = useRtcCallInfo(client)
   const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
@@ -71,6 +108,12 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     session ? session.getSnapshot : nullSnapshot,
     nullSnapshot,
   )
+
+  const updateVoicePrefs = useCallback((next: VoicePrefs) => {
+    voicePrefsRef.current = next
+    setVoicePrefs(next)
+    saveVoicePrefs(next)
+  }, [])
 
   const endSession = useCallback((ended: CallSession) => {
     if (sessionRef.current === ended) sessionRef.current = null
@@ -96,6 +139,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           inputDeviceId: settings.inputDeviceId,
           outputDeviceId: settings.outputDeviceId,
           outputVolume: settings.outputVolume / 100,
+          startMuted: voicePrefsRef.current.muted,
+          startDeafened: voicePrefsRef.current.deafened,
         })
         next.onEnded = (reason) => {
           endSession(next)
@@ -131,16 +176,18 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
 
   const toggleMicrophone = useCallback(async () => {
     const current = sessionRef.current
-    if (!current) return
+    const prefs = voicePrefsRef.current
+    const isMuted = current ? current.getSnapshot().isMicMuted : prefs.muted
+    const isDeafened = current ? current.getSnapshot().isDeafened : prefs.deafened
     try {
-      const { isMicMuted, isDeafened } = current.getSnapshot()
-      await current.setMicrophoneEnabled(isMicMuted)
+      await current?.setMicrophoneEnabled(isMuted)
       // Unmuting while deafened makes no sense (Discord behaviour): undeafen too.
-      if (isMicMuted && isDeafened) current.setDeafened(false)
+      if (isMuted && isDeafened) current?.setDeafened(false)
+      updateVoicePrefs({ muted: !isMuted, deafened: isMuted ? false : isDeafened, mutedByDeafen: false })
     } catch (error) {
       reportError(error, "Mikrofon konnte nicht umgeschaltet werden.")
     }
-  }, [])
+  }, [updateVoicePrefs])
 
   const toggleCamera = useCallback(async () => {
     const current = sessionRef.current
@@ -166,12 +213,33 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
 
   const toggleDeafen = useCallback(() => {
     const current = sessionRef.current
-    if (!current) return
-    const { isDeafened, isMicMuted } = current.getSnapshot()
-    current.setDeafened(!isDeafened)
-    if (!isDeafened && !isMicMuted) {
-      current.setMicrophoneEnabled(false).catch((error: unknown) => console.warn("Failed to mute while deafening:", error))
+    const prefs = voicePrefsRef.current
+    const isDeafened = current ? current.getSnapshot().isDeafened : prefs.deafened
+    const isMuted = current ? current.getSnapshot().isMicMuted : prefs.muted
+
+    if (!isDeafened) {
+      // Deafening also mutes; remember whether we did that, to undo it again.
+      current?.setDeafened(true)
+      if (!isMuted) {
+        current?.setMicrophoneEnabled(false).catch((error: unknown) => console.warn("Failed to mute while deafening:", error))
+      }
+      updateVoicePrefs({ muted: true, deafened: true, mutedByDeafen: !isMuted })
+    } else {
+      current?.setDeafened(false)
+      const unmute = prefs.mutedByDeafen
+      if (unmute) {
+        current?.setMicrophoneEnabled(true).catch((error: unknown) => reportError(error, "Mikrofon konnte nicht aktiviert werden."))
+      }
+      updateVoicePrefs({ muted: unmute ? false : isMuted, deafened: false, mutedByDeafen: false })
     }
+  }, [updateVoicePrefs])
+
+  const setParticipantVolume = useCallback((identity: string, volume: number) => {
+    sessionRef.current?.setParticipantVolume(identity, volume)
+  }, [])
+
+  const setParticipantMuted = useCallback((identity: string, muted: boolean) => {
+    sessionRef.current?.setParticipantMuted(identity, muted)
   }, [])
 
   const resumeAudio = useCallback(async () => {
@@ -218,6 +286,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       call,
       joiningRoomId,
       isInCallInActiveChannel: Boolean(call && call.roomId === activeChannelId),
+      isMicMuted: call ? call.isMicMuted : voicePrefs.muted,
+      isDeafened: call ? call.isDeafened : voicePrefs.deafened,
       joinCall,
       leaveCall,
       toggleMicrophone,
@@ -225,8 +295,11 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       toggleScreenshare,
       toggleDeafen,
       resumeAudio,
+      setParticipantVolume,
+      setParticipantMuted,
     }),
     [
+      voicePrefs,
       callInfoByRoom,
       call,
       joiningRoomId,
@@ -238,6 +311,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       toggleScreenshare,
       toggleDeafen,
       resumeAudio,
+      setParticipantVolume,
+      setParticipantMuted,
     ],
   )
 

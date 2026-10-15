@@ -45,6 +45,9 @@
   --nx-chat-input: #383a40;
   --nx-member-bg: #2b2d31;
   --nx-hover: #35373c;
+  --nx-hover-foreground: #dbdee1;
+  --nx-active: #404249;
+  --nx-panel: #232428;
   --nx-online: #23a55a;
   --nx-idle: #f0b232;
   --nx-dnd: #f23f43;
@@ -95,6 +98,9 @@
   --color-nx-chat-input: var(--nx-chat-input);
   --color-nx-member-bg: var(--nx-member-bg);
   --color-nx-hover: var(--nx-hover);
+  --color-nx-hover-foreground: var(--nx-hover-foreground);
+  --color-nx-active: var(--nx-active);
+  --color-nx-panel: var(--nx-panel);
   --color-nx-online: var(--nx-online);
   --color-nx-idle: var(--nx-idle);
   --color-nx-dnd: var(--nx-dnd);

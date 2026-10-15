@@ -8,7 +8,9 @@ dazu Direktnachrichten, Sprach-/Videoanrufe und Bildschirmfreigabe.
 - **Ende-zu-Ende-Verschlüsselung:** Nachrichten und Anhänge, Recovery-Schlüssel mit Schlüssel-Backup,
   Geräteverifizierung per Emoji-Vergleich (kompatibel mit Element)
 - **Anrufe:** MatrixRTC mit LiveKit, kompatibel mit Element Call; in verschlüsselten Räumen sind auch
-  die Medien Ende-zu-Ende-verschlüsselt
+  die Medien Ende-zu-Ende-verschlüsselt. Bedienung wie bei Discord: Kachelansicht mit Sprech-Anzeige,
+  Fokus auf Kamera oder Bildschirmfreigabe, Lautstärke pro Person (Rechtsklick), Chat neben dem Anruf,
+  Stummschalten auch vor dem Beitreten
 - **Mobile Ansicht:** Navigation und Mitgliederliste als ausklappbare Panels
 
 ## Voraussetzungen

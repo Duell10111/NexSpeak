@@ -24,6 +24,8 @@ export function MatrixAvatar({ mxcUrl, name, size = 32, className }: MatrixAvata
         className,
       )}
       style={{ width: size, height: size }}
+      // Always shown next to the name, which screen readers already read.
+      aria-hidden
     >
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element -- blob: URLs cannot go through next/image
