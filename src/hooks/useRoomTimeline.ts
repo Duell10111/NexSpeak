@@ -1,7 +1,8 @@
 /**
  * useRoomTimeline Hook
- * Subscribes to room timeline events and manages message state
- * Handles deduplication, pagination, and live updates
+ * Derives the visible messages of a room straight from the SDK's live timeline plus
+ * pending local echoes. Re-deriving (instead of patching a local copy) keeps edits,
+ * redactions, decryption and timeline resets after a gappy sync correct.
  *
  * Usage:
  *   const { messages, isLoading, hasMore, loadMore } = useRoomTimeline(client, roomId)
@@ -9,8 +10,16 @@
 
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import type { MatrixClient, MatrixEvent, Room } from 'matrix-js-sdk'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  ClientEvent,
+  Direction,
+  MatrixEventEvent,
+  RoomEvent,
+  type MatrixClient,
+  type MatrixEvent,
+  type Room,
+} from 'matrix-js-sdk'
 import { eventToMatrixMessage } from '@/lib/matrix/types'
 import type { MatrixMessage } from '@/lib/matrix/types'
 
@@ -23,184 +32,113 @@ interface UseRoomTimelineReturn {
   loadMore: () => Promise<void>
 }
 
-export function useRoomTimeline(
-  client: MatrixClient | null,
-  roomId: string,
-): UseRoomTimelineReturn {
-  const [messages, setMessages] = useState<MatrixMessage[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const messageMapRef = useRef<Map<string, MatrixMessage>>(new Map())
-  const unsubscribeRef = useRef<(() => void) | null>(null)
+interface TimelineState {
+  roomId: string
+  messages: MatrixMessage[]
+  hasMore: boolean
+}
 
-  // Load initial messages from room timeline
+function buildMessages(room: Room): MatrixMessage[] {
+  const events = [...room.getLiveTimeline().getEvents(), ...room.getPendingEvents()]
+  const messages: MatrixMessage[] = []
+  events.forEach((event) => {
+    const message = eventToMatrixMessage(event, room.roomId)
+    if (message) messages.push(message)
+  })
+  return messages
+}
+
+function canPaginateBackwards(room: Room): boolean {
+  return room.getLiveTimeline().getPaginationToken(Direction.Backward) !== null
+}
+
+export function useRoomTimeline(client: MatrixClient | null, roomId: string): UseRoomTimelineReturn {
+  const [state, setState] = useState<TimelineState | null>(null)
+  const [loadingRoomId, setLoadingRoomId] = useState<string | null>(null)
+  const loadingRef = useRef(false)
+  // Room objects can appear after the room was selected (e.g. right after joining).
+  const [roomAvailableTick, setRoomAvailableTick] = useState(0)
+
   useEffect(() => {
     if (!client || !roomId) return
 
-    const emitter = client as unknown as {
-      on: (event: string, listener: (...args: unknown[]) => void) => void
-      removeListener: (event: string, listener: (...args: unknown[]) => void) => void
-    }
-
     const room = client.getRoom(roomId)
-    if (!room) return
-
-    // Clear previous messages and subscription
-    messageMapRef.current.clear()
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current()
-    }
-
-    // Load initial timeline
-    const timeline = room.getLiveTimeline()
-    const events = timeline.getEvents()
-
-    // Add all events to map (newest first in state, so we reverse)
-    events.forEach((event) => {
-      const msg = eventToMatrixMessage(event, roomId)
-      if (msg) {
-        messageMapRef.current.set(msg.id, msg)
+    if (!room) {
+      const onRoom = (newRoom: Room) => {
+        if (newRoom.roomId === roomId) setRoomAvailableTick((tick) => tick + 1)
       }
-    })
-
-    // Update state with sorted messages
-    const sortedMessages = Array.from(messageMapRef.current.values()).sort(
-      (a, b) => a.timestamp - b.timestamp,
-    )
-    setMessages(sortedMessages)
-
-    // Subscribe to new messages
-    const syncMessagesFromMap = () => {
-      setMessages(
-        Array.from(messageMapRef.current.values()).sort(
-          (a, b) => a.timestamp - b.timestamp,
-        ),
-      )
-    }
-
-    const handleTimelineEvent = (event: MatrixEvent) => {
-      const msg = eventToMatrixMessage(event, roomId)
-      if (!msg) return
-
-      // Upsert by event ID to support decrypted/edited updates.
-      messageMapRef.current.set(msg.id, msg)
-      syncMessagesFromMap()
-    }
-
-    // Listen to room timeline
-    const wrappedHandler = (event: unknown, eventRoom: unknown) => {
-      if (!eventRoom || typeof eventRoom !== 'object' || !('roomId' in eventRoom)) return
-      if (!event || typeof event !== 'object' || !('getType' in event)) return
-
-      const matrixRoom = eventRoom as Room
-      const matrixEvent = event as MatrixEvent
-
-      // Only process events for this room
-      if (matrixRoom.roomId === roomId) {
-        handleTimelineEvent(matrixEvent)
+      client.on(ClientEvent.Room, onRoom)
+      return () => {
+        client.removeListener(ClientEvent.Room, onRoom)
       }
     }
 
-    const decryptedHandler = (event: unknown) => {
-      if (!event || typeof event !== 'object' || !('getRoomId' in event)) return
-
-      const matrixEvent = event as MatrixEvent
-      if (matrixEvent.getRoomId() !== roomId) return
-
-      handleTimelineEvent(matrixEvent)
+    let frame: number | null = null
+    const recomputeNow = () => {
+      frame = null
+      setState({ roomId, messages: buildMessages(room), hasMore: canPaginateBackwards(room) })
+    }
+    const scheduleRecompute = () => {
+      if (frame === null) frame = requestAnimationFrame(recomputeNow)
+    }
+    const onRoomEvent = (_event: unknown, eventRoom: Room | undefined) => {
+      if (eventRoom?.roomId === roomId) scheduleRecompute()
+    }
+    const onEventChanged = (event: MatrixEvent) => {
+      if (event.getRoomId() === roomId) scheduleRecompute()
+    }
+    const onTimelineReset = (resetRoom: Room | undefined) => {
+      if (resetRoom?.roomId === roomId) scheduleRecompute()
     }
 
-    emitter.on('Room.timeline', wrappedHandler)
-    emitter.on('Event.decrypted', decryptedHandler)
+    scheduleRecompute()
 
-    unsubscribeRef.current = () => {
-      emitter.removeListener('Room.timeline', wrappedHandler)
-      emitter.removeListener('Event.decrypted', decryptedHandler)
-    }
+    client.on(RoomEvent.Timeline, onRoomEvent)
+    client.on(RoomEvent.Redaction, onRoomEvent)
+    client.on(RoomEvent.LocalEchoUpdated, onRoomEvent)
+    client.on(RoomEvent.TimelineReset, onTimelineReset)
+    client.on(MatrixEventEvent.Decrypted, onEventChanged)
+    client.on(MatrixEventEvent.Replaced, onEventChanged)
 
     return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current()
-      }
+      if (frame !== null) cancelAnimationFrame(frame)
+      client.removeListener(RoomEvent.Timeline, onRoomEvent)
+      client.removeListener(RoomEvent.Redaction, onRoomEvent)
+      client.removeListener(RoomEvent.LocalEchoUpdated, onRoomEvent)
+      client.removeListener(RoomEvent.TimelineReset, onTimelineReset)
+      client.removeListener(MatrixEventEvent.Decrypted, onEventChanged)
+      client.removeListener(MatrixEventEvent.Replaced, onEventChanged)
     }
-  }, [client, roomId])
+  }, [client, roomId, roomAvailableTick])
 
-  // Load more messages (backfill)
   const loadMore = useCallback(async () => {
-    if (!client || !roomId || isLoading || !hasMore) return
+    if (!client || !roomId || loadingRef.current) return
+    const room = client.getRoom(roomId)
+    if (!room || !canPaginateBackwards(room)) return
 
-    setIsLoading(true)
+    loadingRef.current = true
+    setLoadingRoomId(roomId)
     try {
-      const room = client.getRoom(roomId)
-      if (!room) return
-
-      const timeline = room.getLiveTimeline()
-      const events = timeline.getEvents()
-
-      if (events.length === 0) {
-        setHasMore(false)
-        return
-      }
-
-      const previousEventIds = new Set(
-        events
-          .map((event) => event.getId())
-          .filter((id): id is string => Boolean(id)),
-      )
-
-      // Paginate backwards
-      const didPaginate = await client.paginateEventTimeline(timeline, {
+      // New events arrive through RoomEvent.Timeline, which triggers a recompute.
+      const hasMore = await client.paginateEventTimeline(room.getLiveTimeline(), {
         backwards: true,
         limit: BACKFILL_LIMIT,
       })
-
-      if (!didPaginate) {
-        setHasMore(false)
-        return
-      }
-
-      const updatedEvents = timeline.getEvents()
-      const newlyLoadedEvents = updatedEvents.filter((event) => {
-        const eventId = event.getId()
-        return !!eventId && !previousEventIds.has(eventId)
-      })
-
-      // Add new messages to map
-      const newMessages: MatrixMessage[] = []
-      newlyLoadedEvents.forEach((event) => {
-        const msg = eventToMatrixMessage(event, roomId)
-        if (msg) {
-          const exists = messageMapRef.current.has(msg.id)
-          messageMapRef.current.set(msg.id, msg)
-          if (!exists) {
-            newMessages.push(msg)
-          }
-        }
-      })
-
-      // Update state
-      if (newMessages.length > 0) {
-        setMessages((prev) => {
-          const all = [...prev, ...newMessages]
-          return all.sort((a, b) => a.timestamp - b.timestamp)
-        })
-      }
-
-      if (newlyLoadedEvents.length < BACKFILL_LIMIT) {
-        setHasMore(false)
-      }
+      setState((prev) => (prev && prev.roomId === roomId ? { ...prev, hasMore } : prev))
     } catch (error) {
       console.error('Failed to load more messages:', error)
     } finally {
-      setIsLoading(false)
+      loadingRef.current = false
+      setLoadingRoomId(null)
     }
-  }, [client, roomId, isLoading, hasMore])
+  }, [client, roomId])
+
+  const current = state && state.roomId === roomId ? state : null
 
   return {
-    messages,
-    isLoading,
-    hasMore,
+    messages: current?.messages ?? [],
+    isLoading: loadingRoomId === roomId || (Boolean(roomId) && !current),
+    hasMore: current?.hasMore ?? false,
     loadMore,
   }
 }
-

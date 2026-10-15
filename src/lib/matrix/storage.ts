@@ -12,6 +12,28 @@ export interface MatrixSession {
 }
 
 const STORAGE_KEY = 'nexspeak_matrix_session'
+const listeners = new Set<() => void>()
+
+// Cache the parsed session by its raw string so useSyncExternalStore gets a stable snapshot.
+let cachedRaw: string | null = null
+let cachedSession: MatrixSession | null = null
+
+function isMatrixSession(value: unknown): value is MatrixSession {
+  if (!value || typeof value !== 'object') return false
+  const session = value as Record<string, unknown>
+  return (
+    typeof session.homeserverUrl === 'string' &&
+    typeof session.userId === 'string' &&
+    typeof session.accessToken === 'string' &&
+    typeof session.deviceId === 'string' &&
+    session.homeserverUrl.length > 0 &&
+    session.accessToken.length > 0
+  )
+}
+
+function notify(): void {
+  listeners.forEach((listener) => listener())
+}
 
 /**
  * Save Matrix session to localStorage
@@ -22,6 +44,7 @@ export function saveSession(session: MatrixSession): void {
   } catch (error) {
     console.error('Failed to save Matrix session:', error)
   }
+  notify()
 }
 
 /**
@@ -29,8 +52,13 @@ export function saveSession(session: MatrixSession): void {
  */
 export function loadSession(): MatrixSession | null {
   try {
-    const data = localStorage.getItem(STORAGE_KEY)
-    return data ? JSON.parse(data) : null
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw === cachedRaw) return cachedSession
+
+    cachedRaw = raw
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    cachedSession = isMatrixSession(parsed) ? parsed : null
+    return cachedSession
   } catch (error) {
     console.error('Failed to load Matrix session:', error)
     return null
@@ -46,18 +74,22 @@ export function clearSession(): void {
   } catch (error) {
     console.error('Failed to clear Matrix session:', error)
   }
+  notify()
 }
 
 /**
- * Check if valid session exists
+ * Subscribe to session changes in this tab and in other tabs (e.g. logout elsewhere).
  */
-export function hasValidSession(): boolean {
-  const session = loadSession()
-  return !!(
-    session?.homeserverUrl &&
-    session?.userId &&
-    session?.accessToken &&
-    session?.deviceId
-  )
-}
+export function subscribeSession(listener: () => void): () => void {
+  listeners.add(listener)
 
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === STORAGE_KEY) listener()
+  }
+  window.addEventListener('storage', onStorage)
+
+  return () => {
+    listeners.delete(listener)
+    window.removeEventListener('storage', onStorage)
+  }
+}

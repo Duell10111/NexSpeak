@@ -1,77 +1,80 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react"
+import { MsgType } from "matrix-js-sdk"
+import type { RoomMessageEventContent } from "matrix-js-sdk/lib/@types/events"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import {
-  Hash,
-  Bell,
-  Pin,
-  Users,
-  Search,
-  Inbox,
-  HelpCircle,
-  PlusCircle,
-  Gift,
-  Sticker,
-  Smile,
-  SendHorizonal,
-} from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
+import { Hash, Lock, Phone, PlusCircle, SendHorizonal, Users } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomTimeline } from "@/hooks/useRoomTimeline"
+import { useRoomInfo } from "@/hooks/useRoomInfo"
+import { useReadReceipt } from "@/hooks/useReadReceipt"
+import { describeMatrixError } from "@/lib/matrix/errors"
 import { CallArea } from "@/components/nexspeak/call-area"
+import { DateDivider, MessageItem } from "@/components/nexspeak/message-item"
 import type { MatrixMessage } from "@/lib/matrix/types"
 
 interface ChatAreaProps {
-  activeServerId: string
   activeChannelId: string
   showMembers: boolean
   onToggleMembers: () => void
 }
 
-// ...existing code...
+const GROUP_WINDOW_MS = 5 * 60 * 1000
+const LOAD_MORE_THRESHOLD_PX = 200
+const STICK_TO_BOTTOM_THRESHOLD_PX = 80
+const MAX_COMPOSER_HEIGHT_PX = 200
 
-function MatrixMessageItem({ message }: { message: MatrixMessage }) {
-  const timestamp = new Date(message.timestamp)
-  const hours = timestamp.getHours().toString().padStart(2, "0")
-  const minutes = timestamp.getMinutes().toString().padStart(2, "0")
+function isSameDay(a: number, b: number): boolean {
+  return new Date(a).toDateString() === new Date(b).toDateString()
+}
 
+async function readImageSize(file: File): Promise<{ w: number; h: number } | undefined> {
+  try {
+    const bitmap = await createImageBitmap(file)
+    const size = { w: bitmap.width, h: bitmap.height }
+    bitmap.close()
+    return size
+  } catch {
+    return undefined
+  }
+}
+
+function MessageList({ messages }: { messages: MatrixMessage[] }) {
   return (
-    <div className="group flex gap-4 px-4 py-1 hover:bg-nx-hover/50 transition-colors">
-      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
-        {message.senderName?.charAt(0).toUpperCase() || "?"}
-      </div>
-      <div className="flex-1 overflow-hidden">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold hover:underline cursor-pointer text-foreground">
-            {message.senderName}
-          </span>
-          <span className="text-[11px] text-muted-foreground">
-            {hours}:{minutes}
-          </span>
-          {message.edited && (
-            <span className="text-[10px] text-muted-foreground">(bearbeitet)</span>
-          )}
-        </div>
-        <p className="text-sm text-foreground leading-relaxed break-words">{message.content}</p>
-      </div>
-    </div>
+    <>
+      {messages.map((message, index) => {
+        const previous = messages[index - 1]
+        const newDay = !previous || !isSameDay(previous.timestamp, message.timestamp)
+        const isContinuation =
+          !newDay &&
+          previous.senderId === message.senderId &&
+          message.timestamp - previous.timestamp < GROUP_WINDOW_MS &&
+          message.kind !== "emote"
+
+        return (
+          <div key={message.id}>
+            {newDay && <DateDivider timestamp={message.timestamp} />}
+            <MessageItem message={message} isContinuation={isContinuation} />
+          </div>
+        )
+      })}
+    </>
   )
 }
 
-export function ChatArea({
-  activeServerId: _activeServerId,
-  activeChannelId,
-  showMembers,
-  onToggleMembers,
-}: ChatAreaProps) {
-  void _activeServerId
-
+export function ChatArea({ activeChannelId, showMembers, onToggleMembers }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState("")
-  const [isSending, setIsSending] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const stickToBottomRef = useRef(true)
+  const scrollHeightBeforeLoadRef = useRef<number | null>(null)
 
   const {
     selfUserId,
@@ -86,119 +89,199 @@ export function ChatArea({
     toggleScreenshare,
     toggleHeadphones,
     leaveActiveCall,
+    joinCall,
   } = useCallContext()
+  const [isJoiningCall, setIsJoiningCall] = useState(false)
 
   const { client, isCryptoReady } = useMatrixClient()
-  const { messages: matrixMessages, isLoading: timelineLoading, hasMore, loadMore } = useRoomTimeline(
-    client,
-    activeChannelId,
-  )
+  const roomInfo = useRoomInfo(client, activeChannelId)
+  const { messages, isLoading, hasMore, loadMore } = useRoomTimeline(client, activeChannelId)
 
-  // Only use matrix timeline; do not use any mock/local messages
-  const displayMessages: MatrixMessage[] = matrixMessages || []
+  const roomName = roomInfo?.name || ""
+  const isEncryptedRoom = roomInfo?.isEncrypted ?? false
+  const canSend = Boolean(client && roomInfo?.exists && (!isEncryptedRoom || isCryptoReady))
+  const latestSentEvent = messages.findLast((message) => message.status === "sent")?.event
 
-  // Get room info for header
-  const room = client ? client.getRoom(activeChannelId) : undefined
-  const roomName = room?.name || (room && room.getCanonicalAlias ? room.getCanonicalAlias() : activeChannelId)
-  const roomTopicEvent = room?.currentState.getStateEvents('m.room.topic', '')
-  const roomTopic = roomTopicEvent?.getContent()?.topic
-  const roomEncryptionState = room?.currentState.getStateEvents('m.room.encryption', '')
-  const isEncryptedRoom = Boolean(roomEncryptionState)
-  const isInCall = isInCallInActiveChannel
+  useReadReceipt(client, activeChannelId, latestSentEvent, !isInCallInActiveChannel)
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      const viewport = scrollRef.current.querySelector("[data-slot='scroll-area-viewport']")
-      if (viewport) {
-        viewport.scrollTop = viewport.scrollHeight
-      }
+  // A newly opened room starts scrolled to the newest message.
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true
+    scrollHeightBeforeLoadRef.current = null
+  }, [activeChannelId])
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+
+    if (scrollHeightBeforeLoadRef.current !== null) {
+      // Older messages were prepended: keep the visible messages where they were.
+      element.scrollTop += element.scrollHeight - scrollHeightBeforeLoadRef.current
+      scrollHeightBeforeLoadRef.current = null
+    } else if (stickToBottomRef.current) {
+      element.scrollTop = element.scrollHeight
     }
-  }, [displayMessages.length])
+  }, [messages])
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || !client || !activeChannelId) return
-    if (isEncryptedRoom && !isCryptoReady) return
+  // Keep loading history until the viewport is filled, so scrolling up is possible at all.
+  useEffect(() => {
+    const element = scrollRef.current
+    if (!element || isLoading || !hasMore) return
+    if (element.scrollHeight <= element.clientHeight) void loadMore()
+  }, [messages, isLoading, hasMore, loadMore])
 
-    setIsSending(true)
-    try {
-      // sendMessage respects room encryption when crypto is initialized.
-      await client.sendTextMessage(activeChannelId, inputValue.trim())
-      // Clear composer; message will appear via timeline when echoed by server
-      setInputValue("")
-    } catch (error) {
-      console.error('Failed to send message:', error)
-    } finally {
-      setIsSending(false)
+  const handleScroll = () => {
+    const element = scrollRef.current
+    if (!element) return
+
+    stickToBottomRef.current =
+      element.scrollHeight - element.scrollTop - element.clientHeight < STICK_TO_BOTTOM_THRESHOLD_PX
+
+    if (element.scrollTop < LOAD_MORE_THRESHOLD_PX && hasMore && !isLoading) {
+      scrollHeightBeforeLoadRef.current = element.scrollHeight
+      void loadMore()
     }
   }
 
+  const resizeComposer = () => {
+    const element = composerRef.current
+    if (!element) return
+    element.style.height = "auto"
+    element.style.height = `${Math.min(element.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`
+  }
+
+  const handleSend = () => {
+    const body = inputValue.trim()
+    if (!body || !client || !canSend) return
+
+    setInputValue("")
+    requestAnimationFrame(resizeComposer)
+    stickToBottomRef.current = true
+
+    // The local echo shows up immediately; failures stay in the timeline with a retry action.
+    client.sendTextMessage(activeChannelId, body).catch((error: unknown) => {
+      toast.error(describeMatrixError(error, "Nachricht konnte nicht gesendet werden."))
+    })
+  }
+
+  const handleJoinCall = async () => {
+    setIsJoiningCall(true)
+    try {
+      await joinCall(activeChannelId)
+    } catch (error) {
+      console.error("Failed to join voice call:", error)
+      toast.error(describeMatrixError(error, "Dem Sprachkanal konnte nicht beigetreten werden."))
+    } finally {
+      setIsJoiningCall(false)
+    }
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      handleSend()
+    }
+  }
+
+  const handleFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file || !client || !canSend) return
+
+    setIsUploading(true)
+    try {
+      const isImage = file.type.startsWith("image/")
+      const { content_uri: url } = await client.uploadContent(file, { name: file.name, type: file.type })
+      const imageSize = isImage ? await readImageSize(file) : undefined
+
+      const content = {
+        msgtype: isImage ? MsgType.Image : MsgType.File,
+        body: file.name,
+        filename: file.name,
+        url,
+        info: { mimetype: file.type || undefined, size: file.size, ...imageSize },
+      } as RoomMessageEventContent
+
+      stickToBottomRef.current = true
+      await client.sendMessage(activeChannelId, content)
+    } catch (error) {
+      toast.error(describeMatrixError(error, "Datei konnte nicht hochgeladen werden."))
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const composerPlaceholder = !roomInfo?.exists
+    ? "Raum wird geladen…"
+    : isEncryptedRoom && !isCryptoReady
+      ? "Verschlüsselung ist nicht verfügbar – Senden nicht möglich"
+      : `Nachricht an #${roomName}`
+
+  if (!activeChannelId) {
+    return (
+      <div className="flex h-full flex-1 flex-col items-center justify-center bg-background text-sm text-muted-foreground">
+        Wähle links einen Raum aus.
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-full flex-1 flex-col bg-background">
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
       {/* Channel header */}
-      <header className="flex h-12 items-center justify-between border-b border-border px-4 shadow-sm">
-        <div className="flex items-center gap-2">
-          <Hash className="h-5 w-5 text-muted-foreground" />
-          <h3 className="text-[15px] font-semibold text-foreground">{roomName || 'Unnamed room'}</h3>
-          {roomTopic && (
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4 shadow-sm">
+        <div className="flex min-w-0 items-center gap-2">
+          <Hash className="h-5 w-5 shrink-0 text-muted-foreground" />
+          <h3 className="truncate text-[15px] font-semibold text-foreground">{roomName}</h3>
+          {isEncryptedRoom && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Ende-zu-Ende-verschlüsselt" />
+              </TooltipTrigger>
+              <TooltipContent>Ende-zu-Ende-verschlüsselt</TooltipContent>
+            </Tooltip>
+          )}
+          {roomInfo?.topic && (
             <>
-              <div className="mx-2 h-6 w-px bg-border" />
-              <span className="truncate text-sm text-muted-foreground">{roomTopic}</span>
+              <div className="mx-2 h-6 w-px shrink-0 bg-border" />
+              <span className="truncate text-sm text-muted-foreground" title={roomInfo.topic}>
+                {roomInfo.topic}
+              </span>
             </>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Benachrichtigungen">
-                <Bell className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Benachrichtigungen</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Angeheftete Nachrichten">
-                <Pin className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Angeheftete Nachrichten</TooltipContent>
-          </Tooltip>
+          {!isInCallInActiveChannel && roomInfo?.exists && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => void handleJoinCall()}
+                  disabled={isJoiningCall}
+                  className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                  aria-label="Sprachkanal beitreten"
+                >
+                  {isJoiningCall ? <Spinner className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Sprachkanal beitreten</TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={onToggleMembers}
                 className={cn("transition-colors", showMembers ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
                 aria-label="Mitgliederliste"
+                aria-pressed={showMembers}
               >
                 <Users className="h-5 w-5" />
               </button>
             </TooltipTrigger>
             <TooltipContent>Mitgliederliste</TooltipContent>
           </Tooltip>
-          <div className="relative">
-            <input type="text" placeholder="Suchen" className="h-7 w-36 rounded-md bg-input px-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:w-52 transition-all" />
-            <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Posteingang">
-                <Inbox className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Posteingang</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Hilfe">
-                <HelpCircle className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Hilfe</TooltipContent>
-          </Tooltip>
         </div>
       </header>
 
-      {isInCall ? (
+      {isInCallInActiveChannel ? (
         <CallArea
           selfUserId={selfUserId}
           participants={callParticipants}
@@ -213,91 +296,76 @@ export function ChatArea({
           onLeaveCall={leaveActiveCall}
         />
       ) : (
-      <>
-      {/* Messages */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
-        <div className="flex flex-col">
-          {/* Welcome banner */}
-          <div className="px-4 pt-8 pb-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Hash className="h-8 w-8 text-muted-foreground" />
+        <>
+          {/* Messages */}
+          <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="polite">
+            <div className="flex flex-col pb-4">
+              {hasMore || isLoading ? (
+                <div className="flex justify-center py-4 text-muted-foreground">
+                  <Spinner className="h-5 w-5" />
+                </div>
+              ) : (
+                <div className="px-4 pt-8 pb-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+                    <Hash className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h2 className="mt-2 text-2xl font-bold text-balance text-foreground">Willkommen bei #{roomName}!</h2>
+                  <p className="text-sm text-muted-foreground">Das ist der Anfang des Raums #{roomName}.</p>
+                </div>
+              )}
+
+              <MessageList messages={messages} />
             </div>
-            <h2 className="mt-2 text-2xl font-bold text-foreground text-balance">{roomName ? `Willkommen bei #${roomName}!` : 'Willkommen'}</h2>
-            <p className="text-sm text-muted-foreground">{roomName ? `Das ist der Anfang des #${roomName} Kanals.` : 'Wähle einen Raum.'}</p>
           </div>
 
-          {/* Messages list */}
-          <div className="flex flex-col gap-0.5 pb-4">
-            {timelineLoading && <div className="p-4 text-center text-muted-foreground">Lade Nachrichten…</div>}
-            {!timelineLoading && displayMessages.length === 0 && (
-              <div className="p-4 text-center text-muted-foreground">Keine Nachrichten</div>
-            )}
-
-            {displayMessages.map((msg) => (
-              <div key={msg.id} className="relative">
-                <MatrixMessageItem message={msg} />
-              </div>
-            ))}
-
-            {hasMore && (
-              <div className="px-4 py-2 text-center">
-                <button onClick={() => loadMore()} className="text-sm text-primary hover:underline">Mehr laden</button>
-              </div>
-            )}
+          {/* Message input */}
+          <div className="shrink-0 px-4 pb-6 pt-1">
+            <div className="flex items-end gap-2 rounded-lg bg-nx-chat-input px-4 py-2.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      aria-label="Datei anhängen"
+                      disabled={!canSend || isUploading || isEncryptedRoom}
+                    >
+                      {isUploading ? <Spinner className="h-5 w-5" /> : <PlusCircle className="h-5 w-5" />}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isEncryptedRoom ? "Dateien in verschlüsselten Räumen werden noch nicht unterstützt" : "Datei anhängen"}
+                </TooltipContent>
+              </Tooltip>
+              <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void handleFileSelected(event)} />
+              <textarea
+                ref={composerRef}
+                rows={1}
+                value={inputValue}
+                onChange={(event) => {
+                  setInputValue(event.target.value)
+                  resizeComposer()
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={composerPlaceholder}
+                aria-label="Nachricht"
+                className="max-h-[200px] flex-1 resize-none bg-transparent text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
+                disabled={!canSend}
+              />
+              {inputValue.trim() && (
+                <button
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  className="rounded-md bg-primary p-1.5 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  aria-label="Senden"
+                >
+                  <SendHorizonal className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </ScrollArea>
-
-      {/* Message input */}
-      <div className="px-4 pb-6 pt-1">
-        <div className="flex items-center gap-2 rounded-lg bg-nx-chat-input px-4 py-2.5">
-          <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Datei anfuegen" disabled={isSending}>
-            <PlusCircle className="h-5 w-5" />
-          </button>
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            placeholder={
-              isEncryptedRoom && !isCryptoReady
-                ? 'Verschluesselung wird initialisiert...'
-                : roomName
-                  ? `Nachricht an #${roomName}`
-                  : 'Nachricht'
-            }
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50"
-            disabled={isSending || !client || !room || (isEncryptedRoom && !isCryptoReady)}
-          />
-          <div className="flex items-center gap-2">
-            <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Geschenk" disabled={isSending}>
-              <Gift className="h-5 w-5" />
-            </button>
-            <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Sticker" disabled={isSending}>
-              <Sticker className="h-5 w-5" />
-            </button>
-            <button className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" aria-label="Emoji" disabled={isSending}>
-              <Smile className="h-5 w-5" />
-            </button>
-            {inputValue.trim() && (
-              <button
-                onClick={handleSend}
-                disabled={isSending || !client || !room || (isEncryptedRoom && !isCryptoReady)}
-                className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                aria-label="Senden"
-              >
-                <SendHorizonal className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      </>
+        </>
       )}
     </div>
   )

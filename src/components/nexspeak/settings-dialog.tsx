@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { toast } from "sonner"
 import {
   Dialog,
   DialogContent,
@@ -13,174 +14,157 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
-import { Mic, Headphones } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import { Spinner } from "@/components/ui/spinner"
+import { Headphones, LogOut, Mic } from "lucide-react"
+import { useMatrix } from "@/components/matrix-provider"
+import {
+  getDefaultAudioSettings,
+  loadAudioSettings,
+  saveAudioSettings,
+  subscribeAudioSettings,
+} from "@/lib/audio-settings"
 
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-interface AudioSettings {
-  inputDevice: string
-  outputDevice: string
-  inputVolume: number
-  outputVolume: number
-}
+// Radix Select doesn't allow an empty string as item value.
+const DEFAULT_DEVICE = "__default__"
+const MIC_TEST_DURATION_MS = 5000
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [audioSettings, setAudioSettings] = useState<AudioSettings>({
-    inputDevice: "default",
-    outputDevice: "default",
-    inputVolume: 100,
-    outputVolume: 100,
+function useAudioDevices(open: boolean) {
+  const [devices, setDevices] = useState<{ inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }>({
+    inputs: [],
+    outputs: [],
   })
+  const [permissionError, setPermissionError] = useState(false)
 
-  const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([])
-  const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([])
-  const [isTesting, setIsTesting] = useState(false)
-
-  // Lade verfügbare Audio-Geräte
   useEffect(() => {
+    if (!open || !navigator.mediaDevices) return
+    let cancelled = false
+
     const loadDevices = async () => {
       try {
-        // Fordere Berechtigung an
-        await navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-          stream.getTracks().forEach((track) => track.stop())
+        // Device labels are only exposed after microphone permission was granted.
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        stream.getTracks().forEach((track) => track.stop())
+        if (!cancelled) setPermissionError(false)
+      } catch {
+        if (!cancelled) setPermissionError(true)
+      }
+
+      try {
+        const all = await navigator.mediaDevices.enumerateDevices()
+        if (cancelled) return
+        setDevices({
+          inputs: all.filter((device) => device.kind === "audioinput" && device.deviceId !== "default"),
+          outputs: all.filter((device) => device.kind === "audiooutput" && device.deviceId !== "default"),
         })
-
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        const inputDevs = devices.filter((device) => device.kind === "audioinput")
-        const outputDevs = devices.filter((device) => device.kind === "audiooutput")
-
-        setInputDevices(inputDevs)
-        setOutputDevices(outputDevs)
-
-        // Setze Standard-Geräte falls verfügbar
-        if (inputDevs.length > 0 && audioSettings.inputDevice === "default") {
-          setAudioSettings((prev) => ({
-            ...prev,
-            inputDevice: inputDevs[0].deviceId,
-          }))
-        }
-        if (outputDevs.length > 0 && audioSettings.outputDevice === "default") {
-          setAudioSettings((prev) => ({
-            ...prev,
-            outputDevice: outputDevs[0].deviceId,
-          }))
-        }
       } catch (error) {
         console.error("Failed to enumerate devices:", error)
       }
     }
 
-    if (open) {
-      loadDevices()
+    void loadDevices()
+    navigator.mediaDevices.addEventListener("devicechange", loadDevices)
+    return () => {
+      cancelled = true
+      navigator.mediaDevices.removeEventListener("devicechange", loadDevices)
     }
   }, [open])
 
-  const handleInputDeviceChange = (deviceId: string) => {
-    setAudioSettings((prev) => ({
-      ...prev,
-      inputDevice: deviceId,
-    }))
-    // Hier könnte die Einstellung in localStorage oder einer API gespeichert werden
-  }
+  return { ...devices, permissionError }
+}
 
-  const handleOutputDeviceChange = (deviceId: string) => {
-    setAudioSettings((prev) => ({
-      ...prev,
-      outputDevice: deviceId,
-    }))
-  }
+function MicrophoneTest({ deviceId }: { deviceId: string }) {
+  const [level, setLevel] = useState<number | null>(null)
+  const stopRef = useRef<(() => void) | null>(null)
 
-  const handleInputVolumeChange = (value: number[]) => {
-    setAudioSettings((prev) => ({
-      ...prev,
-      inputVolume: value[0],
-    }))
-  }
+  useEffect(() => () => stopRef.current?.(), [])
 
-  const handleOutputVolumeChange = (value: number[]) => {
-    setAudioSettings((prev) => ({
-      ...prev,
-      outputVolume: value[0],
-    }))
-  }
-
-  const testMicrophone = async () => {
-    setIsTesting(true)
+  const start = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: audioSettings.inputDevice },
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
       })
       const audioContext = new AudioContext()
       const analyser = audioContext.createAnalyser()
-      const source = audioContext.createMediaStreamSource(stream)
-      source.connect(analyser)
+      analyser.fftSize = 1024
+      audioContext.createMediaStreamSource(stream).connect(analyser)
+      const buffer = new Uint8Array(analyser.fftSize)
 
-      // Prüfe ob Audio ankommt
-      const dataArray = new Uint8Array(analyser.frequencyBinCount)
-      let maxVolume = 0
-
-      const checkVolume = () => {
-        analyser.getByteFrequencyData(dataArray)
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length
-        maxVolume = Math.max(maxVolume, average)
-
-        if (maxVolume > 10) {
-          // Audio erkannt
-          stream.getTracks().forEach((track) => track.stop())
-          audioContext.close()
-          setIsTesting(false)
-          alert("Mikrofon funktioniert! Schall erkannt.")
-        } else if (audioContext.currentTime < 3) {
-          // 3 Sekunden testen
-          requestAnimationFrame(checkVolume)
-        } else {
-          stream.getTracks().forEach((track) => track.stop())
-          audioContext.close()
-          setIsTesting(false)
-          if (maxVolume === 0) {
-            alert("Kein Schall erkannt. Bitte stelle sicher, dass dein Mikrofon angeschlossen ist.")
-          }
+      let frame = 0
+      const tick = () => {
+        analyser.getByteTimeDomainData(buffer)
+        let sum = 0
+        for (const sample of buffer) {
+          const normalized = (sample - 128) / 128
+          sum += normalized * normalized
         }
+        setLevel(Math.min(100, Math.sqrt(sum / buffer.length) * 400))
+        frame = requestAnimationFrame(tick)
       }
+      tick()
 
-      checkVolume()
+      const timeout = setTimeout(() => stopRef.current?.(), MIC_TEST_DURATION_MS)
+      stopRef.current = () => {
+        clearTimeout(timeout)
+        cancelAnimationFrame(frame)
+        stream.getTracks().forEach((track) => track.stop())
+        void audioContext.close()
+        stopRef.current = null
+        setLevel(null)
+      }
     } catch (error) {
       console.error("Failed to test microphone:", error)
-      setIsTesting(false)
-      alert("Fehler beim Testen des Mikrofons. Bitte überprüfe die Berechtigungen.")
+      toast.error("Mikrofon konnte nicht geöffnet werden. Bitte prüfe die Berechtigungen.")
     }
   }
 
-  const testSpeaker = async () => {
-    setIsTesting(true)
+  return (
+    <div className="space-y-2">
+      <Button size="sm" variant="outline" onClick={() => void start()} disabled={level !== null} className="w-full">
+        {level !== null ? "Sprich jetzt…" : "Mikrofon testen"}
+      </Button>
+      {level !== null && <Progress value={level} aria-label="Mikrofonpegel" />}
+    </div>
+  )
+}
+
+function playTestTone(volume: number, outputDeviceId: string) {
+  const audioContext = new AudioContext()
+  const sinkCapable = audioContext as AudioContext & { setSinkId?: (id: string) => Promise<void> }
+  if (outputDeviceId && sinkCapable.setSinkId) {
+    void sinkCapable.setSinkId(outputDeviceId).catch(() => {})
+  }
+
+  const oscillator = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  oscillator.connect(gain)
+  gain.connect(audioContext.destination)
+  oscillator.frequency.value = 440
+  gain.gain.setValueAtTime(0.15 * volume, audioContext.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1)
+  oscillator.start()
+  oscillator.stop(audioContext.currentTime + 1)
+  oscillator.onended = () => void audioContext.close()
+}
+
+export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+  const { session, logout } = useMatrix()
+  const settings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
+  const { inputs, outputs, permissionError } = useAudioDevices(open)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const supportsOutputSelection = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
     try {
-      // Erstelle einen Testton (440 Hz - A Note)
-      const audioContext = new AudioContext()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-
-      oscillator.frequency.value = 440
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1)
-
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 1)
-
-      setTimeout(() => {
-        audioContext.close()
-        setIsTesting(false)
-        alert("Testton abgespielt. Hast du einen Ton gehört?")
-      }, 1000)
-    } catch (error) {
-      console.error("Failed to test speaker:", error)
-      setIsTesting(false)
-      alert("Fehler beim Testen des Lautsprechers.")
+      await logout()
+    } finally {
+      setIsLoggingOut(false)
     }
   }
 
@@ -189,19 +173,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       <DialogContent className="w-full max-w-md">
         <DialogHeader>
           <DialogTitle>Einstellungen</DialogTitle>
-          <DialogDescription>
-            Passe deine Audioeinstellungen und andere Optionen an
-          </DialogDescription>
+          <DialogDescription>Audiogeräte und Konto verwalten</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="audio" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="audio">Audio</TabsTrigger>
-            <TabsTrigger value="general">Allgemein</TabsTrigger>
+            <TabsTrigger value="account">Konto</TabsTrigger>
           </TabsList>
 
           <TabsContent value="audio" className="space-y-6">
-            {/* Eingabegerät */}
+            {permissionError && (
+              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                Kein Zugriff auf das Mikrofon. Erlaube den Zugriff in den Browser-Einstellungen, um Geräte auszuwählen.
+              </p>
+            )}
+
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Mic className="h-4 w-4 text-muted-foreground" />
@@ -209,54 +196,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   Eingabegerät (Mikrofon)
                 </Label>
               </div>
-              <Select value={audioSettings.inputDevice} onValueChange={handleInputDeviceChange}>
+              <Select
+                value={settings.inputDeviceId || DEFAULT_DEVICE}
+                onValueChange={(value) => saveAudioSettings({ inputDeviceId: value === DEFAULT_DEVICE ? "" : value })}
+              >
                 <SelectTrigger id="input-device">
-                  <SelectValue placeholder="Wähle ein Eingabegerät" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {inputDevices.map((device) => (
+                  <SelectItem value={DEFAULT_DEVICE}>Systemstandard</SelectItem>
+                  {inputs.map((device, index) => (
                     <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Eingabegerät ${inputDevices.indexOf(device) + 1}`}
+                      {device.label || `Mikrofon ${index + 1}`}
                     </SelectItem>
                   ))}
-                  {inputDevices.length === 0 && (
-                    <SelectItem value="default" disabled>
-                      Keine Geräte gefunden
-                    </SelectItem>
-                  )}
                 </SelectContent>
               </Select>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={testMicrophone}
-                disabled={isTesting || inputDevices.length === 0}
-                className="w-full"
-              >
-                {isTesting ? "Teste..." : "Mikrofon testen"}
-              </Button>
+              <MicrophoneTest deviceId={settings.inputDeviceId} />
             </div>
 
-            {/* Eingabe-Lautstärke */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="input-volume">Mikrofon-Lautstärke</Label>
-                <span className="text-sm font-medium text-muted-foreground">
-                  {audioSettings.inputVolume}%
-                </span>
-              </div>
-              <Slider
-                id="input-volume"
-                min={0}
-                max={100}
-                step={1}
-                value={[audioSettings.inputVolume]}
-                onValueChange={handleInputVolumeChange}
-                className="w-full"
-              />
-            </div>
-
-            {/* Ausgabegerät */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Headphones className="h-4 w-4 text-muted-foreground" />
@@ -264,63 +222,73 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   Ausgabegerät (Lautsprecher)
                 </Label>
               </div>
-              <Select value={audioSettings.outputDevice} onValueChange={handleOutputDeviceChange}>
+              <Select
+                value={settings.outputDeviceId || DEFAULT_DEVICE}
+                onValueChange={(value) => saveAudioSettings({ outputDeviceId: value === DEFAULT_DEVICE ? "" : value })}
+                disabled={!supportsOutputSelection}
+              >
                 <SelectTrigger id="output-device">
-                  <SelectValue placeholder="Wähle ein Ausgabegerät" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {outputDevices.map((device) => (
+                  <SelectItem value={DEFAULT_DEVICE}>Systemstandard</SelectItem>
+                  {outputs.map((device, index) => (
                     <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Ausgabegerät ${outputDevices.indexOf(device) + 1}`}
+                      {device.label || `Lautsprecher ${index + 1}`}
                     </SelectItem>
                   ))}
-                  {outputDevices.length === 0 && (
-                    <SelectItem value="default" disabled>
-                      Keine Geräte gefunden
-                    </SelectItem>
-                  )}
                 </SelectContent>
               </Select>
+              {!supportsOutputSelection && (
+                <p className="text-xs text-muted-foreground">Dein Browser unterstützt keine Auswahl des Ausgabegeräts.</p>
+              )}
               <Button
                 size="sm"
                 variant="outline"
-                onClick={testSpeaker}
-                disabled={isTesting || outputDevices.length === 0}
+                onClick={() => playTestTone(settings.outputVolume / 100, settings.outputDeviceId)}
                 className="w-full"
               >
-                {isTesting ? "Teste..." : "Lautsprecher testen"}
+                Testton abspielen
               </Button>
             </div>
 
-            {/* Ausgabe-Lautstärke */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label htmlFor="output-volume">Lautsprecher-Lautstärke</Label>
-                <span className="text-sm font-medium text-muted-foreground">
-                  {audioSettings.outputVolume}%
-                </span>
+                <Label htmlFor="output-volume">Lautstärke im Anruf</Label>
+                <span className="text-sm font-medium text-muted-foreground">{settings.outputVolume}%</span>
               </div>
               <Slider
                 id="output-volume"
                 min={0}
                 max={100}
                 step={1}
-                value={[audioSettings.outputVolume]}
-                onValueChange={handleOutputVolumeChange}
+                value={[settings.outputVolume]}
+                onValueChange={(value) => saveAudioSettings({ outputVolume: value[0] })}
                 className="w-full"
               />
             </div>
           </TabsContent>
 
-          <TabsContent value="general" className="space-y-4">
-            <div className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
-              <p>Weitere Einstellungen sind in Kürze verfügbar.</p>
+          <TabsContent value="account" className="space-y-4">
+            <div className="space-y-1 rounded-lg bg-muted p-4 text-sm">
+              <p className="text-muted-foreground">Angemeldet als</p>
+              <p className="break-all font-medium text-foreground">{session?.userId}</p>
+              <p className="pt-2 text-muted-foreground">Homeserver</p>
+              <p className="break-all font-medium text-foreground">{session?.homeserverUrl}</p>
+              <p className="pt-2 text-muted-foreground">Gerät</p>
+              <p className="break-all font-mono text-xs text-foreground">{session?.deviceId}</p>
             </div>
+            <Button variant="destructive" className="w-full" onClick={() => void handleLogout()} disabled={isLoggingOut}>
+              {isLoggingOut ? <Spinner className="mr-2 h-4 w-4" /> : <LogOut className="mr-2 h-4 w-4" />}
+              Abmelden
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Beim Abmelden werden die lokalen Schlüssel dieses Geräts gelöscht. Ohne Schlüssel-Backup sind ältere
+              verschlüsselte Nachrichten danach nicht mehr lesbar.
+            </p>
           </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
   )
 }
-
-

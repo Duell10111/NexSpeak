@@ -4,7 +4,7 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,124 +12,131 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
-import { useMatrixAuth } from '@/components/matrix-provider'
+import { useMatrix } from '@/components/matrix-provider'
+import { serverNameFromUserId } from '@/lib/matrix/errors'
 import { AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { login, isLoading, error } = useMatrixAuth()
+  const { session, login, isLoggingIn, loginError } = useMatrix()
 
-  const [homeserverUrl, setHomeserverUrl] = useState('https://matrix.org')
+  const [homeserver, setHomeserver] = useState('matrix.org')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Already logged in (or just logged in): go to the app.
+  useEffect(() => {
+    if (session) router.replace('/')
+  }, [router, session])
 
+  const handleUsernameChange = (value: string) => {
+    setUsername(value)
+    // A full MXID already names the server; keep both fields consistent.
+    const serverName = serverNameFromUserId(value)
+    if (serverName) setHomeserver(serverName)
+  }
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
     try {
-      await login(homeserverUrl, username, password)
-      // Redirect to main app on success
-      router.push('/')
-    } catch (err) {
-      // Error is already handled in context
-      console.error('Login failed:', err)
+      await login(homeserver, username, password)
+    } catch {
+      // The error message is shown from context state.
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-background to-muted p-4">
+    <div className="flex min-h-dvh items-center justify-center bg-linear-to-br from-background to-muted p-4">
       <div className="w-full max-w-md space-y-4">
-        <div className="text-center space-y-2 mb-8">
+        <div className="mb-8 space-y-2 text-center">
           <h1 className="text-3xl font-bold">NexSpeak</h1>
-          <p className="text-muted-foreground">Connect with Matrix</p>
+          <p className="text-muted-foreground">Chatten und sprechen über Matrix</p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>
-              Sign in with your Matrix account
-            </CardDescription>
+            <CardTitle>Anmelden</CardTitle>
+            <CardDescription>Melde dich mit deinem Matrix-Konto an</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
+            <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
+              {loginError && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    {error.message}
-                  </AlertDescription>
+                  <AlertDescription>{loginError}</AlertDescription>
                 </Alert>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="homeserver">Homeserver URL</Label>
+                <Label htmlFor="homeserver">Homeserver</Label>
                 <Input
                   id="homeserver"
-                  type="url"
-                  placeholder="https://matrix.org"
-                  value={homeserverUrl}
-                  onChange={(e) => setHomeserverUrl(e.target.value)}
-                  disabled={isLoading}
+                  type="text"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="matrix.org"
+                  value={homeserver}
+                  onChange={(event) => setHomeserver(event.target.value)}
+                  disabled={isLoggingIn}
                   required
                 />
-                <p className="text-xs text-muted-foreground">
-                  e.g., https://matrix.org, https://matrix.example.com
-                </p>
+                <p className="text-xs text-muted-foreground">z. B. matrix.org oder https://matrix.example.com</p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="username">Benutzername</Label>
                 <Input
                   id="username"
                   type="text"
-                  placeholder="@username:matrix.org"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="alice oder @alice:matrix.org"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  disabled={isLoading}
+                  onChange={(event) => handleUsernameChange(event.target.value)}
+                  disabled={isLoggingIn}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Passwort</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
+                  autoComplete="current-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={isLoggingIn}
                   required
                 />
               </div>
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isLoading}
-              >
-                {isLoading ? (
+              <Button type="submit" className="w-full" disabled={isLoggingIn}>
+                {isLoggingIn ? (
                   <>
                     <Spinner className="mr-2 h-4 w-4" />
-                    Logging in...
+                    Anmeldung läuft…
                   </>
                 ) : (
-                  'Login'
+                  'Anmelden'
                 )}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm text-muted-foreground">
               <p>
-                Don&apos;t have a Matrix account?{' '}
+                Noch kein Matrix-Konto?{' '}
                 <a
-                  href="https://matrix.org/try-matrix/clients/"
+                  href="https://matrix.org/try-matrix/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
-                  Create one
+                  Jetzt erstellen
                 </a>
               </p>
             </div>
@@ -137,13 +144,11 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          Your credentials are not stored on our servers.
+          Dein Passwort wird nur an deinen Homeserver gesendet.
           <br />
-          Only Matrix tokens are persisted locally.
+          Das Zugriffstoken wird lokal in diesem Browser gespeichert.
         </p>
       </div>
     </div>
   )
 }
-
-

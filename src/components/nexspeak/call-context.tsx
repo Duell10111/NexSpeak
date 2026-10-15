@@ -1,8 +1,24 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react"
 import type { MatrixClient } from "matrix-js-sdk"
+import { toast } from "sonner"
 import { startOrJoinVoiceGroupCall } from "@/lib/matrix/client"
+import {
+  getDefaultAudioSettings,
+  loadAudioSettings,
+  subscribeAudioSettings,
+} from "@/lib/audio-settings"
 
 export interface RoomCallInfo {
   names: string[]
@@ -85,7 +101,6 @@ interface CallContextValue {
   isMicMuted: boolean
   isScreensharing: boolean
   isDeafened: boolean
-  remoteAudioElement: HTMLAudioElement | null
   joinCall: (roomId: string) => Promise<void>
   leaveActiveCall: () => void
   toggleMicrophone: () => Promise<void>
@@ -200,8 +215,7 @@ interface CallProviderProps {
 export function CallProvider({ client, activeChannelId, children }: CallProviderProps) {
   const lastUnknownDeviceRecoveryAtRef = useRef(0)
   const remoteAudioElementRef = useRef<HTMLAudioElement | null>(null)
-  const remoteAudioContextRef = useRef<AudioContext | null>(null)
-  const remoteAudioStreamRef = useRef<MediaStream | null>(null)
+  const remoteAudioTrackKeyRef = useRef("")
   const [activeCall, setActiveCall] = useState<GroupCallLike | null>(null)
   const [callInfoByRoom, setCallInfoByRoom] = useState<Record<string, RoomCallInfo>>({})
   const [callParticipants, setCallParticipants] = useState<CallParticipant[]>([])
@@ -210,7 +224,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const [isMicMuted, setIsMicMuted] = useState(false)
   const [isScreensharing, setIsScreensharing] = useState(false)
   const [isDeafened, setIsDeafened] = useState(false)
-  const [remoteAudioElement, setRemoteAudioElement] = useState<HTMLAudioElement | null>(null)
+  const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
 
   const syncRoomCallInfo = useCallback(() => {
     if (!client) {
@@ -354,88 +368,68 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [activeCall, syncRoomCallInfo, syncActiveChannelCall])
 
-  // Manage remote audio playback
-  useEffect(() => {
-    // Initialize audio element once
-    if (!remoteAudioElementRef.current) {
-      const audioElement = new Audio()
-      audioElement.autoplay = true
-      audioElement.setAttribute('aria-label', 'Remote call audio')
-      // Add to DOM but keep it hidden
-      audioElement.style.display = 'none'
-      document.body.appendChild(audioElement)
-      remoteAudioElementRef.current = audioElement
-      setRemoteAudioElement(audioElement)
-    }
-
-    return () => {
-      // Cleanup on unmount
-      if (remoteAudioElementRef.current && remoteAudioElementRef.current.parentNode) {
-        remoteAudioElementRef.current.pause()
-        remoteAudioElementRef.current.srcObject = null
-        remoteAudioElementRef.current.parentNode.removeChild(remoteAudioElementRef.current)
-        remoteAudioElementRef.current = null
-      }
-    }
-  }, [])
-
-  // Update remote audio stream based on call state
+  // Play all remote voice feeds through one hidden audio element.
+  // The tracks belong to the peer connections, so they must never be stopped here.
   useEffect(() => {
     const audioElement = remoteAudioElementRef.current
     if (!audioElement) return
 
-    // Create a combined audio stream from all remote feeds
-    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextCtor) return
+    const remoteAudioTracks = callVideoFeeds
+      .filter((feed) => !feed.isScreenshare)
+      .flatMap((feed) => feed.stream.getAudioTracks())
 
-    // Stop previous context
-    if (remoteAudioContextRef.current) {
-      void remoteAudioContextRef.current.close().catch(() => {
-        // Ignore errors on close
-      })
-    }
+    // Feeds are re-mapped on every call update; only swap the stream when the tracks changed,
+    // otherwise playback would glitch on each refresh.
+    const trackKey = remoteAudioTracks.map((track) => track.id).sort().join(",")
+    if (trackKey === remoteAudioTrackKeyRef.current) return
+    remoteAudioTrackKeyRef.current = trackKey
 
-    const audioContext = new AudioContextCtor()
-    remoteAudioContextRef.current = audioContext
-
-    // Collect all remote user media feeds (not screenshare, not local)
-    const remoteFeeds = callVideoFeeds.filter((feed) => !feed.isScreenshare && feed.userId !== (client?.getUserId() || ""))
-
-    if (remoteFeeds.length === 0) {
+    if (remoteAudioTracks.length === 0) {
       audioElement.srcObject = null
-      audioElement.muted = true
       return
     }
 
-    // Create a new MediaStream combining all remote audio tracks
-    const combinedStream = new MediaStream()
-
-    remoteFeeds.forEach((feed) => {
-      feed.stream.getAudioTracks().forEach((track) => {
-        combinedStream.addTrack(track)
-      })
+    audioElement.srcObject = new MediaStream(remoteAudioTracks)
+    audioElement.play().catch((error: unknown) => {
+      // Autoplay can be blocked until the user interacts with the page.
+      console.warn("Remote audio playback was blocked:", error)
     })
+  }, [callVideoFeeds])
 
-    // Set stream to audio element and respect deafened state
-    audioElement.srcObject = combinedStream
+  // Apply deafen state, output volume and output device without restarting playback.
+  useEffect(() => {
+    const audioElement = remoteAudioElementRef.current
+    if (!audioElement) return
+
     audioElement.muted = isDeafened
+    audioElement.volume = audioSettings.outputVolume / 100
 
-    const playPromise = audioElement.play()
-    if (playPromise) {
-      playPromise.catch(() => {
-        // Autoplay can be blocked by browser policy
+    const sinkCapable = audioElement as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }
+    if (sinkCapable.setSinkId) {
+      sinkCapable.setSinkId(audioSettings.outputDeviceId).catch((error: unknown) => {
+        console.warn("Failed to switch audio output device:", error)
       })
     }
+  }, [isDeafened, audioSettings.outputVolume, audioSettings.outputDeviceId])
 
-    remoteAudioStreamRef.current = combinedStream
+  // Use the preferred microphone for calls.
+  useEffect(() => {
+    if (!client) return
+    client
+      .getMediaHandler()
+      .setAudioInput(audioSettings.inputDeviceId)
+      .catch((error: unknown) => console.warn("Failed to switch microphone:", error))
+  }, [client, audioSettings.inputDeviceId])
 
-    return () => {
-      // Cleanup tracks when effect re-runs
-      combinedStream.getTracks().forEach((track) => {
-        track.stop()
-      })
+  // Leave the call when the tab is closed so others don't see a ghost participant.
+  useEffect(() => {
+    if (!client) return
+    const onPageHide = () => {
+      getJoinedLocalCalls(client).forEach((call) => call.leave?.())
     }
-  }, [callVideoFeeds, isDeafened, client])
+    window.addEventListener("pagehide", onPageHide)
+    return () => window.removeEventListener("pagehide", onPageHide)
+  }, [client])
 
   const joinCall = useCallback(async (roomId: string) => {
     if (!client || !roomId) return
@@ -471,20 +465,37 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const toggleMicrophone = useCallback(async () => {
     if (!activeCall?.setMicrophoneMuted) return
     const nextMuted = !isMicMuted
-    await activeCall.setMicrophoneMuted(nextMuted)
-    setIsMicMuted(nextMuted)
+    try {
+      await activeCall.setMicrophoneMuted(nextMuted)
+      setIsMicMuted(nextMuted)
+    } catch (error) {
+      console.error("Failed to toggle microphone:", error)
+      toast.error("Mikrofon konnte nicht umgeschaltet werden.")
+    }
   }, [activeCall, isMicMuted])
 
   const toggleScreenshare = useCallback(async () => {
     if (!activeCall?.setScreensharingEnabled) return
     const nextScreenshare = !isScreensharing
-    await activeCall.setScreensharingEnabled(nextScreenshare)
-    setIsScreensharing(nextScreenshare)
+    try {
+      const enabled = await activeCall.setScreensharingEnabled(nextScreenshare)
+      setIsScreensharing(nextScreenshare ? enabled : false)
+    } catch (error) {
+      console.error("Failed to toggle screenshare:", error)
+      toast.error("Bildschirmfreigabe konnte nicht umgeschaltet werden.")
+    }
   }, [activeCall, isScreensharing])
 
   const toggleHeadphones = useCallback(() => {
-    setIsDeafened((prev) => !prev)
-  }, [])
+    const nextDeafened = !isDeafened
+    setIsDeafened(nextDeafened)
+    if (nextDeafened && activeCall?.setMicrophoneMuted && !isMicMuted) {
+      void activeCall
+        .setMicrophoneMuted(true)
+        .then(() => setIsMicMuted(true))
+        .catch((error: unknown) => console.warn("Failed to mute microphone while deafening:", error))
+    }
+  }, [activeCall, isDeafened, isMicMuted])
 
   const value = useMemo<CallContextValue>(() => {
     const selfUserId = client?.getUserId() || ""
@@ -508,7 +519,6 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       isMicMuted,
       isScreensharing,
       isDeafened,
-      remoteAudioElement,
       joinCall,
       leaveActiveCall,
       toggleMicrophone,
@@ -526,7 +536,6 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     isMicMuted,
     isScreensharing,
     isDeafened,
-    remoteAudioElement,
     joinCall,
     leaveActiveCall,
     toggleMicrophone,
@@ -534,7 +543,12 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     toggleHeadphones,
   ])
 
-  return <CallContext.Provider value={value}>{children}</CallContext.Provider>
+  return (
+    <CallContext.Provider value={value}>
+      {children}
+      <audio ref={remoteAudioElementRef} autoPlay hidden aria-hidden />
+    </CallContext.Provider>
+  )
 }
 
 export function useCallContext(): CallContextValue {

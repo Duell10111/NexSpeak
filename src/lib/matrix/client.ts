@@ -1,14 +1,13 @@
 /**
  * Matrix Client Initialization & Management
  * Browser-only (use client).
- * Handles SDK initialization, event subscription, and lifecycle.
+ * Handles SDK initialization, media URLs, and group call setup.
  */
 
 'use client'
 
-import { createClient } from 'matrix-js-sdk'
-import { GroupCallIntent, GroupCallType } from 'matrix-js-sdk'
-import type { MatrixClient, MatrixEvent } from 'matrix-js-sdk'
+import { createClient, GroupCallIntent, GroupCallType, PendingEventOrdering } from 'matrix-js-sdk'
+import type { MatrixClient } from 'matrix-js-sdk'
 
 export interface MatrixClientConfig {
   homeserverUrl: string
@@ -18,12 +17,6 @@ export interface MatrixClientConfig {
 }
 
 let matrixClientInstance: MatrixClient | null = null
-
-interface CryptoCapableMatrixClient {
-  getCrypto?: () => unknown
-  initRustCrypto?: () => Promise<void>
-  initCrypto?: () => Promise<void>
-}
 
 const groupCallStartInFlight = new Map<string, Promise<void>>()
 
@@ -95,8 +88,16 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
     throw new Error('Matrix client can only be created in browser context')
   }
 
+  // Reuse the instance only if it belongs to the same session; otherwise a stale client
+  // from a previous login would keep running with the old token.
   if (matrixClientInstance) {
-    return matrixClientInstance
+    if (
+      matrixClientInstance.getUserId() === config.userId &&
+      matrixClientInstance.getAccessToken() === config.accessToken
+    ) {
+      return matrixClientInstance
+    }
+    disposeMatrixClient()
   }
 
   matrixClientInstance = createClient({
@@ -104,6 +105,7 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
     userId: config.userId,
     accessToken: config.accessToken,
     deviceId: config.deviceId,
+    timelineSupport: true,
     // Avoid device-to-device call signalling issues for mixed clients/sessions.
     useE2eForGroupCall: false,
   })
@@ -117,24 +119,53 @@ export function getMatrixClient(): MatrixClient | null {
 
 export async function initMatrixCrypto(client: MatrixClient): Promise<void> {
   if (typeof window === 'undefined') return
+  if (client.getCrypto()) return
 
-  const cryptoClient = client as unknown as CryptoCapableMatrixClient
-  if (cryptoClient.getCrypto?.()) {
-    return
+  try {
+    await client.initRustCrypto()
+  } catch (error) {
+    // The local crypto store still belongs to a previous login (other user or device).
+    // It is useless for this session, so wipe it and start fresh.
+    const message = error instanceof Error ? error.message : String(error)
+    if (!/does(n't| not) match/i.test(message)) throw error
+
+    console.warn('Crypto store belongs to another session, clearing it:', message)
+    await client.clearStores()
+    await client.initRustCrypto()
   }
+}
 
-  if (cryptoClient.initRustCrypto) {
+const startPromises = new WeakMap<MatrixClient, Promise<boolean>>()
+
+/**
+ * Initialise crypto and start syncing exactly once per client instance.
+ * Resolves to whether end-to-end encryption is available.
+ */
+export function startMatrixClient(client: MatrixClient): Promise<boolean> {
+  const existing = startPromises.get(client)
+  if (existing) return existing
+
+  const startPromise = (async () => {
+    let isCryptoReady = false
     try {
-      await cryptoClient.initRustCrypto()
-      return
+      await initMatrixCrypto(client)
+      isCryptoReady = true
     } catch (error) {
-      console.warn('Rust crypto init failed, trying legacy crypto init:', error)
+      console.error('Matrix crypto initialization failed:', error)
     }
-  }
 
-  if (cryptoClient.initCrypto) {
-    await cryptoClient.initCrypto()
-  }
+    await client.startClient({
+      initialSyncLimit: 20,
+      lazyLoadMembers: true,
+      // Keep local echoes in a separate list so failed sends can be retried or discarded.
+      pendingEventOrdering: PendingEventOrdering.Detached,
+    })
+    return isCryptoReady
+  })()
+
+  startPromises.set(client, startPromise)
+  startPromise.catch(() => startPromises.delete(client))
+  return startPromise
 }
 
 export function disposeMatrixClient(): void {
@@ -149,79 +180,17 @@ export function disposeMatrixClient(): void {
   }
 }
 
-export function subscribeToRoomTimeline(
+/**
+ * Resolve an mxc:// URI to an authenticated (v1) media URL.
+ * The URL must be fetched with an Authorization header, see useMediaUrl.
+ */
+export function getMediaUrl(
   client: MatrixClient,
-  roomId: string,
-  callback: (event: MatrixEvent) => void,
-): () => void {
-  const emitter = client as unknown as {
-    on: (event: string, listener: (...args: unknown[]) => void) => void
-    removeListener: (event: string, listener: (...args: unknown[]) => void) => void
-  }
-
-  const handler = (...args: unknown[]) => {
-    const [event, eventRoom] = args
-    if (!event || typeof event !== 'object' || !('getType' in event)) return
-    if (!eventRoom || typeof eventRoom !== 'object' || !('roomId' in eventRoom)) return
-
-    const matrixRoom = eventRoom as { roomId: string }
-    if (matrixRoom.roomId !== roomId) return
-
-    callback(event as MatrixEvent)
-  }
-
-  emitter.on('Room.timeline', handler)
-
-  return () => {
-    emitter.removeListener('Room.timeline', handler)
-  }
-}
-
-export function subscribeSyncStatus(
-  client: MatrixClient,
-  callback: (status: 'PREPARED' | 'SYNCING' | 'STOPPED') => void,
-): () => void {
-  const emitter = client as unknown as {
-    on: (event: string, listener: (...args: unknown[]) => void) => void
-    removeListener: (event: string, listener: (...args: unknown[]) => void) => void
-  }
-
-  const handlers = {
-    sync: () => callback('SYNCING'),
-    prepared: () => callback('PREPARED'),
-  }
-
-  emitter.on('sync', handlers.sync)
-  emitter.on('prepared', handlers.prepared)
-  emitter.on('Client.sync', handlers.sync)
-
-  return () => {
-    emitter.removeListener('sync', handlers.sync)
-    emitter.removeListener('prepared', handlers.prepared)
-    emitter.removeListener('Client.sync', handlers.sync)
-  }
-}
-
-export function getDisplayName(
-  client: MatrixClient,
-  userId: string,
-): string {
-  const user = client.getUser(userId)
-  return user?.displayName || userId
-}
-
-export function getAvatarUrl(
-  client: MatrixClient,
-  userId: string,
-  size: number = 32,
+  mxcUrl: string | null | undefined,
+  size?: number,
 ): string | null {
-  const user = client.getUser(userId)
-  if (!user?.avatarUrl) return null
-
-  const mxcUrl = user.avatarUrl
-  const [serverName, mediaId] = mxcUrl.replace('mxc://', '').split('/')
-
-  return `${client.getHomeserverUrl()}/_matrix/media/r0/thumbnail/${serverName}/${mediaId}?width=${size}&height=${size}&method=crop`
+  if (!mxcUrl?.startsWith('mxc://')) return null
+  return client.mxcUrlToHttp(mxcUrl, size, size, size ? 'crop' : undefined, false, true, true)
 }
 
 export async function startOrJoinVoiceGroupCall(

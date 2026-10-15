@@ -33,7 +33,8 @@ interface CallAreaProps {
   onLeaveCall: () => void
 }
 
-function VideoTile({ feed, isDeafened }: { feed: CallVideoFeed; isDeafened: boolean }) {
+// Video elements stay muted: remote voice is played once through the call provider's audio element.
+function VideoTile({ feed }: { feed: CallVideoFeed }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
@@ -60,7 +61,7 @@ function VideoTile({ feed, isDeafened }: { feed: CallVideoFeed; isDeafened: bool
           ref={videoRef}
           autoPlay
           playsInline
-          muted={isDeafened}
+          muted
           className="h-full w-full bg-black object-cover"
         />
       ) : (
@@ -218,7 +219,7 @@ export function CallArea({
         <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div className="relative h-[46vh] min-h-[240px] overflow-hidden rounded-xl border border-border/60 bg-[#2b2d31]">
             {featuredFeed ? (
-              <VideoTile feed={featuredFeed} isDeafened={isDeafened} />
+              <VideoTile feed={featuredFeed} />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
                 Kein Video-Feed verfuegbar
@@ -230,7 +231,7 @@ export function CallArea({
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
               {secondaryFeeds.map((feed) => (
                 <div key={feed.id} className="h-28 overflow-hidden rounded-xl border border-border/60 bg-[#2b2d31]">
-                  <VideoTile feed={feed} isDeafened={isDeafened} />
+                  <VideoTile feed={feed} />
                 </div>
               ))}
             </div>
@@ -313,9 +314,3 @@ export function CallArea({
     </div>
   )
 }
-
-
-
-
-
-
