@@ -14,6 +14,7 @@ import {
   RoomEvent as LivekitRoomEvent,
   setLogLevel,
   Track,
+  VideoPresets,
   type LocalVideoTrack,
   type Participant,
   type RemoteTrack,
@@ -40,6 +41,7 @@ import {
   screenShareTuning,
   type ScreenShareQuality,
 } from '@/lib/screenshare-quality'
+import { preferredVideoCodec, readEncoderInfo, type EncoderInfo } from '@/lib/video-codec'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -212,6 +214,13 @@ export class CallSession {
     const livekitRoom = new LivekitRoom({
       adaptiveStream: true,
       dynacast: true,
+      publishDefaults: {
+        // H.264 is hardware-encoded on macOS and NVIDIA/AMD/Intel GPUs: little load while gaming.
+        videoCodec: preferredVideoCodec(),
+        // One extra camera layer instead of LiveKit's two: every layer is a separate encoder
+        // (and hardware encoder session).
+        videoSimulcastLayers: [VideoPresets.h360],
+      },
       audioCaptureDefaults: {
         // A preference, not a requirement: a remembered device may be unplugged by now.
         deviceId: audio.inputDeviceId ? { ideal: audio.inputDeviceId } : undefined,
@@ -533,6 +542,12 @@ export class CallSession {
       },
     )
     this.changed()
+  }
+
+  /** Codec, hardware/software and actual output of the running screenshare's encoder. */
+  async getScreenShareEncoderInfo(): Promise<EncoderInfo | null> {
+    const sender = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track?.sender
+    return sender ? readEncoderInfo(sender) : null
   }
 
   /** Change resolution and frame rate of a running screenshare without a new picker. */

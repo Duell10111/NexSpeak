@@ -24,6 +24,7 @@ import {
   saveScreenShareQuality,
   type ScreenShareQuality,
 } from "@/lib/screenshare-quality"
+import type { EncoderInfo } from "@/lib/video-codec"
 import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 
 export type { RoomCallInfo }
@@ -50,6 +51,8 @@ interface CallContextValue {
   screenShareQuality: ScreenShareQuality
   startScreenshare: (quality: ScreenShareQuality) => Promise<void>
   changeScreenShareQuality: (quality: ScreenShareQuality) => Promise<void>
+  /** Diagnostics of the running screenshare's encoder (hardware or software). */
+  getScreenShareEncoderInfo: () => Promise<EncoderInfo | null>
   toggleDeafen: () => void
   resumeAudio: () => Promise<void>
   setParticipantVolume: (identity: string, volume: number) => void
@@ -229,6 +232,11 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [])
 
+  const getScreenShareEncoderInfo = useCallback(
+    async () => (await sessionRef.current?.getScreenShareEncoderInfo()) ?? null,
+    [],
+  )
+
   const updateScreenShareQuality = useCallback((quality: ScreenShareQuality) => {
     setScreenShareQuality(quality)
     saveScreenShareQuality(quality)
@@ -348,6 +356,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       screenShareQuality,
       startScreenshare,
       changeScreenShareQuality,
+      getScreenShareEncoderInfo,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
@@ -367,6 +376,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       screenShareQuality,
       startScreenshare,
       changeScreenShareQuality,
+      getScreenShareEncoderInfo,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,

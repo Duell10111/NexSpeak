@@ -52,11 +52,16 @@ for (const encrypted of [false, true]) {
             const context = new AudioContext()
             const analyser = context.createAnalyser()
             context.createMediaStreamSource(stream).connect(analyser)
-            await new Promise((resolve) => setTimeout(resolve, 500))
+            // Chromium's fake microphone beeps in intervals: sample long enough to catch a beep.
             const data = new Uint8Array(analyser.fftSize)
-            analyser.getByteTimeDomainData(data)
+            let level = 0
+            for (const end = performance.now() + 1_500; performance.now() < end; ) {
+              await new Promise((resolve) => setTimeout(resolve, 20))
+              analyser.getByteTimeDomainData(data)
+              level = Math.max(level, Math.max(...data) - Math.min(...data))
+            }
             await context.close()
-            return Math.max(...data) - Math.min(...data)
+            return level
           }),
         { timeout: 30_000 },
       )
@@ -213,6 +218,8 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
 
   // Changing the quality while live needs no new picker.
   await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
+  // Encoded with H.264 (hardware where available; the test browser has no GPU).
+  await expect(alicePage.getByTestId("encoder-status")).toContainText(/H264 · (Hardware|Software) · \d+p/)
   await alicePage.getByRole("menuitemradio", { name: "15 FPS" }).click()
   await expect.poll(screenSender).toMatchObject({ maxFramerate: 15 })
   await alicePage.keyboard.press("Escape")

@@ -61,6 +61,7 @@ import {
   type ScreenShareFramerate,
   type ScreenShareResolution,
 } from "@/lib/screenshare-quality"
+import type { EncoderInfo } from "@/lib/video-codec"
 
 
 /** One tile on the stage: a participant (with camera, if on) or a screenshare. */
@@ -406,6 +407,44 @@ function ControlButton({
  * Screenshare button. While streaming it opens Discord's stream menu: change the quality
  * on the fly or end the stream.
  */
+const ENCODER_POLL_MS = 2_000
+
+/** Live encoder diagnostics; only polled while the stream menu is open. */
+function EncoderStatus() {
+  const { getScreenShareEncoderInfo } = useCallContext()
+  const [info, setInfo] = useState<EncoderInfo | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const poll = () =>
+      void getScreenShareEncoderInfo()
+        .then((next) => {
+          if (!cancelled) setInfo(next)
+        })
+        .catch(() => {})
+    poll()
+    const timer = window.setInterval(poll, ENCODER_POLL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [getScreenShareEncoderInfo])
+
+  if (!info) return null
+  const encoder = info.hardware === null ? "" : info.hardware ? " · Hardware" : " · Software"
+  return (
+    <div className="px-2 pb-1.5 text-xs text-muted-foreground" data-testid="encoder-status">
+      <div title={info.implementation}>
+        {info.codec || "Video"}
+        {encoder}
+        {info.height > 0 && ` · ${info.height}p ${info.fps} FPS`}
+      </div>
+      {info.limitation === "cpu" && <div className="text-nx-idle">Durch die CPU begrenzt</div>}
+      {info.limitation === "bandwidth" && <div className="text-nx-idle">Durch den Upload begrenzt</div>}
+    </div>
+  )
+}
+
 function ScreenshareControl() {
   const { call, toggleScreenshare, screenShareQuality, changeScreenShareQuality } = useCallContext()
   // In fullscreen only the fullscreen element is visible, so the menu has to live there.
@@ -430,6 +469,9 @@ function ScreenshareControl() {
         <TooltipContent>Stream-Einstellungen</TooltipContent>
       </Tooltip>
       <DropdownMenuContent container={container} side="top" align="center" className="w-56">
+        <DropdownMenuLabel>Stream</DropdownMenuLabel>
+        <EncoderStatus />
+        <DropdownMenuSeparator />
         <DropdownMenuLabel>Auflösung</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={screenShareQuality.resolution}
