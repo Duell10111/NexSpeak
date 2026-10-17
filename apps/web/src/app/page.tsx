@@ -10,6 +10,7 @@ import { ChatArea } from "@/components/nexspeak/chat-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { CallProvider } from "@/components/nexspeak/call-context"
 import { DesktopTrayVoice } from "@/components/nexspeak/desktop-tray"
+import { DesktopUpdateNotice } from "@/components/nexspeak/desktop-update"
 import { MatrixLinkHandler } from "@/components/nexspeak/matrix-links"
 import { useAttentionBadge, useMessageNotifications } from "@/hooks/useMessageNotifications"
 import { SecurityProvider } from "@/components/nexspeak/security-context"
@@ -220,6 +221,7 @@ export default function NexSpeakApp() {
       <NavigationProvider openRoom={openRoom}>
         <CallProvider client={client} activeChannelId={channelId}>
           <DesktopTrayVoice />
+          <DesktopUpdateNotice />
           <MatrixLinkHandler openRoom={openRoom} selectServer={handleServerSelect} onRoomJoined={handleRoomJoined} />
           <div className="flex h-dvh w-screen flex-col overflow-hidden">
             <SecurityBanner />

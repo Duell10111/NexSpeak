@@ -16,6 +16,7 @@
     "test:e2e": "npm run -s build && playwright test"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "uiohook-napi": "1.5.5"
   },
   "devDependencies": {

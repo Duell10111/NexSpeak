@@ -17,11 +17,13 @@ import {
   type Session,
 } from "electron"
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import { setupAutostart, wasOpenedAtLogin } from "./autostart"
 import { setBadgeCount } from "./badge"
 import { registerDeepLinks, setupDeepLinks } from "./deep-links"
 import { originOf } from "./origin"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
-import { createTray } from "./tray"
+import { createTray, setTrayUpdate } from "./tray"
+import { setupUpdater, setUpdaterInCall } from "./updater"
 
 // Same names as in preload.ts (a sandboxed preload cannot import other files).
 const IPC_CHOOSE_DISPLAY_SOURCE = "nexspeak:choose-display-source"
@@ -60,6 +62,8 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow: BrowserWindow | undefined
 /** Closing the window only hides it; set once the app really quits (tray menu, Cmd+Q, updates). */
 let isQuitting = false
+/** Autostarted at login: the first window stays hidden in the tray until the user opens it. */
+let startHidden = false
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -89,10 +93,20 @@ function start() {
   serveWebBuild(securityHeaders)
   restrictPermissions(session.defaultSession)
   handleDisplayMedia(session.defaultSession)
-  setupDeepLinks({ webContents: () => mainWindow?.webContents, showWindow })
+  const appContents = () => mainWindow?.webContents
+  setupDeepLinks({ webContents: appContents, showWindow })
+  startHidden = wasOpenedAtLogin()
   mainWindow = createWindow()
-  createTray({ webContents: () => mainWindow?.webContents, showWindow })
-  setupPushToTalk(() => mainWindow?.webContents)
+  createTray({ webContents: appContents, showWindow, onVoiceState: (state) => setUpdaterInCall(state?.inCall ?? false) })
+  setupPushToTalk(appContents)
+  setupAutostart(appContents)
+  setupUpdater({
+    webContents: appContents,
+    prepareQuit: () => {
+      isQuitting = true
+    },
+    onReady: setTrayUpdate,
+  })
   const fromAppWindow = (event: Electron.IpcMainEvent) => event.sender === mainWindow?.webContents
   ipcMain.on(IPC_SHOW_WINDOW, (event) => {
     if (fromAppWindow(event)) showWindow()
@@ -105,6 +119,7 @@ function start() {
 
 function showWindow() {
   if (!app.isReady()) return
+  startHidden = false
   if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
@@ -257,7 +272,9 @@ function createWindow() {
     },
   })
 
-  window.once("ready-to-show", () => window.show())
+  window.once("ready-to-show", () => {
+    if (!startHidden) window.show()
+  })
   // Like Discord: closing keeps the app (and a running call) alive in the tray.
   window.on("close", (event) => {
     if (isQuitting) return

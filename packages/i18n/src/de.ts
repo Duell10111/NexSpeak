@@ -277,7 +277,15 @@ export const de = {
   'call.error.audioFailed': 'Audio konnte nicht gestartet werden.',
 
   'desktop.trayShow': 'NexSpeak öffnen',
+  'desktop.trayRestartToUpdate': 'Neu starten und aktualisieren',
   'desktop.trayQuit': 'NexSpeak beenden',
+  'desktop.app': 'Desktop-App',
+  'desktop.autostart': 'Beim Anmelden starten',
+  'desktop.autostartHint': 'NexSpeak startet nach der Anmeldung am Computer im Hintergrund, ohne Fenster.',
+  'desktop.autostartFailed': 'Autostart konnte nicht geändert werden.',
+  'desktop.updateReady': 'Update auf Version {version} bereit',
+  'desktop.updateReadyDescription': 'Es wird beim nächsten Neustart von NexSpeak installiert.',
+  'desktop.updateRestart': 'Jetzt neu starten',
 
   'stream.resolution': 'Auflösung',
   'stream.framerate': 'Bildrate',

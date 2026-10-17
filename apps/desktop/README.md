@@ -10,7 +10,9 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 | `src/badge.ts` | Unread badge: dock (macOS), taskbar overlay (Windows), launcher (Linux) |
 | `src/deep-links.ts` | `nexspeak://` links from the OS (open-url, second instance, launch arguments) |
 | `src/origin.ts` | Origin check for `app://` (`URL.origin` is `"null"` for custom schemes in Node) |
-| `src/tray.ts` | Tray icon and menu (open, mute, deafen, leave call, quit) |
+| `src/autostart.ts` | "Start at login" (login item on macOS/Windows, XDG autostart entry on Linux), start in the tray |
+| `src/updater.ts` | Auto-update from GitHub Releases (electron-updater), held back during calls |
+| `src/tray.ts` | Tray icon and menu (open, mute, deafen, leave call, restart to update, quit) |
 | `src/preload.ts` | `window.nexspeak` (contract: `packages/core/src/desktop-bridge.ts`) |
 | `electron-builder.yml` | Packages for macOS (dmg/zip), Windows (NSIS) and Linux (AppImage/deb) |
 | `build/` | App icon (`icon.icns`, `icon.ico`, `icons/` for Linux) and macOS entitlements |
@@ -87,6 +89,29 @@ system-wide hook (uiohook-napi), so the key also works while a game has the focu
 - Otherwise (Windows, X11): `DesktopSourcePicker` from the web app; Windows also shares the system
   audio via loopback.
 
+## Autostart
+
+The setting "Start at login" (settings → account, desktop app only) is stored by the OS itself:
+a login item on macOS and Windows (`app.setLoginItemSettings`), `~/.config/autostart/nexspeak.desktop`
+on Linux (pointing at the AppImage file, not its temporary mount). Started that way, the app opens
+in the tray only: Windows and Linux pass `--hidden`, macOS reports `wasOpenedAtLogin`. Unpackaged
+dev runs do not offer the setting.
+
+## Auto-update
+
+`src/updater.ts` uses electron-updater with the `publish` target from `electron-builder.yml` and
+the `latest*.yml` files attached to each release.
+
+- Checks 30 s after the start, then only when the window gets the focus and the last check is more
+  than 6 hours ago. No timer runs while the app sits in the tray.
+- Nothing downloads while the user is in a call (the download would compete with the call for
+  bandwidth); it starts when the call ends.
+- A downloaded update installs when the app quits, or right away from the "Restart now" notice
+  (`DesktopUpdateNotice`) and the tray menu ("Restart to update"); both only appear outside a call.
+- Windows (NSIS), Linux AppImage and deb (asks for the password via pkexec) update themselves.
+  macOS only accepts updates signed with a Developer ID (#9); ad-hoc signed builds fail the update
+  there and log the error.
+
 ## Releases
 
 release-please (`.github/workflows/release-please.yml`) keeps a release PR open on `main`; merging
@@ -105,5 +130,5 @@ Signing switches on with repository secrets (listed at the top of `desktop.yml`)
 
 ## Still open (milestone "Beta 0.2 – Desktop")
 
-Auto-update (#6), autostart (#7), app icon (#8), Developer ID signing and notarization and Windows
-code signing (#9).
+App icon (#8), Developer ID signing and notarization and Windows code signing (#9; macOS
+auto-update depends on it).

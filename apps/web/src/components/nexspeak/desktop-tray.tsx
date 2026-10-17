@@ -14,6 +14,7 @@ export function DesktopTrayLabels() {
       mute: t("call.muteMic"),
       deafen: t("call.deafen"),
       leaveCall: t("call.leave"),
+      restartToUpdate: t("desktop.trayRestartToUpdate"),
       quit: t("desktop.trayQuit"),
     })
   }, [t])

@@ -24,6 +24,7 @@ import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
 import { AboutPanel } from "@/components/nexspeak/about-panel"
+import { DesktopAutostartSetting } from "@/components/nexspeak/desktop-settings"
 import { IgnoredUsersList } from "@/components/nexspeak/ignored-users"
 import { useTranslation } from "@/hooks/useTranslation"
 import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
@@ -329,6 +330,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
                 </SelectContent>
               </Select>
             </div>
+            <DesktopAutostartSetting />
             <div className="space-y-1 rounded-lg bg-muted p-4 text-sm">
               <p className="text-muted-foreground">{t("settings.signedInAs")}</p>
               <p className="break-all font-medium text-foreground">{session?.userId}</p>

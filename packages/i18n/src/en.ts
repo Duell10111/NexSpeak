@@ -275,7 +275,15 @@ export const en: Record<MessageKey, string> = {
   'call.error.audioFailed': 'Could not start audio.',
 
   'desktop.trayShow': 'Open NexSpeak',
+  'desktop.trayRestartToUpdate': 'Restart to update',
   'desktop.trayQuit': 'Quit NexSpeak',
+  'desktop.app': 'Desktop app',
+  'desktop.autostart': 'Start at login',
+  'desktop.autostartHint': 'NexSpeak starts in the background after you log in to your computer, without opening a window.',
+  'desktop.autostartFailed': 'Could not change the autostart setting.',
+  'desktop.updateReady': 'Update to version {version} ready',
+  'desktop.updateReadyDescription': 'It installs the next time NexSpeak restarts.',
+  'desktop.updateRestart': 'Restart now',
 
   'stream.resolution': 'Resolution',
   'stream.framerate': 'Frame rate',

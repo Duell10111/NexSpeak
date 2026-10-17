@@ -18,6 +18,11 @@ const IPC_SHOW_WINDOW = "nexspeak:show-window"
 const IPC_BADGE_COUNT = "nexspeak:badge-count"
 const IPC_DEEP_LINK = "nexspeak:deep-link"
 const IPC_DEEP_LINKS_READY = "nexspeak:deep-links-ready"
+const IPC_AUTOSTART_GET = "nexspeak:autostart-get"
+const IPC_AUTOSTART_SET = "nexspeak:autostart-set"
+const IPC_UPDATE_READY = "nexspeak:update-ready"
+const IPC_UPDATE_GET = "nexspeak:update-get"
+const IPC_UPDATE_INSTALL = "nexspeak:update-install"
 
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
@@ -75,6 +80,26 @@ const bridge: DesktopBridge = {
       ipcRenderer.send(IPC_DEEP_LINKS_READY, false)
       ipcRenderer.off(IPC_DEEP_LINK, listener)
     }
+  },
+  getAutostart() {
+    return ipcRenderer.invoke(IPC_AUTOSTART_GET)
+  },
+  setAutostart(enabled) {
+    return ipcRenderer.invoke(IPC_AUTOSTART_SET, enabled)
+  },
+  onUpdateReady(handler) {
+    const listener = (_event: IpcRendererEvent, version: string) => handler(version)
+    ipcRenderer.on(IPC_UPDATE_READY, listener)
+    // An update downloaded before the page subscribed (e.g. before a reload).
+    void ipcRenderer.invoke(IPC_UPDATE_GET).then((version: string | null) => {
+      if (version) handler(version)
+    })
+    return () => {
+      ipcRenderer.off(IPC_UPDATE_READY, listener)
+    }
+  },
+  installUpdate() {
+    ipcRenderer.send(IPC_UPDATE_INSTALL)
   },
 }
 

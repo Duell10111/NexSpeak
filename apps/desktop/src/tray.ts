@@ -15,6 +15,7 @@ const DEFAULT_LABELS: TrayLabels = {
   mute: "Mute",
   deafen: "Deafen",
   leaveCall: "Leave call",
+  restartToUpdate: "Restart to update",
   quit: "Quit NexSpeak",
 }
 
@@ -39,14 +40,25 @@ function isVoiceState(value: unknown): value is VoiceState | null {
 
 // Kept referenced, otherwise the tray icon disappears with garbage collection.
 let tray: Tray | undefined
+/** Set once an update is downloaded (updater.ts); offered in the menu outside calls. */
+let installUpdate: (() => void) | null = null
+let refreshMenu: (() => void) | undefined
+
+export function setTrayUpdate(install: (() => void) | null): void {
+  installUpdate = install
+  refreshMenu?.()
+}
 
 export function createTray({
   webContents,
   showWindow,
+  onVoiceState,
 }: {
   /** The app window's contents, if it exists. */
   webContents: () => WebContents | undefined
   showWindow: () => void
+  /** Every voice state the web app sends (null when logged out). */
+  onVoiceState?: (state: VoiceState | null) => void
 }): Tray {
   if (tray) return tray
   // macOS tints a black "Template" image for light and dark menu bars; @2x is picked automatically.
@@ -71,6 +83,7 @@ export function createTray({
       if (voice.inCall) items.push({ label: labels.leaveCall, click: () => send("leave-call") })
       items.push({ type: "separator" })
     }
+    if (installUpdate && !voice?.inCall) items.push({ label: labels.restartToUpdate, click: installUpdate })
     items.push({ label: labels.quit, click: () => app.quit() })
     tray.setContextMenu(Menu.buildFromTemplate(items))
   }
@@ -84,11 +97,13 @@ export function createTray({
     if (!fromAppWindow(event) || !isVoiceState(next)) return
     voice = next
     updateMenu()
+    onVoiceState?.(voice)
   })
 
   // Windows: a click opens the app, the menu is on right click. macOS and Linux always show the menu.
   if (process.platform === "win32") tray.on("click", showWindow)
 
+  refreshMenu = updateMenu
   updateMenu()
   return tray
 }

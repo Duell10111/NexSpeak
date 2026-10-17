@@ -151,7 +151,7 @@ test("closing the window keeps the app running in the tray", async () => {
 test("tray menu texts follow the interface language", async () => {
   const lastLabels = await recordIpc("nexspeak:tray-labels")
   await page.getByRole("button", { name: "English" }).click()
-  await expect.poll(lastLabels).toMatchObject({ show: "Open NexSpeak", quit: "Quit NexSpeak" })
+  await expect.poll(lastLabels).toMatchObject({ show: "Open NexSpeak", restartToUpdate: "Restart to update", quit: "Quit NexSpeak" })
   await page.getByRole("button", { name: "Deutsch" }).click()
   await expect.poll(lastLabels).toMatchObject({ show: "NexSpeak öffnen", mute: "Mikrofon stummschalten" })
 })
@@ -313,4 +313,32 @@ test("the SSO login returns through nexspeak://sso", async () => {
   await openDeepLink(`nexspeak://sso?loginToken=${encodeURIComponent(await createLoginToken(alice))}`)
   await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus."))).toBeVisible({ timeout: 60_000 })
   expect(await page.evaluate(() => localStorage.getItem("nexspeak_sso_pending"))).toBeNull()
+})
+
+test("autostarted at login, the app opens in the tray only", async () => {
+  await app.close()
+  rmSync(userDataDir, { recursive: true, force: true })
+  await launch(["--hidden"])
+  await expect(page).toHaveURL("app://nexspeak/login")
+
+  const isVisible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())
+  expect(await isVisible()).toBe(false)
+  await app.evaluate(({ app }) => app.emit("activate"))
+  await expect.poll(isVisible).toBe(true)
+})
+
+test("autostart is not offered in an unpackaged run", async () => {
+  expect(await page.evaluate(() => window.nexspeak?.getAutostart())).toBeNull()
+  expect(await page.evaluate(() => window.nexspeak?.setAutostart(true))).toBeNull()
+})
+
+test("a downloaded update offers a restart", async () => {
+  const alice = await registerUser("alice")
+  await login(page, alice, "app://nexspeak/login")
+
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("nexspeak:update-ready", "9.9.9")
+  })
+  await expect(page.getByText("Update auf Version 9.9.9 bereit")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Jetzt neu starten" })).toBeVisible()
 })

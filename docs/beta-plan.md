@@ -79,8 +79,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
      them.
 4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
    screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3), notifications (#4) and
-   deep links (#5) done. Open: auto-update (#6), autostart (#7), icon (#8), signing (#9), push-to-talk
-   hook performance (#10).
+   deep links (#5), auto-update (#6) and autostart (#7) done. Open: icon (#8), signing (#9; also
+   needed for auto-update on macOS), push-to-talk hook performance (#10).
 5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
 ## 3. License, open source, legal
@@ -137,7 +137,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Push to talk (#3)
 - [x] Notifications and badge (#4)
 - [x] Deep links and SSO login (#5)
-- [ ] Auto-update (#6), autostart (#7)
+- [x] Auto-update (#6; macOS only with signed builds, #9), autostart (#7)
 - [ ] App icon (#8)
 - [x] Release workflow: release-please and desktop builds attached to the release (unsigned, macOS
       ad-hoc signed)

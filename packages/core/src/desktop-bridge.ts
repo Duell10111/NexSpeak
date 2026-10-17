@@ -17,6 +17,8 @@ export interface TrayLabels {
   mute: string
   deafen: string
   leaveCall: string
+  /** Shown once a downloaded update waits, outside calls. */
+  restartToUpdate: string
   quit: string
 }
 
@@ -67,4 +69,15 @@ export interface DesktopBridge {
    * app. Parse them with parseMatrixLink. Returns an unsubscribe function.
    */
   onDeepLink(handler: (url: string) => void): () => void
+  /** Whether the app starts (into the tray) at login; null where it is not possible (dev run). */
+  getAutostart(): Promise<boolean | null>
+  /** Resolves with the new state, or null where autostart is not possible. */
+  setAutostart(enabled: boolean): Promise<boolean | null>
+  /**
+   * The version of an update that is downloaded and installs on the next restart; also called
+   * right away if one is already waiting. Returns an unsubscribe function.
+   */
+  onUpdateReady(handler: (version: string) => void): () => void
+  /** Restarts into the downloaded update; ignored during a call. */
+  installUpdate(): void
 }
