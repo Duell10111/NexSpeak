@@ -53,6 +53,7 @@ import { RoomChat } from "@/components/nexspeak/room-chat"
 import { useCallContext, type CallParticipant, type CallVideoFeed } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useTranslation } from "@/hooks/useTranslation"
+import { usePolledStats } from "@/hooks/usePolledStats"
 import type { Translate } from "@nexspeak/i18n"
 import { enableCallsInRoom, membersCanJoinCalls } from "@nexspeak/core/matrix/rtc"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
@@ -416,33 +417,6 @@ function ControlButton({
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   )
-}
-
-const STATS_POLL_MS = 1_000
-
-/** Polls a WebRTC stats sampler while mounted (i.e. only while its menu is open). */
-function usePolledStats<T>(createSampler: () => (() => Promise<T | null>) | null): T | null {
-  const [stats, setStats] = useState<T | null>(null)
-
-  useEffect(() => {
-    const sample = createSampler()
-    if (!sample) return
-    let cancelled = false
-    const poll = () =>
-      void sample()
-        .then((next) => {
-          if (!cancelled) setStats(next)
-        })
-        .catch(() => {})
-    poll()
-    const timer = window.setInterval(poll, STATS_POLL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [createSampler])
-
-  return stats
 }
 
 function hardwareLabel(t: Translate, hardware: boolean | null, implementation: string, kind: "Encoder" | "Decoder"): string {

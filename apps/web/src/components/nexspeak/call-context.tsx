@@ -26,6 +26,7 @@ import {
   type ScreenShareQuality,
 } from "@nexspeak/core/screenshare-quality"
 import type { EncoderInfo } from "@nexspeak/core/video-codec"
+import type { ConnectionInfo } from "@nexspeak/core/connection-stats"
 import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
 import { usePushToTalk } from "@/hooks/usePushToTalk"
@@ -56,6 +57,8 @@ interface CallContextValue {
   changeScreenShareQuality: (quality: ScreenShareQuality) => Promise<void>
   /** Stats sampler for the running screenshare's encoder (hardware or software, bitrate, limits). */
   createScreenShareEncoderSampler: () => (() => Promise<EncoderInfo | null>) | null
+  /** Stats sampler for ping, packet loss and transport of the running call. */
+  createConnectionSampler: () => (() => Promise<ConnectionInfo | null>) | null
   toggleDeafen: () => void
   resumeAudio: () => Promise<void>
   setParticipantVolume: (identity: string, volume: number) => void
@@ -242,6 +245,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     [],
   )
 
+  const createConnectionSampler = useCallback(() => sessionRef.current?.createConnectionSampler() ?? null, [])
+
   const updateScreenShareQuality = useCallback((quality: ScreenShareQuality) => {
     setScreenShareQuality(quality)
     saveScreenShareQuality(quality)
@@ -362,6 +367,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       startScreenshare,
       changeScreenShareQuality,
       createScreenShareEncoderSampler,
+      createConnectionSampler,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
@@ -382,6 +388,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       startScreenshare,
       changeScreenShareQuality,
       createScreenShareEncoderSampler,
+      createConnectionSampler,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,

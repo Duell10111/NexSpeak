@@ -20,6 +20,9 @@ import {
   Search,
   Settings,
   Signal,
+  SignalHigh,
+  SignalLow,
+  SignalZero,
   Video,
   Volume2,
   X,
@@ -28,6 +31,9 @@ import { useCallContext, type RoomCallInfo } from "@/components/nexspeak/call-co
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useOwnPresence, useOwnProfile } from "@/hooks/useOwnProfile"
 import { useTranslation } from "@/hooks/useTranslation"
+import { usePolledStats } from "@/hooks/usePolledStats"
+import { PING_HISTORY_LENGTH } from "@nexspeak/core/connection-stats"
+import type { CallConnectionQuality } from "@nexspeak/core/matrix/call-session"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { joinSpaceChannels, rememberDirectRoom } from "@nexspeak/core/matrix/direct"
 import type { MatrixRoom } from "@nexspeak/core/matrix/types"
@@ -370,6 +376,78 @@ function PanelButton({
   )
 }
 
+const QUALITY_ICON: Record<CallConnectionQuality, typeof Signal> = {
+  excellent: Signal,
+  good: SignalHigh,
+  poor: SignalLow,
+  lost: SignalZero,
+  unknown: Signal,
+}
+
+const QUALITY_COLOR: Record<CallConnectionQuality, string> = {
+  excellent: "text-nx-online",
+  good: "text-nx-online",
+  poor: "text-nx-idle",
+  lost: "text-nx-dnd",
+  unknown: "text-nx-online",
+}
+
+/** Ping of the last minute as a line, scaled to at least 100 ms so low pings stay flat. */
+function PingGraph({ pings, label }: { pings: number[]; label: string }) {
+  if (pings.length < 2) return null
+  const max = Math.max(100, ...pings)
+  const offset = PING_HISTORY_LENGTH - pings.length
+  const points = pings.map((ping, index) => `${offset + index},${(24 - (ping / max) * 22).toFixed(1)}`).join(" ")
+  return (
+    <svg
+      viewBox={`0 0 ${PING_HISTORY_LENGTH - 1} 24`}
+      preserveAspectRatio="none"
+      className="h-10 w-full rounded bg-secondary text-nx-online"
+      role="img"
+      aria-label={label}
+    >
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
+
+/** Discord's connection info: polls WebRTC stats only while the popover is open (mounted). */
+function ConnectionDetails() {
+  const { t, intl } = useTranslation()
+  const { call, createConnectionSampler } = useCallContext()
+  const info = usePolledStats(createConnectionSampler)
+  const ms = (value: number | null | undefined) => (value == null ? "–" : `${Math.round(value)} ms`)
+  const percent = (value: number | null | undefined) =>
+    value == null ? "–" : value.toLocaleString(intl, { style: "percent", maximumFractionDigits: 1 })
+  const transport = info?.protocol
+    ? `${info.protocol.toUpperCase()}${info.relayed ? ` ${t("call.relayed")}` : ""}`
+    : "–"
+  const rows: Array<[string, string]> = [
+    [t("call.averagePing"), ms(info?.averagePingMs)],
+    [t("call.ping"), ms(info?.pingMs)],
+    [t("call.outboundLoss"), percent(info?.outboundLoss)],
+    [t("call.inboundLoss"), percent(info?.inboundLoss)],
+    [t("call.transport"), transport],
+    [t("call.server"), info?.server || "–"],
+    [t("call.encryption"), call?.isEncrypted ? t("call.e2ee") : t("call.transportOnly")],
+  ]
+  return (
+    <div className="space-y-2" data-testid="connection-details">
+      <PingGraph pings={info?.pingHistory ?? []} label={t("call.pingGraph")} />
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="truncate text-right font-medium tabular-nums" title={value}>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
 /** Discord's "Voice Connected" panel above the user panel. */
 function VoiceConnectionPanel({ onOpenRoom }: { onOpenRoom: (roomId: string) => void }) {
   const { t } = useTranslation()
@@ -378,6 +456,8 @@ function VoiceConnectionPanel({ onOpenRoom }: { onOpenRoom: (roomId: string) => 
   if (!call) return null
 
   const isReconnecting = call.connectionState === "reconnecting"
+  const quality = call.connectionQuality
+  const QualityIcon = isReconnecting ? SignalZero : QUALITY_ICON[quality]
   const toggleClass = (active: boolean) =>
     cn(
       "flex h-8 flex-1 items-center justify-center gap-1.5 rounded text-sm font-medium transition-colors",
@@ -388,10 +468,27 @@ function VoiceConnectionPanel({ onOpenRoom }: { onOpenRoom: (roomId: string) => 
     <div className="border-b border-border/50 px-2 pt-2 pb-2">
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1 pl-1">
-          <p className={cn("flex items-center gap-1 text-sm font-semibold", isReconnecting ? "text-nx-idle" : "text-nx-online")}>
-            <Signal className="h-4 w-4 shrink-0" />
-            <span className="truncate">{isReconnecting ? t("call.reconnecting") : t("call.voiceConnected")}</span>
-          </p>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className={cn(
+                  "flex max-w-full items-center gap-1 text-sm font-semibold hover:underline",
+                  isReconnecting ? "text-nx-idle" : QUALITY_COLOR[quality],
+                )}
+                aria-label={t("call.connectionDetails")}
+                data-quality={quality}
+              >
+                <QualityIcon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{isReconnecting ? t("call.reconnecting") : t("call.voiceConnected")}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-72 space-y-2 p-3">
+              <p className={cn("text-sm font-semibold", isReconnecting ? "text-nx-idle" : QUALITY_COLOR[quality])}>
+                {isReconnecting ? t("call.reconnecting") : t(`call.quality.${quality}`)}
+              </p>
+              <ConnectionDetails />
+            </PopoverContent>
+          </Popover>
           <button
             onClick={() => onOpenRoom(call.roomId)}
             className="block max-w-full truncate text-xs text-muted-foreground hover:text-foreground hover:underline"

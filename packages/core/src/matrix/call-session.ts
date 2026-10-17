@@ -7,6 +7,7 @@
 
 import {
   BaseKeyProvider,
+  ConnectionQuality,
   ConnectionState,
   DisconnectReason,
   LogLevel,
@@ -50,6 +51,7 @@ import {
   preferredVideoCodec,
   type EncoderInfo,
 } from '../video-codec'
+import { createConnectionSampler, type ConnectionInfo } from '../connection-stats'
 import { t } from '@nexspeak/i18n'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
@@ -101,10 +103,13 @@ export interface CallVideoFeed {
 }
 
 export type CallConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
+/** Our connection quality as rated by the SFU. */
+export type CallConnectionQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown'
 
 export interface CallSnapshot {
   roomId: string
   connectionState: CallConnectionState
+  connectionQuality: CallConnectionQuality
   isEncrypted: boolean
   participants: CallParticipant[]
   videoFeeds: CallVideoFeed[]
@@ -114,6 +119,21 @@ export interface CallSnapshot {
   isDeafened: boolean
   /** The browser blocked autoplay; a user gesture has to call startAudio(). */
   isAudioBlocked: boolean
+}
+
+function toConnectionQuality(quality: ConnectionQuality): CallConnectionQuality {
+  switch (quality) {
+    case ConnectionQuality.Excellent:
+      return 'excellent'
+    case ConnectionQuality.Good:
+      return 'good'
+    case ConnectionQuality.Poor:
+      return 'poor'
+    case ConnectionQuality.Lost:
+      return 'lost'
+    default:
+      return 'unknown'
+  }
 }
 
 export interface CallAudioOptions {
@@ -373,6 +393,12 @@ export class CallSession {
     room.on(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
     room.on(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
 
+    // The SFU pushes quality updates, so the signal icon needs no stats polling.
+    const onConnectionQualityChanged = (_quality: ConnectionQuality, participant: Participant) => {
+      if (participant === room.localParticipant) this.changed()
+    }
+    room.on(LivekitRoomEvent.ConnectionQualityChanged, onConnectionQualityChanged)
+
     const onKey = (key: Uint8Array<ArrayBuffer>, index: number, _membership: unknown, rtcBackendIdentity: string) => {
       void this.keyProvider?.setMediaKey(key, index, rtcBackendIdentity).then((imported) => {
         if (imported && rtcBackendIdentity === this.ownIdentity) this.resolveOwnKey()
@@ -394,6 +420,7 @@ export class CallSession {
       simpleEvents.forEach((event) => room.off(event, changed))
       room.off(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
       room.off(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
+      room.off(LivekitRoomEvent.ConnectionQualityChanged, onConnectionQualityChanged)
       this.rtcSession.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipsChanged, changed)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
@@ -495,6 +522,7 @@ export class CallSession {
     return {
       roomId: this.roomId,
       connectionState: this.connectionState,
+      connectionQuality: toConnectionQuality(local.connectionQuality),
       isEncrypted: this.isEncrypted,
       participants: Array.from(byIdentity.values()).sort(
         (a, b) => Number(b.isLocal) - Number(a.isLocal) || a.name.localeCompare(b.name),
@@ -656,6 +684,17 @@ export class CallSession {
   createScreenShareEncoderSampler(): (() => Promise<EncoderInfo | null>) | null {
     const sender = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track?.sender
     return sender ? createEncoderSampler(sender) : null
+  }
+
+  /** Stats sampler for ping, packet loss and transport of the connections to the SFU. */
+  createConnectionSampler(): () => Promise<ConnectionInfo | null> {
+    return createConnectionSampler(async () => {
+      // engine is marked internal, but it is the only way to the peer connections' stats.
+      const transports = this.livekitRoom.engine.pcManager
+      if (!transports) return []
+      const reports = await Promise.all([transports.publisher.getStats(), transports.subscriber?.getStats()])
+      return reports.filter((report): report is RTCStatsReport => report !== undefined)
+    })
   }
 
   /** Change resolution and frame rate of a running screenshare without a new picker. */

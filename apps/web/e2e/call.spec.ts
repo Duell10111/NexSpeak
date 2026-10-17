@@ -44,6 +44,14 @@ for (const encrypted of [false, true]) {
     // With E2EE, frames must actually decrypt: wait for the remote mic to produce audio levels.
     await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 30_000 }).toBeGreaterThan(5)
 
+    // Connection details (Discord's ping popover) read the live WebRTC stats.
+    await bobPage.getByRole("button", { name: "Verbindungsdetails" }).click()
+    const details = bobPage.getByTestId("connection-details")
+    await expect(details.getByText(/^\d+ ms$/).first()).toBeVisible({ timeout: 10_000 })
+    await expect(details.getByText(encrypted ? "Ende-zu-Ende" : "Nur Transport (DTLS-SRTP)")).toBeVisible()
+    await bobPage.keyboard.press("Escape")
+    await expect(details).toHaveCount(0)
+
     // Mute shows up for the other participant.
     await alicePage.getByRole("button", { name: "Mikrofon stummschalten" }).last().click()
     await expect(tiles(bobPage).filter({ hasText: alice.username }).getByLabel("Stummgeschaltet")).toBeVisible()
