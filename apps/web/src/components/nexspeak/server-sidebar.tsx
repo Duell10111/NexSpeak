@@ -47,6 +47,35 @@ function UnreadBadge({ mentions, unread, isActive }: { mentions: number; unread:
 }
 
 /** Discord marks the server you are talking in with a small speaker. */
+/**
+ * The app's mark (apps/desktop/scripts/render-icons.mjs) without its tile: in the brand colours
+ * on the guild bar, white on the accent when the button is active or hovered.
+ */
+function AppMark({ active }: { active: boolean }) {
+  const accent = active ? "text-current" : "text-primary group-hover:text-current"
+  return (
+    <svg viewBox="200 200 624 660" className="h-7 w-7" aria-hidden>
+      <g
+        className={accent}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="84"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M400 250H250V810L370 710H400" />
+        <path d="M624 250H774V710H624" />
+      </g>
+      <g fill="currentColor">
+        <circle cx="512" cy="372" r="54" className={accent} />
+        <circle cx="404" cy="480" r="54" />
+        <circle cx="620" cy="480" r="54" />
+        <circle cx="512" cy="588" r="54" />
+      </g>
+    </svg>
+  )
+}
+
 function VoiceBadge() {
   const { t } = useTranslation()
   return (
@@ -157,7 +186,7 @@ export function ServerSidebar({
           <button
             onClick={() => onServerSelect(DIRECT_MESSAGES_ID)}
             className={cn(
-              "relative mx-3 mb-2 flex h-12 w-12 items-center justify-center rounded-[16px] text-lg font-bold transition-all hover:rounded-[12px]",
+              "group relative mx-3 mb-2 flex h-12 w-12 items-center justify-center rounded-[16px] text-lg font-bold transition-all hover:rounded-[12px]",
               isHomeActive
                 ? "bg-primary text-primary-foreground"
                 : "bg-nx-guild-bar text-foreground hover:bg-primary hover:text-primary-foreground",
@@ -165,9 +194,7 @@ export function ServerSidebar({
             aria-label={t("dm.title")}
             aria-current={isHomeActive ? "page" : undefined}
           >
-            <svg width="28" height="20" viewBox="0 0 28 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-              <path d="M5.88 0h2.68l3.22 11.02L15.1 0h2.5l3.32 11.02L24.14 0h2.68L22.2 20h-2.48L16.3 8.58 12.88 20h-2.48L5.88 0z" fill="currentColor" />
-            </svg>
+            <AppMark active={isHomeActive} />
             {callServerId === DIRECT_MESSAGES_ID && homeUnread === 0 ? (
               <VoiceBadge />
             ) : (
