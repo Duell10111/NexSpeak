@@ -450,7 +450,9 @@ function EncoderStatus() {
   const { createScreenShareEncoderSampler, screenShareQuality } = useCallContext()
   const info = usePolledStats(createScreenShareEncoderSampler)
   if (!info) return null
-  const overloaded = info.limitation !== "cpu" && isEncoderOverloaded(info.encodeMs, screenShareQuality.fps)
+  // Hardware encoders work pipelined: their encode time is latency, not load.
+  const overloaded =
+    info.limitation !== "cpu" && info.hardware !== true && isEncoderOverloaded(info.encodeMs, screenShareQuality.fps)
   return (
     <div className="space-y-0.5 px-2 pb-1.5 text-xs text-muted-foreground" data-testid="encoder-status">
       <div className="break-words">

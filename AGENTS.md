@@ -21,6 +21,16 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
     `VaapiVideoEncoder`. Für eine spätere Desktop-App (Electron o. Ä.) diese Flags setzen und
     Hardware-Beschleunigung nicht deaktivieren.
 
+  Zwei Fallen, die sonst still zu Software-Kodierung führen (`src/lib/video-codec.ts`):
+  - LiveKit handelt nur H.264 Constrained Baseline aus, Chrome auf macOS kodiert dieses Profil
+    aber nur in Software. Die Sendeverbindung nutzt deshalb lokal Main unter derselben
+    Payload-Type-Nummer (`installH264MainProfilePreference`); nicht entfernen.
+  - Hardware-Encoder lehnen ungerade Bildgrößen ab (z. B. ein 1728×1117-Fenster). Die
+    Bildschirmübertragung skaliert deshalb minimal auf gerade Maße (`evenScale`).
+
+  Prüfen auf einem Rechner mit GPU: `E2E_HARDWARE=1 npx playwright test hardware-encoding`
+  (lokales Chrome, nicht die Docker-Browser).
+
   Firefox nutzt für H.264 (zumindest auf macOS) immer Software (OpenH264) und meldet weder
   Encoder noch CPU-Limit in den Stats; deshalb weist die Oberfläche dort darauf hin und erkennt
   Überlast über die Kodierzeit pro Bild. Eine spätere Desktop-App sollte eine Engine mit

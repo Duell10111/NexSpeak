@@ -41,12 +41,20 @@ import {
   screenShareTuning,
   type ScreenShareQuality,
 } from '@/lib/screenshare-quality'
-import { createEncoderSampler, preferredVideoCodec, type EncoderInfo } from '@/lib/video-codec'
+import {
+  createEncoderSampler,
+  evenScale,
+  installH264MainProfilePreference,
+  preferredVideoCodec,
+  type EncoderInfo,
+} from '@/lib/video-codec'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
 /** Upper bound for waiting on our own media key before publishing anyway. */
 const OWN_KEY_TIMEOUT_MS = 10_000
+// How often a running screenshare checks whether the shared window changed size.
+const SCREENSHARE_SIZE_CHECK_MS = 2_000
 
 /** Verbose call logging, enabled with localStorage["nexspeak:debug"] = "1". */
 function isDebugEnabled(): boolean {
@@ -208,6 +216,8 @@ export class CallSession {
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
     const sfu = await getSfuConfig(client, serviceUrl, roomId)
     debug('got SFU config', sfu.url)
+
+    installH264MainProfilePreference()
 
     // Media is end-to-end encrypted exactly when the room is, like Element Call does.
     const keyProvider = room.hasEncryptionStateEvent() ? new MatrixKeyProvider() : null
@@ -543,7 +553,61 @@ export class CallSession {
         degradationPreference: tuning.degradationPreference,
       },
     )
+    this.screenShareQuality = quality
+    await this.applyScreenShareEncodings()
+    this.watchScreenShareSize()
     this.changed()
+  }
+
+  private screenShareQuality: ScreenShareQuality | null = null
+  private screenShareSize = ''
+  private screenShareSizeTimer: ReturnType<typeof setInterval> | undefined
+
+  private screenShareTrack(): LocalVideoTrack | undefined {
+    return this.livekitRoom.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track as
+      | LocalVideoTrack
+      | undefined
+  }
+
+  /**
+   * Bitrate, frame rate and scaling of all screenshare layers. Scaling keeps every layer at an
+   * even size, otherwise hardware H.264 encoders refuse it and the browser encodes in software.
+   */
+  private async applyScreenShareEncodings(): Promise<void> {
+    const track = this.screenShareTrack()
+    const sender = track?.sender
+    const quality = this.screenShareQuality
+    if (!track || !sender || !quality) return
+    const { width = 0, height = 0 } = track.mediaStreamTrack.getSettings()
+    this.screenShareSize = `${width}x${height}`
+    const params = sender.getParameters()
+    if (!params.encodings?.length) return
+    const bitrate = screenShareBitrate(quality)
+    for (const encoding of params.encodings) {
+      // 1 for the full layer, 2 for the half-resolution simulcast layer (before our tweak).
+      const layerScale = Math.max(1, Math.round(encoding.scaleResolutionDownBy ?? 1))
+      encoding.scaleResolutionDownBy = evenScale(width, height, layerScale)
+      // Simulcast layers are downscaled copies; scale their budget with the pixel count.
+      encoding.maxBitrate = Math.max(150_000, Math.round(bitrate / (layerScale * layerScale)))
+      encoding.maxFramerate = quality.fps
+    }
+    await sender.setParameters(params)
+  }
+
+  /** The shared window can be resized at any time; keep the encoder sizes even. */
+  private watchScreenShareSize(): void {
+    clearInterval(this.screenShareSizeTimer)
+    this.screenShareSizeTimer = setInterval(() => {
+      const track = this.screenShareTrack()
+      if (!track) {
+        clearInterval(this.screenShareSizeTimer)
+        return
+      }
+      const { width = 0, height = 0 } = track.mediaStreamTrack.getSettings()
+      if (`${width}x${height}` !== this.screenShareSize) {
+        void this.applyScreenShareEncodings().catch((error: unknown) => console.warn('Updating screenshare encodings failed', error))
+      }
+    }, SCREENSHARE_SIZE_CHECK_MS)
   }
 
   /** Stats sampler for the running screenshare's encoder, or null when not sharing. */
@@ -554,26 +618,13 @@ export class CallSession {
 
   /** Change resolution and frame rate of a running screenshare without a new picker. */
   async setScreenShareQuality(quality: ScreenShareQuality): Promise<void> {
-    const track = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track as
-      | LocalVideoTrack
-      | undefined
+    const track = this.screenShareTrack()
     if (!track) return
     const tuning = screenShareTuning(quality)
     track.mediaStreamTrack.contentHint = tuning.contentHint
     await track.mediaStreamTrack.applyConstraints(screenShareConstraints(quality))
-
-    const sender = track.sender
-    if (sender) {
-      const params = sender.getParameters()
-      const bitrate = screenShareBitrate(quality)
-      for (const encoding of params.encodings) {
-        // Simulcast layers are downscaled copies; scale their budget with the pixel count.
-        const scale = encoding.scaleResolutionDownBy ?? 1
-        encoding.maxBitrate = Math.max(150_000, Math.round(bitrate / (scale * scale)))
-        encoding.maxFramerate = quality.fps
-      }
-      await sender.setParameters(params)
-    }
+    this.screenShareQuality = quality
+    await this.applyScreenShareEncodings()
     await track.setDegradationPreference(tuning.degradationPreference)
     this.changed()
   }
@@ -610,6 +661,7 @@ export class CallSession {
 
     this.cleanups.forEach((cleanup) => cleanup())
     this.cleanups.length = 0
+    clearInterval(this.screenShareSizeTimer)
 
     await Promise.allSettled([
       this.livekitRoom.disconnect(),

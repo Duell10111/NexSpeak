@@ -187,8 +187,11 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
         for (const sender of pc.getSenders()) {
           const settings = sender.track?.getSettings()
           if (sender.track?.kind !== "video" || !settings?.displaySurface) continue
-          const encodings = sender.getParameters().encodings
+          const parameters = sender.getParameters()
+          const encodings = parameters.encodings
           return {
+            // H.264 Main under LiveKit's baseline payload type, see swapH264ProfilesInOffer.
+            fmtp: parameters.codecs[0]?.sdpFmtpLine ?? "",
             height: settings.height ?? 0,
             maxFramerate: Math.max(...encodings.map((encoding) => encoding.maxFramerate ?? 0)),
             maxBitrate: Math.max(...encodings.map((encoding) => encoding.maxBitrate ?? 0)),
@@ -200,6 +203,7 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
 
   await expect.poll(screenSender, { timeout: 30_000 }).toMatchObject({ maxFramerate: 60, maxBitrate: 4_000_000 })
   expect((await screenSender())!.height).toBeLessThanOrEqual(720)
+  expect((await screenSender())!.fmtp).toContain("profile-level-id=4d00")
 
   // Bob watches the stream: it takes the stage and frames decode (E2EE).
   await expect(tiles(bobPage)).toHaveCount(3, { timeout: 30_000 })
