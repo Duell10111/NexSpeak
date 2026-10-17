@@ -1,0 +1,52 @@
+# End-to-end tests for every pull request, against the same Docker stack as locally
+# (dev/docker-compose.yml with the "e2e" profile: Synapse, LiveKit, lk-jwt-service and the
+# Playwright browser server). The hardware encoding test needs a GPU and skips itself here.
+name: E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Start Matrix + LiveKit stack
+        run: |
+          docker compose -f dev/docker-compose.yml --profile e2e up -d --wait
+          # The browser server downloads Playwright on start and has no health check.
+          timeout 180 bash -c 'until (echo > /dev/tcp/127.0.0.1/3030) 2>/dev/null; do sleep 2; done'
+
+      - name: Run E2E tests
+        working-directory: apps/web
+        run: npm run test:e2e:docker -- --reporter=github,list
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f dev/docker-compose.yml --profile e2e logs --no-color > e2e-stack.log
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results
+          path: |
+            apps/web/test-results/
+            e2e-stack.log
+          retention-days: 7

@@ -23,7 +23,8 @@ AGPL on its own.
   (`feat:`, `fix:`, `perf:`, `chore:`, …).
 - **Dependencies** must be compatible with the AGPL-3.0 and worth their weight.
 - Before opening a pull request: `npm run lint`, `npm test`, `npm run build`. Changes to calls also
-  need the end-to-end tests (`npm run test:e2e:docker`).
+  need the end-to-end tests (`npm run test:e2e:docker`). CI runs all of these on every pull request
+  (`.github/workflows/ci.yml`, `.github/workflows/e2e.yml`).
 
 ## License
 
