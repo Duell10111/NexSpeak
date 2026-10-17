@@ -76,3 +76,10 @@ npm start
 
 Die App ist eine rein clientseitige Matrix-Anwendung; Zugangsdaten gehen nur an den Homeserver. Der
 LiveKit-E2EE-Worker wird beim Build nach `public/livekit-e2ee-worker.mjs` kopiert.
+
+## Mitwirken & Lizenz
+
+Beiträge sind willkommen – siehe [CONTRIBUTING.md](CONTRIBUTING.md). Vor dem ersten Merge ist einmalig die
+[CLA](CLA.md) zu unterschreiben (per Kommentar im Pull Request).
+
+NexSpeak steht unter der [GNU Affero General Public License v3.0 oder neuer](LICENSE).

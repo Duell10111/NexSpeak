@@ -70,6 +70,12 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
   folgt die Sprache dem Browser. Die E2E-Tests laufen mit `locale: "de-DE"` gegen die deutsche
   Oberfläche.
 - Änderungen an Anrufen mit den E2E-Tests in `e2e/call.spec.ts` prüfen (inklusive E2EE).
+- **Alles im Code ist Englisch:** Kommentare, Bezeichner, Log- und Fehlermeldungen für
+  Entwickler, Testnamen, Commit-Messages und PR-Titel. Deutsch gibt es nur in den
+  Oberflächentexten (`de.ts`) und in Dokumenten für Menschen (README, `docs/`).
+- Lizenz: AGPL-3.0-or-later (`LICENSE`). Neue Abhängigkeiten müssen damit vereinbar sein
+  (MIT, ISC, BSD, Apache-2.0, MPL-2.0, (A)GPL-3.0 – keine proprietären oder „non-commercial“
+  Lizenzen). Externe Beiträge brauchen eine unterschriebene CLA (`CLA.md`).
 
 ## Server-Modell (Discord → Matrix)
 
