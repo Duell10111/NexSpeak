@@ -6,6 +6,9 @@
 // in sync with src/channel.ts.
 const nightly = process.env.NEXSPEAK_CHANNEL === "nightly"
 const productName = nightly ? "NexSpeak Nightly" : "NexSpeak"
+// Linux executable, icon and deb package name; the defaults would come from the package name
+// "@nexspeak/desktop", which is no valid file or package name. LINUX_NAME in src/channel.ts.
+const linuxName = nightly ? "nexspeak-nightly" : "nexspeak"
 
 /** @type {import("electron-builder").Configuration} */
 module.exports = {
@@ -63,8 +66,11 @@ module.exports = {
   linux: {
     category: "Network;Chat;InstantMessaging",
     target: ["AppImage", "deb"],
-    // Also the icon name (Icon= in the autostart entry, see LINUX_NAME in src/channel.ts); the default
-    // would come from the package name "@nexspeak/desktop", which is not a valid file name.
-    executableName: nightly ? "nexspeak-nightly" : "nexspeak",
+    executableName: linuxName,
+    maintainer: "Konstantin Späth",
+  },
+  deb: {
+    packageName: linuxName,
+    artifactName: `${linuxName}_\${version}_\${arch}.\${ext}`,
   },
 }
