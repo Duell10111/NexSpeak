@@ -1,0 +1,73 @@
+# Development-only homeserver config. Never use these secrets in production.
+server_name: synapse
+public_baseurl: http://localhost:8008/
+pid_file: /data/homeserver.pid
+report_stats: false
+signing_key_path: /data/signing.key
+trusted_key_servers: []
+suppress_key_server_warning: true
+media_store_path: /data/media_store
+macaroon_secret_key: nexspeak-dev-macaroon
+form_secret: nexspeak-dev-form
+registration_shared_secret: nexspeak-dev-registration
+
+listeners:
+  - port: 8008
+    type: http
+    x_forwarded: false
+    bind_addresses: ["0.0.0.0"]
+    resources:
+      - names: [client, federation, openid]
+        compress: false
+
+  # Federation over TLS, only reachable inside the compose network (for lk-jwt-service).
+  - port: 8448
+    type: http
+    tls: true
+    bind_addresses: ["0.0.0.0"]
+    resources:
+      - names: [federation, openid]
+        compress: false
+
+tls_certificate_path: /data/tls.crt
+tls_private_key_path: /data/tls.key
+
+database:
+  name: sqlite3
+  args:
+    database: /data/homeserver.db
+
+enable_registration: true
+enable_registration_without_verification: true
+enable_authenticated_media: true
+presence:
+  enabled: true
+
+# MatrixRTC: delayed events (MSC4140) and transport discovery (MSC4143)
+max_event_delay_duration: 24h
+experimental_features:
+  msc4143_enabled: true
+  msc3266_enabled: true
+  msc4222_enabled: true
+# Login tokens for an existing session (MSC3882): the E2E tests use them to simulate the return
+# from an SSO login (m.login.token), since the dev stack has no identity provider.
+login_via_existing_session:
+  enabled: true
+  require_ui_auth: false
+  token_timeout: 5m
+matrix_rtc:
+  transports:
+    - type: livekit
+      livekit_service_url: http://localhost:8070
+
+# Tests create many users and messages quickly.
+rc_message: { per_second: 1000, burst_count: 1000 }
+rc_registration: { per_second: 1000, burst_count: 1000 }
+rc_login:
+  address: { per_second: 1000, burst_count: 1000 }
+  account: { per_second: 1000, burst_count: 1000 }
+  failed_attempts: { per_second: 1000, burst_count: 1000 }
+rc_joins:
+  local: { per_second: 1000, burst_count: 1000 }
+rc_delayed_event_mgmt: { per_second: 1000, burst_count: 1000 }
+rc_key_requests: { per_second: 1000, burst_count: 1000 }

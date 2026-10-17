@@ -1,0 +1,19 @@
+{
+  "name": "@nexspeak/core",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "description": "Matrix and call logic shared by all NexSpeak apps, free of UI code.",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nexspeak/i18n": "*",
+    "livekit-client": "^2.22.4",
+    "matrix-js-sdk": "^41.0.0-rc.0"
+  }
+}

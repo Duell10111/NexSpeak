@@ -1,0 +1,71 @@
+# Local Matrix + MatrixRTC stack for development and end-to-end tests.
+#   docker compose -f dev/docker-compose.yml up -d
+# Homeserver: http://localhost:8008 (server name "synapse"), LiveKit JWT service: http://localhost:8070
+name: nexspeak-dev
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        python /config/gen-tls.py &&
+        python -m synapse.app.homeserver -c /config/homeserver.yaml --generate-keys --keys-directory /data &&
+        exec python -m synapse.app.homeserver -c /config/homeserver.yaml
+    volumes:
+      - ./synapse/homeserver.yaml:/config/homeserver.yaml:ro
+      - ./synapse/gen-tls.py:/config/gen-tls.py:ro
+      - synapse-data:/data
+    ports:
+      - "8008:8008"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8008/health"]
+      interval: 2s
+      retries: 30
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: ["--dev", "--bind", "0.0.0.0", "--node-ip", "127.0.0.1"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+      - "8070:8080" # lk-jwt-service, which shares this network namespace
+      - "127.0.0.1:3030:3030" # Playwright browser server (profile "e2e"), also sharing it
+
+  lk-jwt-service:
+    image: ghcr.io/element-hq/lk-jwt-service:latest
+    # Share LiveKit's network so ws://localhost:7880 works for both the browser and this service.
+    network_mode: service:livekit
+    environment:
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_KEY: devkey
+      LIVEKIT_SECRET: secret
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: "*"
+      LIVEKIT_CS_API_URL_OVERRIDES: synapse=http://synapse:8008
+      LIVEKIT_LOG_LEVEL: debug
+      # Synapse's federation listener uses a self-signed certificate in this setup.
+      LIVEKIT_INSECURE_SKIP_VERIFY_TLS: YES_I_KNOW_WHAT_I_AM_DOING
+    depends_on:
+      synapse:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+
+  # Linux browsers for the end-to-end tests (fake microphone/camera work reliably here).
+  # Shares LiveKit's network so WebRTC reaches the SFU at 127.0.0.1; HTTP/WebSocket traffic to
+  # localhost is tunnelled back to the test runner (Playwright "exposeNetwork").
+  playwright:
+    profiles: ["e2e"]
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    network_mode: service:livekit
+    init: true
+    ipc: host
+    # --unsafe lets the tests pass Chromium flags (fake microphone/camera); only bound to 127.0.0.1.
+    command: ["npx", "-y", "playwright@1.64.1", "run-server", "--port", "3030", "--host", "0.0.0.0", "--unsafe"]
+    depends_on:
+      livekit:
+        condition: service_started
+
+volumes:
+  synapse-data:

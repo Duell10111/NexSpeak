@@ -1,0 +1,117 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* NexSpeak - Discord-style dark theme with teal accent */
+:root {
+  --background: #313338;
+  --foreground: #dbdee1;
+  --card: #2b2d31;
+  --card-foreground: #dbdee1;
+  --popover: #232428;
+  --popover-foreground: #dbdee1;
+  --primary: #10b981;
+  --primary-foreground: #ffffff;
+  --secondary: #2b2d31;
+  --secondary-foreground: #dbdee1;
+  --muted: #383a40;
+  --muted-foreground: #949ba4;
+  --accent: #10b981;
+  --accent-foreground: #ffffff;
+  --destructive: #da373c;
+  --destructive-foreground: #ffffff;
+  --border: #3f4147;
+  --input: #1e1f22;
+  --ring: #10b981;
+  --chart-1: #10b981;
+  --chart-2: #3b82f6;
+  --chart-3: #f59e0b;
+  --chart-4: #ef4444;
+  --chart-5: #8b5cf6;
+  --radius: 0.5rem;
+  --sidebar: #2b2d31;
+  --sidebar-foreground: #949ba4;
+  --sidebar-primary: #10b981;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #35373c;
+  --sidebar-accent-foreground: #dbdee1;
+  --sidebar-border: #3f4147;
+  --sidebar-ring: #10b981;
+
+  /* NexSpeak custom tokens */
+  --nx-guild-bar: #1e1f22;
+  --nx-chat-bg: #313338;
+  --nx-chat-input: #383a40;
+  --nx-member-bg: #2b2d31;
+  --nx-hover: #35373c;
+  --nx-hover-foreground: #dbdee1;
+  --nx-active: #404249;
+  --nx-panel: #232428;
+  --nx-online: #23a55a;
+  --nx-idle: #f0b232;
+  --nx-dnd: #f23f43;
+  --nx-offline: #80848e;
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-nx-guild-bar: var(--nx-guild-bar);
+  --color-nx-chat-bg: var(--nx-chat-bg);
+  --color-nx-chat-input: var(--nx-chat-input);
+  --color-nx-member-bg: var(--nx-member-bg);
+  --color-nx-hover: var(--nx-hover);
+  --color-nx-hover-foreground: var(--nx-hover-foreground);
+  --color-nx-active: var(--nx-active);
+  --color-nx-panel: var(--nx-panel);
+  --color-nx-online: var(--nx-online);
+  --color-nx-idle: var(--nx-idle);
+  --color-nx-dnd: var(--nx-dnd);
+  --color-nx-offline: var(--nx-offline);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
