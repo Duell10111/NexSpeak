@@ -80,7 +80,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
    screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3), notifications (#4),
    deep links (#5), auto-update (#6), autostart (#7) and icon (#8) done. Open: signing (#9; also
-   needed for auto-update on macOS), push-to-talk hook performance (#10).
+   needed for auto-update on macOS), push-to-talk hook performance (#10), nightly builds (#11).
 5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
 ## 3. License, open source, legal
@@ -144,6 +144,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
       a SmartScreen warning) – only secrets missing, see `.github/workflows/desktop.yml`
 - [ ] Push-to-talk hook: filter mouse moves natively (#10)
+- [ ] Nightly builds (#11): only on app changes, "NexSpeak Nightly" next to the stable app, releases in
+      `Duell10111/NexSpeak-nightly` – workflow ready, repository and `NIGHTLY_RELEASE_TOKEN` missing
 
 ### Later (0.3+)
 
@@ -165,6 +167,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
   - On every PR: lint, typecheck, Vitest, build, license check.
   - E2E with the Docker stack on PRs to `main` or by label.
   - Desktop builds as a matrix (macOS, Windows, Linux) on tags.
+  - Nightly desktop builds (`.github/workflows/nightly.yml`) when app code changed since the last one.
 - **Releases:** one shared version for web and desktop, automated with release-please (Conventional
   Commits) including a changelog.
 - **Branches:** `main` protected, work via feature branches and PRs; merge `v1` after the

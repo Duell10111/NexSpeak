@@ -14,7 +14,8 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 | `src/updater.ts` | Auto-update from GitHub Releases (electron-updater), held back during calls |
 | `src/tray.ts` | Tray icon and menu (open, mute, deafen, leave call, restart to update, quit) |
 | `src/preload.ts` | `window.nexspeak` (contract: `packages/core/src/desktop-bridge.ts`) |
-| `electron-builder.yml` | Packages for macOS (dmg/zip), Windows (NSIS) and Linux (AppImage/deb) |
+| `electron-builder.cjs` | Packages for macOS (dmg/zip), Windows (NSIS) and Linux (AppImage/deb); stable or nightly |
+| `src/channel.ts` | Release channel of the build: app id, name and deep-link scheme of stable or nightly |
 | `build/` | App icon (`icon.icns`, `icon.ico`, `icons/` for Linux) and macOS entitlements |
 | `assets/` | Tray icons, unread badge and Linux window icon |
 | `scripts/render-icons.mjs` | Renders all app icons (desktop and web) from SVG: `node scripts/render-icons.mjs` (macOS) |
@@ -99,7 +100,7 @@ dev runs do not offer the setting.
 
 ## Auto-update
 
-`src/updater.ts` uses electron-updater with the `publish` target from `electron-builder.yml` and
+`src/updater.ts` uses electron-updater with the `publish` target from `electron-builder.cjs` and
 the `latest*.yml` files attached to each release.
 
 - Checks 30 s after the start, then only when the window gets the focus and the last check is more
@@ -127,6 +128,24 @@ Signing switches on with repository secrets (listed at the top of `desktop.yml`)
   `xattr -dr com.apple.quarantine /Applications/NexSpeak.app`. Auto-update on macOS needs a
   Developer ID signature.
 - Windows: SmartScreen warns; "More info" → "Run anyway".
+
+## Nightly builds
+
+`.github/workflows/nightly.yml` runs every night and builds only when `apps/`, `packages/` or the
+lockfile changed since the last nightly and CI passed for that commit (by hand: "Run workflow",
+optionally with "force"). It packages with `NEXSPEAK_CHANNEL=nightly`, which makes
+`electron-builder.cjs` build "NexSpeak Nightly":
+
+- Its own app id (`io.github.duell10111.nexspeak.nightly`), name, data folder, Linux executable and
+  deep-link scheme (`nexspeak-nightly://`, also used for the SSO return), so it installs and runs
+  next to the stable app. `src/channel.ts` reads the channel from the packaged `package.json`.
+- Version `<next patch>-nightly.<date>.<run>`: above the last release, below the next one.
+- Releases go to the separate repository `Duell10111/NexSpeak-nightly` as prereleases (drafts until
+  all installers are attached), so release-please and the releases here stay untouched. The
+  nightly app updates only from there; only the newest 7 nightlies are kept.
+
+Setup: the repository needs at least one commit, and this repository the secret
+`NIGHTLY_RELEASE_TOKEN` (fine-grained token, "Contents: read and write" on `NexSpeak-nightly`).
 
 ## Still open (milestone "Beta 0.2 – Desktop")
 

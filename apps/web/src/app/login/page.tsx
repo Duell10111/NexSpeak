@@ -109,9 +109,10 @@ export default function LoginPage() {
     try {
       const homeserverUrl = await resolveHomeserverUrl(homeserver.trim())
       rememberSsoHomeserver(homeserverUrl)
-      if (desktopBridge()) {
+      const desktop = desktopBridge()
+      if (desktop) {
         // The desktop app logs in through the default browser, which returns via nexspeak://sso.
-        window.open(ssoLoginUrl(homeserverUrl, 'nexspeak://sso', identityProviderId), '_blank')
+        window.open(ssoLoginUrl(homeserverUrl, `${desktop.deepLinkScheme}://sso`, identityProviderId), '_blank')
         setSsoNotice(t('login.ssoInBrowser'))
       } else {
         window.location.assign(ssoLoginUrl(homeserverUrl, `${window.location.origin}/login`, identityProviderId))

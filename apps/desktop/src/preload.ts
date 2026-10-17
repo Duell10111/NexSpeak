@@ -24,8 +24,14 @@ const IPC_UPDATE_READY = "nexspeak:update-ready"
 const IPC_UPDATE_GET = "nexspeak:update-get"
 const IPC_UPDATE_INSTALL = "nexspeak:update-install"
 
+// Passed by main.ts as an additional argument (see src/channel.ts).
+const DEEP_LINK_SCHEME_ARG = "--nexspeak-deep-link-scheme="
+
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
+  deepLinkScheme:
+    process.argv.find((argument) => argument.startsWith(DEEP_LINK_SCHEME_ARG))?.slice(DEEP_LINK_SCHEME_ARG.length) ??
+    "nexspeak",
   onChooseDisplaySource(handler) {
     const listener = async (_event: IpcRendererEvent, requestId: number, sources: DisplaySource[]) => {
       const sourceId = await handler(sources).catch(() => null)

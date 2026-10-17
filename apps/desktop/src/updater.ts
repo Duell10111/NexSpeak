@@ -1,4 +1,5 @@
-// Auto-update from GitHub Releases (electron-updater, `publish` in electron-builder.yml).
+// Auto-update from GitHub Releases (electron-updater, `publish` in electron-builder.cjs; nightly builds
+// update from the NexSpeak-nightly repository).
 // Checks once shortly after the start and then only when the window gets the focus again after a
 // few hours: no timer while the app sits in the tray. Nothing downloads or installs during a call;
 // the download waits until the call ends, the install until the user restarts or quits.

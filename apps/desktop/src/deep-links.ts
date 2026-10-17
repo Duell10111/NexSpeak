@@ -1,13 +1,13 @@
-// nexspeak:// links from the OS: macOS delivers them as "open-url" (also on a cold start, before
+// nexspeak:// links (nexspeak-nightly:// in nightly builds) from the OS: macOS delivers them as "open-url" (also on a cold start, before
 // "ready"), Windows and Linux start a second instance with the link in its arguments. Links wait
 // here until the web app listens, then go to it unparsed; parsing lives in packages/core.
 import { app, ipcMain, type WebContents } from "electron"
+import { DEEP_LINK_SCHEME as SCHEME } from "./channel"
 
 // Same names as in preload.ts.
 const IPC_DEEP_LINK = "nexspeak:deep-link"
 const IPC_DEEP_LINKS_READY = "nexspeak:deep-links-ready"
 
-const SCHEME = "nexspeak"
 const MAX_LINK_LENGTH = 4096
 
 const pending: string[] = []

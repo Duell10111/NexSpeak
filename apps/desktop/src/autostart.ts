@@ -5,6 +5,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { app, ipcMain, type IpcMainInvokeEvent, type WebContents } from "electron"
+import { LINUX_NAME, PRODUCT_NAME } from "./channel"
 
 // Same names as in preload.ts.
 const IPC_AUTOSTART_GET = "nexspeak:autostart-get"
@@ -18,7 +19,7 @@ const isSupported = () => app.isPackaged
 
 function linuxEntryPath() {
   const configDir = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
-  return join(configDir, "autostart", "nexspeak.desktop")
+  return join(configDir, "autostart", `${LINUX_NAME}.desktop`)
 }
 
 /** The AppImage runs from a temporary mount; the login entry has to start the image file itself. */
@@ -51,9 +52,9 @@ async function setEnabled(enabled: boolean): Promise<void> {
       [
         "[Desktop Entry]",
         "Type=Application",
-        "Name=NexSpeak",
+        `Name=${PRODUCT_NAME}`,
         `Exec=${quoteExec(linuxExecutable())} ${HIDDEN_ARG}`,
-        "Icon=nexspeak",
+        `Icon=${LINUX_NAME}`,
         "Terminal=false",
         "X-GNOME-Autostart-enabled=true",
         "",

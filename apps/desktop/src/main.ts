@@ -19,6 +19,7 @@ import {
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
 import { setupAutostart, wasOpenedAtLogin } from "./autostart"
 import { setBadgeCount } from "./badge"
+import { APP_ID, DEEP_LINK_SCHEME, PRODUCT_NAME } from "./channel"
 import { registerDeepLinks, setupDeepLinks } from "./deep-links"
 import { originOf } from "./origin"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
@@ -47,8 +48,8 @@ if (process.platform === "linux") {
 }
 
 // Windows only shows notifications for apps with an AppUserModelID (same as appId in
-// electron-builder.yml).
-if (process.platform === "win32") app.setAppUserModelId("io.github.duell10111.nexspeak")
+// electron-builder.cjs).
+if (process.platform === "win32") app.setAppUserModelId(APP_ID)
 
 // A standard, secure scheme gives the app a real origin (localStorage, IndexedDB), a secure context
 // (microphone, camera, screen capture) and fetch/streaming for the crypto WASM.
@@ -256,7 +257,7 @@ function createWindow() {
     show: false,
     // Matches --background in the web app, so there is no white flash before the first paint.
     backgroundColor: "#313338",
-    title: "NexSpeak",
+    title: PRODUCT_NAME,
     // Windows takes the icon from the .exe and macOS from the app bundle.
     ...(process.platform === "linux" && { icon: join(__dirname, "..", "assets", "icon.png") }),
     autoHideMenuBar: true,
@@ -269,6 +270,8 @@ function createWindow() {
       backgroundThrottling: true,
       // The spell checker downloads dictionaries from Google; off until it is a setting.
       spellcheck: false,
+      // Read by preload.ts (a sandboxed preload has no other way to get it synchronously).
+      additionalArguments: [`--nexspeak-deep-link-scheme=${DEEP_LINK_SCHEME}`],
     },
   })
 

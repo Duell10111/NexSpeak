@@ -1,0 +1,136 @@
+# Nightly desktop builds ("NexSpeak Nightly", installs next to the stable app; see
+# apps/desktop/electron-builder.cjs). Runs every night but only builds when app code changed since
+# the last nightly and CI passed for that commit; otherwise it stops after the check.
+#
+# Nightlies go to a separate repository, so the releases here and release-please stay untouched.
+# It needs at least one commit (e.g. a README) and the secret NIGHTLY_RELEASE_TOKEN: a fine-grained
+# token with "Contents: read and write" on that repository. Only the newest nightlies are kept.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even without changes since the last nightly
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  NIGHTLY_REPOSITORY: Duell10111/NexSpeak-nightly
+  KEEP_NIGHTLIES: 7
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+      sha: ${{ steps.check.outputs.sha }}
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - id: check
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+          # The source commit is recorded in the notes of each nightly (see the release job).
+          last_tag=$(gh release list --repo "$NIGHTLY_REPOSITORY" --exclude-drafts --limit 1 \
+            --json tagName --jq '.[0].tagName // empty')
+          last_sha=""
+          if [ -n "$last_tag" ]; then
+            last_sha=$(gh release view "$last_tag" --repo "$NIGHTLY_REPOSITORY" --json body --jq .body \
+              | grep -oE '[0-9a-f]{40}' | head -n 1 || true)
+          fi
+
+          if [ "$FORCE" != "true" ] && [ -n "$last_sha" ] && git cat-file -e "$last_sha^{commit}" 2>/dev/null \
+            && git diff --quiet "$last_sha" "$sha" -- apps packages package.json package-lock.json; then
+            echo "No app changes since $last_tag ($last_sha)."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ci=$(gh run list --workflow ci.yml --branch main --commit "$sha" --limit 1 \
+            --json conclusion --jq '.[0].conclusion // empty')
+          if [ "$FORCE" != "true" ] && [ "$ci" != "success" ]; then
+            echo "CI for $sha is '${ci:-missing}', trying again next night."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Next patch version, so a nightly sorts above the last release and below the next one.
+          base=$(node -p "const [major, minor, patch] = require('./package.json').version.split('-')[0].split('.').map(Number); [major, minor, patch + 1].join('.')")
+          version="$base-nightly.$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
+          echo "Building $version from $sha."
+          {
+            echo "build=true"
+            echo "version=$version"
+            echo "tag=v$version"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.NIGHTLY_RELEASE_TOKEN || github.token }}
+          FORCE: ${{ inputs.force }}
+
+  # A draft until all installers are attached: electron-updater ignores drafts.
+  release:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        run: |
+          # Drafts left over from failed runs.
+          gh release list --repo "$NIGHTLY_REPOSITORY" --limit 100 --json tagName,isDraft \
+            --jq '.[] | select(.isDraft) | .tagName' \
+            | xargs -r -n 1 gh release delete --repo "$NIGHTLY_REPOSITORY" --yes
+          gh release create "$TAG" --repo "$NIGHTLY_REPOSITORY" --draft --prerelease \
+            --title "NexSpeak Nightly $VERSION" \
+            --notes "Built from $GITHUB_REPOSITORY@$SHA ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$SHA)."
+        env:
+          GH_TOKEN: ${{ secrets.NIGHTLY_RELEASE_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}
+          VERSION: ${{ needs.check.outputs.version }}
+          SHA: ${{ needs.check.outputs.sha }}
+
+  desktop:
+    needs: [check, release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ needs.check.outputs.tag }}
+      ref: ${{ needs.check.outputs.sha }}
+      channel: nightly
+      version: ${{ needs.check.outputs.version }}
+      repository: Duell10111/NexSpeak-nightly
+    secrets: inherit
+
+  publish:
+    needs: [check, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish and remove old nightlies
+        run: |
+          gh release edit "$TAG" --repo "$NIGHTLY_REPOSITORY" --draft=false --prerelease
+          gh release list --repo "$NIGHTLY_REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' \
+            | tail -n +$((KEEP_NIGHTLIES + 1)) \
+            | xargs -r -n 1 gh release delete --repo "$NIGHTLY_REPOSITORY" --cleanup-tag --yes
+        env:
+          GH_TOKEN: ${{ secrets.NIGHTLY_RELEASE_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}

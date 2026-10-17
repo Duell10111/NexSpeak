@@ -43,6 +43,7 @@ describe("parseMatrixLink", () => {
     expect(parseMatrixLink("nexspeak://room/%23space:example.org")).toMatchObject({ roomIdOrAlias: "#space:example.org" })
     expect(parseMatrixLink("nexspeak://user/%40alice%3Aexample.org")).toEqual({ kind: "user", userId: "@alice:example.org" })
     expect(parseMatrixLink("nexspeak://sso?loginToken=abc123")).toEqual({ kind: "sso", loginToken: "abc123" })
+    expect(parseMatrixLink("nexspeak-nightly://sso?loginToken=abc123")).toEqual({ kind: "sso", loginToken: "abc123" })
   })
 
   it("rejects everything else", () => {

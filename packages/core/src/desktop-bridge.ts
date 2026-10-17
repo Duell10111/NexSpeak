@@ -40,6 +40,8 @@ export type PushToTalkStatus = 'active' | 'permission-required' | 'unsupported'
 
 export interface DesktopBridge {
   platform: 'darwin' | 'win32' | 'linux'
+  /** Scheme of the app's deep links without ":": "nexspeak", or "nexspeak-nightly" in nightly builds. */
+  deepLinkScheme: string
   /**
    * Called when the page asks for screen capture (getDisplayMedia) and the OS has no picker of
    * its own. Resolve with a source id, or null to cancel. Returns an unsubscribe function.
@@ -65,8 +67,8 @@ export interface DesktopBridge {
   /** Dock badge (macOS), taskbar overlay (Windows), launcher count (Linux); 0 clears it. */
   setBadgeCount(count: number): void
   /**
-   * nexspeak:// links opened from the OS (browser, other apps), including links that started the
-   * app. Parse them with parseMatrixLink. Returns an unsubscribe function.
+   * Deep links (deepLinkScheme) opened from the OS (browser, other apps), including links that
+   * started the app. Parse them with parseMatrixLink. Returns an unsubscribe function.
    */
   onDeepLink(handler: (url: string) => void): () => void
   /** Whether the app starts (into the tray) at login; null where it is not possible (dev run). */

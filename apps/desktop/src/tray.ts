@@ -3,6 +3,7 @@
 import { join } from "node:path"
 import { app, ipcMain, Menu, nativeImage, Tray, type IpcMainEvent, type MenuItemConstructorOptions, type WebContents } from "electron"
 import type { TrayCommand, TrayLabels, VoiceState } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import { PRODUCT_NAME } from "./channel"
 
 // Same names as in preload.ts.
 const IPC_TRAY_LABELS = "nexspeak:tray-labels"
@@ -64,7 +65,7 @@ export function createTray({
   // macOS tints a black "Template" image for light and dark menu bars; @2x is picked automatically.
   const iconFile = process.platform === "darwin" ? "trayTemplate.png" : "tray.png"
   tray = new Tray(nativeImage.createFromPath(join(__dirname, "..", "assets", iconFile)))
-  tray.setToolTip("NexSpeak")
+  tray.setToolTip(PRODUCT_NAME)
 
   let labels = DEFAULT_LABELS
   let voice: VoiceState | null = null

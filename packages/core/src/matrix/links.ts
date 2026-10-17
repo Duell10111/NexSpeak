@@ -1,6 +1,6 @@
 /**
  * Links into Matrix: matrix.to URLs (what Element shares), matrix: URIs (MSC2312) and the desktop
- * app's own nexspeak:// deep links:
+ * app's own nexspeak:// deep links (nexspeak-nightly:// from nightly builds):
  *
  *   nexspeak://room/<room id or alias>[?via=server]   open or join a room or space
  *   nexspeak://user/<user id>                           open a direct message
@@ -12,7 +12,8 @@ export type MatrixLink =
   | { kind: 'user'; userId: string }
   | { kind: 'sso'; loginToken: string }
 
-export const DEEP_LINK_SCHEME = 'nexspeak:'
+/** Stable and nightly desktop builds (apps/desktop/src/channel.ts). */
+export const DEEP_LINK_SCHEMES = ['nexspeak:', 'nexspeak-nightly:']
 
 // Room version 12 ids have no server part ("!abc…"); older ones do ("!abc:example.org").
 const ROOM_ID = /^![^\s/:]+(:[^\s/]+)?$/
@@ -93,7 +94,7 @@ export function parseMatrixLink(href: string): MatrixLink | null {
   }
   if (url.protocol === 'https:' && url.host === 'matrix.to') return parseMatrixTo(url)
   if (url.protocol === 'matrix:') return parseMatrixUri(url)
-  if (url.protocol === DEEP_LINK_SCHEME) return parseDeepLink(url)
+  if (DEEP_LINK_SCHEMES.includes(url.protocol)) return parseDeepLink(url)
   return null
 }
 
