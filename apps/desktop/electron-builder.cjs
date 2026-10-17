@@ -63,6 +63,8 @@ module.exports = {
   linux: {
     category: "Network;Chat;InstantMessaging",
     target: ["AppImage", "deb"],
-    ...(nightly && { executableName: "nexspeak-nightly" }),
+    // Also the icon name (Icon= in the autostart entry, see LINUX_NAME in src/channel.ts); the default
+    // would come from the package name "@nexspeak/desktop", which is not a valid file name.
+    executableName: nightly ? "nexspeak-nightly" : "nexspeak",
   },
 }
