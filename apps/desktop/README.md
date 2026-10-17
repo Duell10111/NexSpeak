@@ -85,7 +85,23 @@ system-wide hook (uiohook-napi), so the key also works while a game has the focu
 - Otherwise (Windows, X11): `DesktopSourcePicker` from the web app; Windows also shares the system
   audio via loopback.
 
+## Releases
+
+release-please (`.github/workflows/release-please.yml`) keeps a release PR open on `main`; merging
+it tags `vX.Y.Z`, creates the GitHub release and runs `.github/workflows/desktop.yml`, which builds
+macOS (arm64 and x64), Windows and Linux and attaches the installers plus the `latest*.yml` files
+for auto-update. The Desktop workflow can also be started by hand; the installers then end up as
+workflow artifacts only.
+
+Signing switches on with repository secrets (listed at the top of `desktop.yml`). Until then:
+
+- macOS: ad-hoc signed and not notarized. Gatekeeper blocks the first start; open it via System
+  Settings → Privacy & Security → "Open Anyway", or run
+  `xattr -dr com.apple.quarantine /Applications/NexSpeak.app`. Auto-update on macOS needs a
+  Developer ID signature.
+- Windows: SmartScreen warns; "More info" → "Run anyway".
+
 ## Still open (milestone "Beta 0.2 – Desktop")
 
-Auto-update (#6), autostart (#7),
-app icon (#8), signing and notarization (#9).
+Auto-update (#6), autostart (#7), app icon (#8), Developer ID signing and notarization and Windows
+code signing (#9).
