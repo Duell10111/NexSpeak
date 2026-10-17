@@ -112,7 +112,7 @@ function useJoinNewChannels(serverId: string, structureKey: string) {
     if (!client || syncedStructures.get(serverId) === structureKey) return
     const timer = setTimeout(() => {
       syncedStructures.set(serverId, structureKey)
-      joinSpaceChannels(client, serverId, { skipLeft: true }).catch((error: unknown) =>
+      joinSpaceChannels(client, serverId, { background: true }).catch((error: unknown) =>
         console.info("Could not sync server channels:", error),
       )
     }, 1_000)

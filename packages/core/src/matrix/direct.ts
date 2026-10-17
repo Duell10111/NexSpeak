@@ -165,12 +165,13 @@ export async function inviteToChannel(client: MatrixClient, serverId: string, ro
  * Join the channels and categories (sub-spaces) of a space, like Discord shows all channels
  * of a server. Uses the hierarchy API because our copy of the space state may not have synced
  * yet. Returns the number of rooms joined; rooms we may not join are skipped.
- * `skipLeft`: don't rejoin rooms we left or were removed from (for background syncing).
+ * `background`: for syncing without a user action. Doesn't rejoin rooms we left or were removed
+ * from and leaves pending invites alone: a private channel needs its invite accepted explicitly.
  */
 export async function joinSpaceChannels(
   client: MatrixClient,
   spaceId: string,
-  options: { skipLeft?: boolean } = {},
+  options: { background?: boolean } = {},
 ): Promise<number> {
   let joined = 0
   let from: string | undefined
@@ -193,7 +194,7 @@ export async function joinSpaceChannels(
   for (const { roomId, joinRule } of candidates) {
     const membership = client.getRoom(roomId)?.getMyMembership()
     if (membership === 'join' || membership === 'ban') continue
-    if (options.skipLeft && membership === 'leave') continue
+    if (options.background && (membership === 'leave' || membership === 'invite')) continue
     // Invite-only channels nobody invited us to would just fail.
     if ((joinRule === JoinRule.Invite || joinRule === JoinRule.Knock) && membership !== 'invite') continue
     try {
