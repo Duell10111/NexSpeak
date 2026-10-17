@@ -130,5 +130,5 @@ Signing switches on with repository secrets (listed at the top of `desktop.yml`)
 
 ## Still open (milestone "Beta 0.2 – Desktop")
 
-App icon (#8), Developer ID signing and notarization and Windows code signing (#9; macOS
-auto-update depends on it).
+Developer ID signing and notarization and Windows code signing (#9; macOS auto-update depends on
+it), filtering mouse moves natively in the push-to-talk hook (#10).

@@ -78,8 +78,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
    - The security headers moved to `apps/web/security-headers.json`; hosts and the desktop app send
      them.
 4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
-   screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3), notifications (#4) and
-   deep links (#5), auto-update (#6) and autostart (#7) done. Open: icon (#8), signing (#9; also
+   screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3), notifications (#4),
+   deep links (#5), auto-update (#6), autostart (#7) and icon (#8) done. Open: signing (#9; also
    needed for auto-update on macOS), push-to-talk hook performance (#10).
 5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
@@ -138,11 +138,12 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Notifications and badge (#4)
 - [x] Deep links and SSO login (#5)
 - [x] Auto-update (#6; macOS only with signed builds, #9), autostart (#7)
-- [ ] App icon (#8)
+- [x] App icon (#8)
 - [x] Release workflow: release-please and desktop builds attached to the release (unsigned, macOS
       ad-hoc signed)
 - [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
       a SmartScreen warning) – only secrets missing, see `.github/workflows/desktop.yml`
+- [ ] Push-to-talk hook: filter mouse moves natively (#10)
 
 ### Later (0.3+)
 
