@@ -251,6 +251,9 @@ export const de = {
   'call.error.qualityFailed': 'Stream-Qualität konnte nicht geändert werden.',
   'call.error.audioFailed': 'Audio konnte nicht gestartet werden.',
 
+  'desktop.trayShow': 'NexSpeak öffnen',
+  'desktop.trayQuit': 'NexSpeak beenden',
+
   'stream.resolution': 'Auflösung',
   'stream.framerate': 'Bildrate',
   'stream.source': 'Quelle',

@@ -17,6 +17,7 @@ import {
   type Session,
 } from "electron"
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import { createTray } from "./tray"
 
 // Same names as in preload.ts (a sandboxed preload cannot import other files).
 const IPC_CHOOSE_DISPLAY_SOURCE = "nexspeak:choose-display-source"
@@ -45,26 +46,27 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
+let mainWindow: BrowserWindow | undefined
+/** Closing the window only hides it; set once the app really quits (tray menu, Cmd+Q, updates). */
+let isQuitting = false
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on("second-instance", () => {
-    const window = BrowserWindow.getAllWindows()[0]
-    if (!window) return
-    if (window.isMinimized()) window.restore()
-    window.show()
-    window.focus()
-  })
+  app.on("second-instance", showWindow)
   app.whenReady().then(start)
 }
+
+app.on("before-quit", () => {
+  isQuitting = true
+})
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit()
 })
 
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
-})
+// macOS: clicking the dock icon brings the hidden window back.
+app.on("activate", showWindow)
 
 function start() {
   const securityHeaders: Record<string, string> = JSON.parse(
@@ -73,7 +75,16 @@ function start() {
   serveWebBuild(securityHeaders)
   restrictPermissions(session.defaultSession)
   handleDisplayMedia(session.defaultSession)
-  createWindow()
+  mainWindow = createWindow()
+  createTray({ webContents: () => mainWindow?.webContents, showWindow })
+}
+
+function showWindow() {
+  if (!app.isReady()) return
+  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -226,6 +237,12 @@ function createWindow() {
   })
 
   window.once("ready-to-show", () => window.show())
+  // Like Discord: closing keeps the app (and a running call) alive in the tray.
+  window.on("close", (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    window.hide()
+  })
 
   // Links to other sites open in the default browser; the app window never leaves the app.
   window.webContents.setWindowOpenHandler(({ url }) => {

@@ -9,6 +9,7 @@ import { ChannelSidebar, type RoomSection } from "@/components/nexspeak/channel-
 import { ChatArea } from "@/components/nexspeak/chat-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { CallProvider } from "@/components/nexspeak/call-context"
+import { DesktopTrayVoice } from "@/components/nexspeak/desktop-tray"
 import { SecurityProvider } from "@/components/nexspeak/security-context"
 import { SecurityBanner } from "@/components/nexspeak/security-panel"
 import { NavigationProvider } from "@/components/nexspeak/navigation-context"
@@ -212,6 +213,7 @@ export default function NexSpeakApp() {
     <SecurityProvider client={client}>
       <NavigationProvider openRoom={openRoom}>
         <CallProvider client={client} activeChannelId={channelId}>
+          <DesktopTrayVoice />
           <div className="flex h-dvh w-screen flex-col overflow-hidden">
             <SecurityBanner />
             {isConnectionLost && (

@@ -4,6 +4,7 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { MatrixAuthProvider } from '@/components/matrix-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { DocumentLanguage } from '@/hooks/useTranslation'
+import { DesktopTrayLabels } from '@/components/nexspeak/desktop-tray'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <DocumentLanguage />
+          <DesktopTrayLabels />
           <MatrixAuthProvider>
             {children}
           </MatrixAuthProvider>

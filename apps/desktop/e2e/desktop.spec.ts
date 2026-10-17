@@ -95,3 +95,66 @@ test("the screen picker answers the main process", async () => {
   expect(await chosen).toEqual({ requestId: 7, sourceId: "window:42:0" })
   await expect(dialog).toBeHidden()
 })
+
+/** Records what the web app sends to the main process on `channel` (in addition to the tray). */
+async function recordIpc(channel: string) {
+  await app.evaluate(({ ipcMain }, name) => {
+    const store = globalThis as unknown as Record<string, unknown[]>
+    store[name] = []
+    ipcMain.on(name, (_event, payload) => store[name].push(payload))
+  }, channel)
+  return async () =>
+    app.evaluate((_electron, name) => {
+      const messages = (globalThis as unknown as Record<string, unknown[]>)[name]
+      return messages[messages.length - 1]
+    }, channel)
+}
+
+test("closing the window keeps the app running in the tray", async () => {
+  await expect(page).toHaveURL("app://nexspeak/login")
+  const isVisible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())
+
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await expect.poll(isVisible).toBe(false)
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
+
+  // Dock click (macOS) or a second start of the app (Windows, Linux) brings it back.
+  await app.evaluate(({ app }) => app.emit("activate"))
+  await expect.poll(isVisible).toBe(true)
+})
+
+test("tray menu texts follow the interface language", async () => {
+  const lastLabels = await recordIpc("nexspeak:tray-labels")
+  await page.getByRole("button", { name: "English" }).click()
+  await expect.poll(lastLabels).toMatchObject({ show: "Open NexSpeak", quit: "Quit NexSpeak" })
+  await page.getByRole("button", { name: "Deutsch" }).click()
+  await expect.poll(lastLabels).toMatchObject({ show: "NexSpeak öffnen", mute: "Mikrofon stummschalten" })
+})
+
+test("tray commands mute, deafen and leave the call", async () => {
+  const alice = await registerUser("alice")
+  const roomName = `Tray ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [] })
+  const lastVoiceState = await recordIpc("nexspeak:voice-state")
+  const trayCommand = (command: string) =>
+    app.evaluate(({ BrowserWindow }, name) => {
+      BrowserWindow.getAllWindows()[0].webContents.send("nexspeak:tray-command", name)
+    }, command)
+
+  await login(page, alice, "app://nexspeak/login")
+  await openRoom(page, roomName)
+  await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
+  await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeVisible({ timeout: 30_000 })
+  await expect.poll(lastVoiceState).toEqual({ muted: false, deafened: false, inCall: true })
+
+  await trayCommand("toggle-mute")
+  await expect(page.getByRole("button", { name: "Mikrofon aktivieren" }).first()).toBeVisible()
+  await expect.poll(lastVoiceState).toEqual({ muted: true, deafened: false, inCall: true })
+
+  await trayCommand("toggle-deafen")
+  await expect.poll(lastVoiceState).toEqual({ muted: true, deafened: true, inCall: true })
+
+  await trayCommand("leave-call")
+  await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeHidden()
+  await expect.poll(lastVoiceState).toMatchObject({ inCall: false })
+})

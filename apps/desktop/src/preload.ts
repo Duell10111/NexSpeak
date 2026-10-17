@@ -2,11 +2,14 @@
 // packages/core/src/desktop-bridge.ts). A sandboxed preload can only require "electron", so this
 // file has no other runtime imports.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
-import type { DesktopBridge, DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import type { DesktopBridge, DisplaySource, TrayCommand } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
 
 // Same names as in main.ts.
 const IPC_CHOOSE_DISPLAY_SOURCE = "nexspeak:choose-display-source"
 const IPC_DISPLAY_SOURCE_CHOSEN = "nexspeak:display-source-chosen"
+const IPC_TRAY_LABELS = "nexspeak:tray-labels"
+const IPC_VOICE_STATE = "nexspeak:voice-state"
+const IPC_TRAY_COMMAND = "nexspeak:tray-command"
 
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
@@ -18,6 +21,19 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(IPC_CHOOSE_DISPLAY_SOURCE, listener)
     return () => {
       ipcRenderer.off(IPC_CHOOSE_DISPLAY_SOURCE, listener)
+    }
+  },
+  setTrayLabels(labels) {
+    ipcRenderer.send(IPC_TRAY_LABELS, labels)
+  },
+  setVoiceState(state) {
+    ipcRenderer.send(IPC_VOICE_STATE, state)
+  },
+  onTrayCommand(handler) {
+    const listener = (_event: IpcRendererEvent, command: TrayCommand) => handler(command)
+    ipcRenderer.on(IPC_TRAY_COMMAND, listener)
+    return () => {
+      ipcRenderer.off(IPC_TRAY_COMMAND, listener)
     }
   },
 }

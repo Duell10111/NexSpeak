@@ -6,6 +6,7 @@ directories:
   output: release
 files:
   - dist/**
+  - assets/**
   - package.json
 extraResources:
   # The static web build and its security headers; see webDir in src/main.ts.

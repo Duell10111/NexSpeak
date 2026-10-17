@@ -249,6 +249,9 @@ export const en: Record<MessageKey, string> = {
   'call.error.qualityFailed': 'Could not change the stream quality.',
   'call.error.audioFailed': 'Could not start audio.',
 
+  'desktop.trayShow': 'Open NexSpeak',
+  'desktop.trayQuit': 'Quit NexSpeak',
+
   'stream.resolution': 'Resolution',
   'stream.framerate': 'Frame rate',
   'stream.source': 'Source',
