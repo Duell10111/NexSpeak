@@ -19,7 +19,7 @@ dazu Direktnachrichten, Sprach-/Videoanrufe und Bildschirmfreigabe.
 | Ordner | Inhalt |
 |---|---|
 | `apps/web` | Next.js-Web-App (Oberfläche, E2E-Tests) |
-| `apps/desktop` | Desktop-App mit Electron (geplant), verpackt den Web-Build |
+| `apps/desktop` | Desktop-App mit Electron, verpackt den Web-Build ([README](apps/desktop/README.md)) |
 | `apps/mobile` | Mobile-App mit Expo (geplant) |
 | `packages/core` | Matrix- und Anruf-Logik ohne Oberfläche |
 | `packages/i18n` | Oberflächentexte (Deutsch, Englisch) |
@@ -58,6 +58,16 @@ docker compose -f dev/docker-compose.yml up -d
 In der App dann als Homeserver `http://localhost:8008` eintragen. Konten lassen sich ohne Bestätigung registrieren,
 z. B. mit Element oder per API. Der Stack ist nur für die Entwicklung gedacht (feste Secrets, selbstsigniertes TLS).
 
+### Desktop-App
+
+```bash
+npm run dev           # Terminal 1
+npm run dev:desktop   # Terminal 2: Electron gegen den Dev-Server
+npm run dist:desktop  # Installationspakete nach apps/desktop/release/
+```
+
+Details in [apps/desktop/README.md](apps/desktop/README.md).
+
 ## Tests
 
 ```bash
@@ -66,6 +76,7 @@ npm test                 # Unit-Tests (Vitest)
 docker compose -f dev/docker-compose.yml --profile e2e up -d
 npm run test:e2e:docker  # End-to-End-Tests (Playwright) mit Browsern im Linux-Container
 npm run test:e2e         # dieselben Tests mit lokal installierten Browsern
+npm run test:e2e:desktop # Desktop-App (Electron) mit dem statischen Export
 ```
 
 Die End-to-End-Tests registrieren eigene Benutzer und testen mit mehreren Browsern gleichzeitig Chat,

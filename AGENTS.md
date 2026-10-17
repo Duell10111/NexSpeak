@@ -64,7 +64,11 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
 
 - Monorepo mit npm Workspaces:
   - `apps/web` – Next.js-App (Oberfläche, Hooks, E2E-Tests); `@/` zeigt auf `apps/web/src`.
-  - `apps/desktop` – Electron-Hülle um den Web-Build (geplant), kein eigener UI-Code.
+  - `apps/desktop` – Electron-Hülle um den Web-Build, kein eigener UI-Code. Desktop-Funktionen
+    laufen über `window.nexspeak` (Vertrag: `packages/core/src/desktop-bridge.ts`, in der Web-App
+    über `desktopBridge()` aus `@/lib/desktop`); im Browser fehlt die Bridge, also immer prüfen.
+    Renderer bleibt in der Sandbox ohne Node; der Preload darf zur Laufzeit nur `electron`
+    importieren. Hardware-Beschleunigung nie abschalten.
   - `apps/mobile` – Expo-App (geplant).
   - `packages/core` (`@nexspeak/core/...`) – Matrix- und Anruf-Logik ohne UI; importiert nie
     aus `apps/`. Direkte Browser-APIs nur, wo es (noch) nicht anders geht.
@@ -77,7 +81,8 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
   (Hosting: `docs/hosting.md`).
 - Node 24 (`.nvmrc`). Befehle im Root: `npm run dev`, `npm run build`, `npm run lint`,
   `npm run typecheck`, `npm test` (Vitest über alle Workspaces), `npm run test:e2e:docker`
-  (Playwright gegen `dev/docker-compose.yml`). Abhängigkeiten mit `-w <workspace>` installieren,
+  (Playwright gegen `dev/docker-compose.yml`). Desktop: `npm run dev:desktop`,
+  `npm run test:e2e:desktop`, `npm run dist:desktop`. Abhängigkeiten mit `-w <workspace>` installieren,
   z. B. `npm install foo -w @nexspeak/web`.
 - Werte (keine reinen Typen) aus Unterordnern von `matrix-js-sdk` mit vollem Pfad importieren
   (`matrix-js-sdk/lib/matrixrtc/index.js`), sonst kann Next.js das SDK nicht als externes Paket

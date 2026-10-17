@@ -255,8 +255,14 @@ export const de = {
   'stream.framerate': 'Bildrate',
   'stream.source': 'Quelle',
   'stream.goLive': 'Live gehen',
+  'stream.pickSource': 'Was möchtest du teilen?',
+  'stream.pickSourceDescription': 'Wähle einen Bildschirm oder ein Fenster.',
+  'stream.screens': 'Bildschirme',
+  'stream.windows': 'Fenster',
   'stream.dialogDescription':
     'Wähle die Stream-Qualität. Danach fragt der Browser, welchen Bildschirm, welches Fenster oder welchen Tab du teilen möchtest.',
+  'stream.dialogDescriptionDesktop':
+    'Wähle die Stream-Qualität. Danach wählst du den Bildschirm oder das Fenster, das du teilen möchtest.',
   'stream.bitrateHint':
     'Benötigt bis zu {rate} Mbit/s Upload. Für Spiele 60 FPS wählen, für Text und Code reichen 15 FPS in hoher Auflösung.',
   'stream.softwareEncoderHint':

@@ -27,6 +27,7 @@ import {
 } from "@nexspeak/core/screenshare-quality"
 import type { EncoderInfo } from "@nexspeak/core/video-codec"
 import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
+import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@nexspeak/core/matrix/call-session"
@@ -394,6 +395,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
         initialQuality={screenShareQuality}
         onStart={(quality) => void startScreenshare(quality)}
       />
+      <DesktopSourcePicker />
     </CallContext.Provider>
   )
 }

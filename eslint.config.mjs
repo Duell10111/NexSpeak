@@ -18,6 +18,9 @@ const eslintConfig = defineConfig([
     "**/test-results/**",
     "**/playwright-report/**",
     "dev/.data/**",
+    // Compiled and packaged desktop app.
+    "apps/desktop/dist/**",
+    "apps/desktop/release/**",
   ]),
 ]);
 

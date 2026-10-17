@@ -8,6 +8,7 @@
   },
   "workspaces": [
     "apps/web",
+    "apps/desktop",
     "packages/*"
   ],
   "scripts": {
@@ -19,7 +20,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run test:e2e -w @nexspeak/web",
-    "test:e2e:docker": "npm run test:e2e:docker -w @nexspeak/web"
+    "test:e2e:docker": "npm run test:e2e:docker -w @nexspeak/web",
+    "dev:desktop": "npm run dev -w @nexspeak/desktop",
+    "start:desktop": "npm run build && npm run start -w @nexspeak/desktop",
+    "dist:desktop": "npm run build && npm run dist -w @nexspeak/desktop",
+    "test:e2e:desktop": "npm run build && npm run test:e2e -w @nexspeak/desktop"
   },
   "devDependencies": {
     "@types/node": "^24",

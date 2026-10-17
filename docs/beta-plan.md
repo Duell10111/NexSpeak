@@ -84,7 +84,9 @@ React-Native-SDK.
    - `output: "export"` setzen.
    - Die Security-Header aus `next.config.ts` entfallen dabei: als Hosting-Beispiel
      (Caddy/nginx) nach `docs/`, in Electron per CSP bzw. `session.webRequest`.
-4. **Electron-Grundgerüst**
+4. **Electron-Grundgerüst** – Basis erledigt (2026-10-17): Fenster, `app://`, Sicherheit, Encoding-Flags,
+   Bildschirmauswahl, Packaging, E2E-Tests. Offen: Tray, Push-to-Talk, Benachrichtigungen, Deep Links,
+   Auto-Update, Icon, Signierung.
    - `contextIsolation`, `sandbox`, kein `nodeIntegration`.
    - Hardware-Encoder-Flags laut `AGENTS.md` (`AcceleratedVideoEncoder`, VA-API unter Linux);
      Hardware-Beschleunigung nie deaktivieren.

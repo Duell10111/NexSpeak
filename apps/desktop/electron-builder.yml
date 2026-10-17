@@ -1,0 +1,37 @@
+# Packaging for macOS, Windows and Linux. Run from the repo root: npm run dist:desktop
+appId: io.github.duell10111.nexspeak
+productName: NexSpeak
+copyright: Copyright © 2026 Konstantin Späth
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+extraResources:
+  # The static web build and its security headers; see webDir in src/main.ts.
+  - from: ../web/out
+    to: web/out
+  - from: ../web/security-headers.json
+    to: web/security-headers.json
+asar: true
+publish:
+  provider: github
+  owner: Duell10111
+  repo: NexSpeak
+mac:
+  category: public.app-category.social-networking
+  target: [dmg, zip]
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: NexSpeak needs the microphone for voice channels.
+    NSCameraUsageDescription: NexSpeak needs the camera for video in voice channels.
+win:
+  target: [nsis]
+nsis:
+  oneClick: true
+  perMachine: false
+linux:
+  category: Network;Chat;InstantMessaging
+  target: [AppImage, deb]

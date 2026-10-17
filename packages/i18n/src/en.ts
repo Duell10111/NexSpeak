@@ -253,8 +253,14 @@ export const en: Record<MessageKey, string> = {
   'stream.framerate': 'Frame rate',
   'stream.source': 'Source',
   'stream.goLive': 'Go Live',
+  'stream.pickSource': 'What do you want to share?',
+  'stream.pickSourceDescription': 'Choose a screen or a window.',
+  'stream.screens': 'Screens',
+  'stream.windows': 'Windows',
   'stream.dialogDescription':
     'Choose the stream quality. Your browser then asks which screen, window or tab you want to share.',
+  'stream.dialogDescriptionDesktop':
+    'Choose the stream quality. Then pick the screen or window you want to share.',
   'stream.bitrateHint':
     'Needs up to {rate} Mbit/s upload. Pick 60 FPS for games; for text and code, 15 FPS at a high resolution is enough.',
   'stream.softwareEncoderHint':

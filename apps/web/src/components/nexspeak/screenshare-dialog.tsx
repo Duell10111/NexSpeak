@@ -13,6 +13,7 @@ import {
 } from "@nexspeak/core/screenshare-quality"
 import { hasSoftwareOnlyVideoEncoder } from "@nexspeak/core/video-codec"
 import { useTranslation } from "@/hooks/useTranslation"
+import { desktopBridge } from "@/lib/desktop"
 
 function OptionGroup<T extends string | number>({
   label,
@@ -145,7 +146,9 @@ export function ScreenshareDialog({
       <DialogContent container={container} className="gap-5 border-none bg-background sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t("call.shareScreen")}</DialogTitle>
-          <DialogDescription>{t("stream.dialogDescription")}</DialogDescription>
+          <DialogDescription>
+            {t(desktopBridge() ? "stream.dialogDescriptionDesktop" : "stream.dialogDescription")}
+          </DialogDescription>
         </DialogHeader>
         {/* Remount per opening so the form starts from the remembered quality. */}
         {open && <StreamQualityForm initialQuality={initialQuality} onStart={onStart} onCancel={() => onOpenChange(false)} />}

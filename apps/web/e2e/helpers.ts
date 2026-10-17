@@ -138,8 +138,8 @@ export async function newPage(browser: Browser, options: BrowserContextOptions =
 }
 
 /** Log in through the UI (creates a new device) and wait for the first sync. */
-export async function login(page: Page, user: TestUser): Promise<void> {
-  await page.goto("/login")
+export async function login(page: Page, user: TestUser, loginUrl = "/login"): Promise<void> {
+  await page.goto(loginUrl)
   await page.getByLabel("Homeserver").fill(HOMESERVER_URL)
   await page.getByLabel("Benutzername").fill(user.username)
   await page.getByLabel("Passwort").fill(user.password)

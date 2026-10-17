@@ -18,7 +18,7 @@ coverage/
 out/
 
 # production
-build/
+/build/
 
 # misc
 .DS_Store
@@ -54,3 +54,7 @@ next-env.d.ts
 test-results/
 playwright-report/
 *.iml
+
+# desktop app build output
+/apps/desktop/dist/
+/apps/desktop/release/
