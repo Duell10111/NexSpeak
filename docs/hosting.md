@@ -59,8 +59,8 @@ server {
     server_name nexspeak.example.org;
     root /srv/nexspeak/out;
 
-    # nginx' mime.types knows .wasm; add .mjs if needed:
-    types { text/javascript mjs; application/wasm wasm; }
+    # nginx' mime.types knows .wasm; add .mjs and .webmanifest if needed:
+    types { text/javascript mjs; application/wasm wasm; application/manifest+json webmanifest; }
     include /etc/nginx/mime.types;
 
     add_header X-Content-Type-Options "nosniff" always;

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { MatrixAuthProvider } from '@/components/matrix-provider'
@@ -14,6 +14,10 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'NexSpeak - Chat, Connect, Create',
   description: 'NexSpeak is a modern communication platform for communities and teams.',
+}
+
+export const viewport: Viewport = {
+  themeColor: '#1e1f22',
 }
 
 export default function RootLayout({

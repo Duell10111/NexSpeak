@@ -117,6 +117,7 @@ const MIME_TYPES: Record<string, string> = {
   ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
   ".txt": "text/plain; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
@@ -241,6 +242,8 @@ function createWindow() {
     // Matches --background in the web app, so there is no white flash before the first paint.
     backgroundColor: "#313338",
     title: "NexSpeak",
+    // Windows takes the icon from the .exe and macOS from the app bundle.
+    ...(process.platform === "linux" && { icon: join(__dirname, "..", "assets", "icon.png") }),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "preload.js"),

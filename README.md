@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/web/src/app/icon.svg" alt="NexSpeak logo" width="128" height="128">
+</p>
+
 # NexSpeak
 
 A Discord-like client for [Matrix](https://matrix.org): spaces are shown as servers, rooms as channels, plus
