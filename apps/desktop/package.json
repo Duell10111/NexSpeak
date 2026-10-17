@@ -1,0 +1,28 @@
+{
+  "name": "@nexspeak/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "description": "NexSpeak desktop app: Electron shell around the static web build.",
+  "author": "Konstantin Späth",
+  "homepage": "https://github.com/Duell10111/NexSpeak",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "dev": "npm run -s build && NEXSPEAK_DEV_URL=http://localhost:3000 electron .",
+    "start": "npm run -s build && electron .",
+    "dist": "npm run -s build && electron-builder --publish never",
+    "test:e2e": "npm run -s build && playwright test"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "uiohook-napi": "1.5.5"
+  },
+  "devDependencies": {
+    "@nexspeak/core": "*",
+    "@playwright/test": "^1.64.1",
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3"
+  }
+}

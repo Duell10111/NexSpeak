@@ -1,0 +1,55 @@
+import { describe, expect, it, vi } from "vitest"
+import { MatrixEvent, type MatrixClient } from "matrix-js-sdk"
+import { editTextMessage, sendTextMessage } from "./messages"
+
+function fakeClient() {
+  return { getUserId: () => "@me:example.org", sendMessage: vi.fn().mockResolvedValue({ event_id: "$new" }) }
+}
+
+const ALICE = { text: "@Alice", href: "https://matrix.to/#/@alice:example.org", userId: "@alice:example.org" }
+
+describe("sendTextMessage", () => {
+  it("sends plain text without HTML", async () => {
+    const client = fakeClient()
+    await sendTextMessage(client as unknown as MatrixClient, "!r", "hello")
+    expect(client.sendMessage).toHaveBeenCalledWith("!r", { msgtype: "m.text", body: "hello", "m.mentions": {} })
+  })
+
+  it("sends markdown as formatted body and notifies mentioned people", async () => {
+    const client = fakeClient()
+    await sendTextMessage(client as unknown as MatrixClient, "!r", "**hi** @Alice", { mentions: [ALICE] })
+    expect(client.sendMessage).toHaveBeenCalledWith("!r", {
+      msgtype: "m.text",
+      body: "**hi** @Alice",
+      format: "org.matrix.custom.html",
+      formatted_body: '<strong>hi</strong> <a href="https://matrix.to/#/@alice:example.org">@Alice</a>',
+      "m.mentions": { user_ids: ["@alice:example.org"] },
+    })
+  })
+
+  it("puts messages into threads with a reply fallback", async () => {
+    const client = fakeClient()
+    await sendTextMessage(client as unknown as MatrixClient, "!r", "in thread", { threadRootId: "$root", threadLatestEventId: "$last" })
+    expect(client.sendMessage.mock.calls[0][1]["m.relates_to"]).toEqual({
+      rel_type: "m.thread",
+      event_id: "$root",
+      is_falling_back: true,
+      "m.in_reply_to": { event_id: "$last" },
+    })
+  })
+})
+
+describe("editTextMessage", () => {
+  it("keeps mention pills of the original", async () => {
+    const client = fakeClient()
+    const original = new MatrixEvent({ event_id: "$orig", type: "m.room.message", content: { msgtype: "m.text", body: "hi @Alice" } })
+    await editTextMessage(client as unknown as MatrixClient, "!r", original, "hey @Alice", [ALICE])
+    const content = client.sendMessage.mock.calls[0][1]
+    expect(content["m.new_content"]).toMatchObject({
+      formatted_body: 'hey <a href="https://matrix.to/#/@alice:example.org">@Alice</a>',
+      "m.mentions": { user_ids: ["@alice:example.org"] },
+    })
+    expect(content["m.mentions"]).toEqual({})
+    expect(content["m.relates_to"]).toEqual({ rel_type: "m.replace", event_id: "$orig" })
+  })
+})
