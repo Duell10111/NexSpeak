@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { EventType } from "matrix-js-sdk"
 import { toast } from "sonner"
+import type { RemoteVideoTrack } from "livekit-client"
 import {
   Headphones,
   HeadphoneOff,
@@ -61,7 +62,7 @@ import {
   type ScreenShareFramerate,
   type ScreenShareResolution,
 } from "@/lib/screenshare-quality"
-import type { EncoderInfo } from "@/lib/video-codec"
+import { createDecoderSampler, formatMbit, isEncoderOverloaded } from "@/lib/video-codec"
 
 
 /** One tile on the stage: a participant (with camera, if on) or a screenshare. */
@@ -159,6 +160,15 @@ function TileMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         <ContextMenuItem onSelect={onToggleFocus}>{isFocused ? "Fokus beenden" : "Fokussieren"}</ContextMenuItem>
+        {tile.feed && !tile.feed.isLocal && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuLabel className="text-xs font-normal text-muted-foreground">
+              {tile.isScreenshare ? "Stream-Info" : "Video-Info"}
+            </ContextMenuLabel>
+            <DecoderStatus feed={tile.feed} />
+          </>
+        )}
         {!participant.isLocal && (
           <>
             <ContextMenuSeparator />
@@ -403,48 +413,100 @@ function ControlButton({
   )
 }
 
-/**
- * Screenshare button. While streaming it opens Discord's stream menu: change the quality
- * on the fly or end the stream.
- */
-const ENCODER_POLL_MS = 2_000
+const STATS_POLL_MS = 1_000
 
-/** Live encoder diagnostics; only polled while the stream menu is open. */
-function EncoderStatus() {
-  const { getScreenShareEncoderInfo } = useCallContext()
-  const [info, setInfo] = useState<EncoderInfo | null>(null)
+/** Polls a WebRTC stats sampler while mounted (i.e. only while its menu is open). */
+function usePolledStats<T>(createSampler: () => (() => Promise<T | null>) | null): T | null {
+  const [stats, setStats] = useState<T | null>(null)
 
   useEffect(() => {
+    const sample = createSampler()
+    if (!sample) return
     let cancelled = false
     const poll = () =>
-      void getScreenShareEncoderInfo()
+      void sample()
         .then((next) => {
-          if (!cancelled) setInfo(next)
+          if (!cancelled) setStats(next)
         })
         .catch(() => {})
     poll()
-    const timer = window.setInterval(poll, ENCODER_POLL_MS)
+    const timer = window.setInterval(poll, STATS_POLL_MS)
     return () => {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [getScreenShareEncoderInfo])
+  }, [createSampler])
 
+  return stats
+}
+
+function hardwareLabel(hardware: boolean | null, implementation: string, kind: "Encoder" | "Decoder"): string {
+  const base = hardware === null ? `${kind} unbekannt` : hardware ? "Hardware" : "Software"
+  return implementation ? `${base} (${implementation})` : base
+}
+
+/** Live encoder diagnostics of our own stream. */
+function EncoderStatus() {
+  const { createScreenShareEncoderSampler, screenShareQuality } = useCallContext()
+  const info = usePolledStats(createScreenShareEncoderSampler)
   if (!info) return null
-  const encoder = info.hardware === null ? "" : info.hardware ? " · Hardware" : " · Software"
+  const overloaded = info.limitation !== "cpu" && isEncoderOverloaded(info.encodeMs, screenShareQuality.fps)
   return (
-    <div className="px-2 pb-1.5 text-xs text-muted-foreground" data-testid="encoder-status">
-      <div title={info.implementation}>
-        {info.codec || "Video"}
-        {encoder}
-        {info.height > 0 && ` · ${info.height}p ${info.fps} FPS`}
+    <div className="space-y-0.5 px-2 pb-1.5 text-xs text-muted-foreground" data-testid="encoder-status">
+      <div className="break-words">
+        {info.codec || "Video"} · {hardwareLabel(info.hardware, info.implementation, "Encoder")}
       </div>
+      {info.height > 0 && (
+        <div>
+          {info.height}p · {info.fps} FPS
+          {info.encodeMs !== null &&
+            ` · ${info.encodeMs.toLocaleString("de-DE", { maximumFractionDigits: 1 })} ms/Bild`}
+        </div>
+      )}
+      {info.bitrate !== null && (
+        <div>
+          Upload {formatMbit(info.bitrate)}
+          {info.targetBitrate > 0 && ` (Ziel ${formatMbit(info.targetBitrate)})`}
+        </div>
+      )}
       {info.limitation === "cpu" && <div className="text-nx-idle">Durch die CPU begrenzt</div>}
+      {overloaded && (
+        <div className="text-nx-idle">
+          Encoder am Limit – niedrigere Auflösung oder Bildrate wählen, sonst sinken Schärfe und FPS
+        </div>
+      )}
       {info.limitation === "bandwidth" && <div className="text-nx-idle">Durch den Upload begrenzt</div>}
     </div>
   )
 }
 
+/** What arrives from a remote video and how it decodes (right-click menu of a tile). */
+function DecoderStatus({ feed }: { feed: CallVideoFeed }) {
+  const createSampler = useCallback(() => {
+    const receiver = (feed.track as RemoteVideoTrack).receiver
+    return receiver ? createDecoderSampler(receiver) : null
+  }, [feed.track])
+  const info = usePolledStats(createSampler)
+  if (!info) return null
+  return (
+    <div className="space-y-0.5 px-2 pb-1.5 text-xs text-muted-foreground" data-testid="decoder-status">
+      <div>
+        {info.height}p · {info.fps} FPS{info.bitrate !== null && ` · ${formatMbit(info.bitrate)}`}
+      </div>
+      <div className="break-words">
+        {info.codec || "Video"} · {hardwareLabel(info.hardware, info.implementation, "Decoder")}
+      </div>
+      <div>
+        Verworfene Bilder {info.framesDropped} · Hänger {info.freezeCount} · Pakete verloren {info.packetsLost}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Screenshare button. While streaming it opens Discord's stream menu: change the quality
+ * on the fly or end the stream.
+ */
 function ScreenshareControl() {
   const { call, toggleScreenshare, screenShareQuality, changeScreenShareQuality } = useCallContext()
   // In fullscreen only the fullscreen element is visible, so the menu has to live there.

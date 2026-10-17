@@ -41,7 +41,7 @@ import {
   screenShareTuning,
   type ScreenShareQuality,
 } from '@/lib/screenshare-quality'
-import { preferredVideoCodec, readEncoderInfo, type EncoderInfo } from '@/lib/video-codec'
+import { createEncoderSampler, preferredVideoCodec, type EncoderInfo } from '@/lib/video-codec'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -212,7 +212,9 @@ export class CallSession {
     // Media is end-to-end encrypted exactly when the room is, like Element Call does.
     const keyProvider = room.hasEncryptionStateEvent() ? new MatrixKeyProvider() : null
     const livekitRoom = new LivekitRoom({
-      adaptiveStream: true,
+      // Size subscriptions in device pixels: on Retina/HiDPI screens the default (CSS pixels)
+      // picks the half-resolution layer and a shared screen looks blurry.
+      adaptiveStream: { pixelDensity: 'screen' },
       dynacast: true,
       publishDefaults: {
         // H.264 is hardware-encoded on macOS and NVIDIA/AMD/Intel GPUs: little load while gaming.
@@ -544,10 +546,10 @@ export class CallSession {
     this.changed()
   }
 
-  /** Codec, hardware/software and actual output of the running screenshare's encoder. */
-  async getScreenShareEncoderInfo(): Promise<EncoderInfo | null> {
+  /** Stats sampler for the running screenshare's encoder, or null when not sharing. */
+  createScreenShareEncoderSampler(): (() => Promise<EncoderInfo | null>) | null {
     const sender = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track?.sender
-    return sender ? readEncoderInfo(sender) : null
+    return sender ? createEncoderSampler(sender) : null
   }
 
   /** Change resolution and frame rate of a running screenshare without a new picker. */

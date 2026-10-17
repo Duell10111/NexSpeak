@@ -216,10 +216,18 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
     )
     .toBeGreaterThan(10)
 
+  // Viewers see what arrives (right-click on the stream).
+  await tiles(bobPage).filter({ hasText: "Live" }).first().click({ button: "right" })
+  await expect(bobPage.getByTestId("decoder-status")).toContainText(/\d+p · \d+ FPS · \d+,\d Mbit\/s/)
+  await expect(bobPage.getByTestId("decoder-status")).toContainText("H264")
+  await bobPage.keyboard.press("Escape")
+
   // Changing the quality while live needs no new picker.
   await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
   // Encoded with H.264 (hardware where available; the test browser has no GPU).
-  await expect(alicePage.getByTestId("encoder-status")).toContainText(/H264 · (Hardware|Software) · \d+p/)
+  await expect(alicePage.getByTestId("encoder-status")).toContainText(/H264 · (Hardware|Software)/)
+  await expect(alicePage.getByTestId("encoder-status")).toContainText(/\d+p · \d+ FPS/)
+  await expect(alicePage.getByTestId("encoder-status")).toContainText(/Upload \d+,\d Mbit\/s/)
   await alicePage.getByRole("menuitemradio", { name: "15 FPS" }).click()
   await expect.poll(screenSender).toMatchObject({ maxFramerate: 15 })
   await alicePage.keyboard.press("Escape")

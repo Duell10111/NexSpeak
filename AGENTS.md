@@ -21,6 +21,10 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
     `VaapiVideoEncoder`. Für eine spätere Desktop-App (Electron o. Ä.) diese Flags setzen und
     Hardware-Beschleunigung nicht deaktivieren.
 
+  Firefox nutzt für H.264 (zumindest auf macOS) immer Software (OpenH264) und meldet weder
+  Encoder noch CPU-Limit in den Stats; deshalb weist die Oberfläche dort darauf hin und erkennt
+  Überlast über die Kodierzeit pro Bild. Eine spätere Desktop-App sollte eine Engine mit
+  Hardware-Encoding nutzen (Chromium/WebView2, WKWebView).
   Ohne Hardware-Encoder fällt der Browser selbst auf Software-H.264 (OpenH264) zurück. VP8 nur,
   wenn H.264 gar nicht verfügbar ist. Keinen anderen Codec (VP9, AV1) als Standard einführen,
   solange er nicht auf allen Zielplattformen in Hardware kodiert wird.

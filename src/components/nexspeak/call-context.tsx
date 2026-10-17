@@ -51,8 +51,8 @@ interface CallContextValue {
   screenShareQuality: ScreenShareQuality
   startScreenshare: (quality: ScreenShareQuality) => Promise<void>
   changeScreenShareQuality: (quality: ScreenShareQuality) => Promise<void>
-  /** Diagnostics of the running screenshare's encoder (hardware or software). */
-  getScreenShareEncoderInfo: () => Promise<EncoderInfo | null>
+  /** Stats sampler for the running screenshare's encoder (hardware or software, bitrate, limits). */
+  createScreenShareEncoderSampler: () => (() => Promise<EncoderInfo | null>) | null
   toggleDeafen: () => void
   resumeAudio: () => Promise<void>
   setParticipantVolume: (identity: string, volume: number) => void
@@ -232,8 +232,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [])
 
-  const getScreenShareEncoderInfo = useCallback(
-    async () => (await sessionRef.current?.getScreenShareEncoderInfo()) ?? null,
+  const createScreenShareEncoderSampler = useCallback(
+    () => sessionRef.current?.createScreenShareEncoderSampler() ?? null,
     [],
   )
 
@@ -356,7 +356,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       screenShareQuality,
       startScreenshare,
       changeScreenShareQuality,
-      getScreenShareEncoderInfo,
+      createScreenShareEncoderSampler,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
@@ -376,7 +376,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       screenShareQuality,
       startScreenshare,
       changeScreenShareQuality,
-      getScreenShareEncoderInfo,
+      createScreenShareEncoderSampler,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
