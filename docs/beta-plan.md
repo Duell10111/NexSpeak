@@ -1,182 +1,170 @@
-# Plan: Beta-Veröffentlichung, Monorepo, Desktop und Mobile
+# Plan: beta release, monorepo, desktop and mobile
 
-Stand: 2026-10-17
+Last updated: 2026-10-17
 
-Ziel: NexSpeak als öffentliche Beta veröffentlichen (Web und Desktop) und das Repo jetzt so
-strukturieren, dass eine spätere Mobile-App (Expo) ohne erneuten Umbau dazukommt.
+Goal: release NexSpeak as a public beta (web and desktop) and structure the repository now so that a
+later mobile app (Expo) can be added without another restructuring.
 
-## Ausgangslage
+## Starting point
 
-- **Rein clientseitige App:** keine API-Routen, keine Server-Komponenten mit Logik, nur zwei
-  Dateien nutzen `next/navigation`. Ein statischer Export (`output: "export"`) ist möglich –
-  Voraussetzung dafür, dass Electron die App ohne Node-Server lädt.
-- **Matrix-Logik ist bereits gut getrennt:** `src/lib/matrix`, `src/lib/i18n`, `call-layout`,
-  `screenshare-quality` sind UI-frei. In `src/lib/matrix` gibt es nur 13 direkte Zugriffe auf
+- **Purely client-side app:** no API routes, no server components with logic, only two files use
+  `next/navigation`. A static export (`output: "export"`) is possible – the prerequisite for Electron
+  loading the app without a Node server.
+- **Matrix logic was already well separated:** `src/lib/matrix`, `src/lib/i18n`, `call-layout` and
+  `screenshare-quality` contained no UI. `src/lib/matrix` had only 13 direct uses of
   `localStorage`/`window`/`document`.
-- **Ballast:** 37 von 57 Komponenten in `src/components/ui` werden nirgends importiert
-  (chart/recharts, carousel, calendar, input-otp, sidebar, …), dazu Vorlagen-Reste
-  (`public/next.svg`, `public/vercel.svg`, `public/file.svg`, `public/globe.svg`,
-  `public/window.svg`, `nexspeak-web.iml`) und `@vercel/analytics`. Widerspricht dem
-  Leistungsziel aus `AGENTS.md`.
-- **`.idea/`-Dateien sind gestaged,** obwohl `.gitignore` sie ausschließt.
-- **Fehlende Funktionen für eine Beta:** Desktop-Benachrichtigungen, Markdown/`formatted_body`,
-  Profil bearbeiten, Threads, angepinnte Nachrichten, Nutzer ignorieren/melden, OIDC/SSO-Login.
+- **Dead weight:** 37 of 57 components in `src/components/ui` were not imported anywhere
+  (chart/recharts, carousel, calendar, input-otp, sidebar, …), plus template leftovers
+  (`public/*.svg`, `nexspeak-web.iml`) and `@vercel/analytics` – against the performance goal in
+  `AGENTS.md`.
+- **Missing beta features:** desktop notifications, Markdown/`formatted_body`, profile editing,
+  threads, pinned messages, ignoring/reporting users, OIDC/SSO login.
 
-## 1. Zielstruktur
+## 1. Target structure
 
-npm Workspaces (Expo erkennt npm-Monorepos selbst; Turborepo erst, wenn Builds spürbar langsam
-werden).
+npm workspaces (Expo detects npm monorepos on its own; Turborepo only once builds become noticeably
+slow).
 
 ```
 nexspeak/
 ├─ apps/
-│  ├─ web/          Next.js, statischer Export (heutiges src/, e2e/, public/)
-│  ├─ desktop/      Electron: main, preload, Packaging; lädt den Build aus apps/web/out
-│  └─ mobile/       Expo (vorerst nur README/Platzhalter)
+│  ├─ web/          Next.js, static export
+│  ├─ desktop/      Electron: main, preload, packaging; loads the build from apps/web/out
+│  └─ mobile/       Expo (README/placeholder for now)
 ├─ packages/
-│  ├─ core/         Matrix-Logik ohne UI: matrix/*, Server-Modell, space-order, call-layout,
-│  │                screenshare-quality, Fehler, Typen – Plattformzugriffe nur über Adapter
-│  └─ i18n/         de.ts / en.ts / t(), von allen Apps genutzt
-├─ dev/             Docker-Stack (Synapse, LiveKit, lk-jwt-service)
-├─ docs/            Architektur, Release-Ablauf, Hosting (CSP-/Header-Beispiele)
-├─ .github/         Workflows, Issue-/PR-Vorlagen, CODEOWNERS
+│  ├─ core/         Matrix logic without UI: matrix/*, server model, space-order, call-layout,
+│  │                screenshare-quality, errors, types – platform access only through adapters
+│  └─ i18n/         de.ts / en.ts / t(), used by all apps
+├─ dev/             Docker stack (Synapse, LiveKit, lk-jwt-service)
+├─ docs/            architecture, release process, hosting (header examples)
+├─ .github/         workflows, issue/PR templates, CODEOWNERS
 ├─ LICENSE, THIRD_PARTY_NOTICES.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md
-├─ tsconfig.base.json, eslint.config.mjs, vitest.config.ts   gemeinsame Konfiguration
-└─ AGENTS.md        übergreifende Regeln; je App eine kurze eigene AGENTS.md
+├─ tsconfig.base.json, eslint.config.mjs, vitest.config.ts   shared configuration
+└─ AGENTS.md        repository-wide rules
 ```
 
-**Warum `apps/desktop` getrennt, obwohl Web und Desktop eine Codebase teilen?** Der Code ist
-derselbe – Desktop verpackt den Web-Build. In `apps/desktop` liegen nur Electron-Hauptprozess,
-Preload und Packaging. So landen `electron`/`electron-builder` nicht in den Web-Abhängigkeiten,
-der Hauptprozess bekommt eine eigene Node-tsconfig, und CI baut Desktop nur bei relevanten
-Änderungen.
+**Why a separate `apps/desktop` although web and desktop share one codebase?** The code is the same
+– the desktop app packages the web build. `apps/desktop` only holds the Electron main process, the
+preload script and packaging. That keeps `electron`/`electron-builder` out of the web dependencies,
+gives the main process its own Node tsconfig, and lets CI build the desktop app only when relevant.
 
-### Plattform-Adapter in `packages/core`
+### Platform adapters in `packages/core`
 
-`core` greift nie direkt auf Browser-APIs zu, sondern über Schnittstellen, die jede App liefert:
+`core` should not use browser APIs directly but interfaces that each app provides:
 
-| Schnittstelle | Web | Desktop | Mobile |
+| Interface | Web | Desktop | Mobile |
 |---|---|---|---|
-| `Storage` | localStorage / IndexedDB | wie Web | MMKV / SQLite |
+| `Storage` | localStorage / IndexedDB | same as web | MMKV / SQLite |
 | `Notifier` | Web Notifications | Electron `Notification` | Expo Notifications |
-| Medien / Bildschirm | `getDisplayMedia` | `desktopCapturer` | `react-native-webrtc` |
+| Media / screen | `getDisplayMedia` | `desktopCapturer` | `react-native-webrtc` |
 
-**Größtes Risiko für Mobile:** Die E2EE-Crypto des matrix-js-sdk läuft als WASM (Rust-Crypto).
-Ob das unter Hermes/React Native läuft, ist offen. Vor ernsthafter Mobile-Planung einen Spike
-machen; Alternative wären native Bindings an matrix-rust-sdk. LiveKit hat ein eigenes
-React-Native-SDK.
+The desktop side of this already exists as `packages/core/src/desktop-bridge.ts`.
 
-## 2. Umbau – Reihenfolge
+**Biggest risk for mobile:** matrix-js-sdk's E2EE crypto runs as WASM (Rust crypto). Whether that
+works under Hermes/React Native is open. Do a spike before planning mobile seriously; the
+alternative would be native bindings to matrix-rust-sdk. LiveKit has its own React Native SDK.
 
-1. **Aufräumen (eigener PR)** – erledigt (2026-10-17)
-   - `.idea/` und `nexspeak-web.iml` aus dem Index nehmen.
-   - Ungenutzte UI-Komponenten und ihre Abhängigkeiten entfernen (recharts, embla-carousel,
-     react-day-picker, input-otp, cmdk, vaul, react-resizable-panels, … – jeweils prüfen).
-   - Vorlagen-Assets und `@vercel/analytics` entfernen.
-2. **Monorepo-Umzug (eigener PR, nur Verschiebungen)** – erledigt (2026-10-17)
-   - Mit `git mv`, damit die Historie erhalten bleibt.
-   - `src/` → `apps/web/`, Matrix-Logik → `packages/core`, i18n → `packages/i18n`.
-   - Pfad-Aliase, Vitest-, Playwright- und ESLint-Konfiguration anpassen.
-   - Keine Logikänderungen, damit der PR leicht prüfbar bleibt.
-   - Umgesetzt ohne eigenes `packages/config`: tsconfig-Basis, ESLint und Vitest liegen im Root.
-     `audio-settings.ts` (Browser-Einstellung) und `utils.ts` (Tailwind) bleiben in `apps/web`.
-3. **Statischer Export der Web-App** – erledigt (2026-10-17), siehe `docs/hosting.md`
-   - `output: "export"` setzen.
-   - Die Security-Header aus `next.config.ts` entfallen dabei: als Hosting-Beispiel
-     (Caddy/nginx) nach `docs/`, in Electron per CSP bzw. `session.webRequest`.
-4. **Electron-Grundgerüst** – Basis erledigt (2026-10-17): Fenster, `app://`, Sicherheit, Encoding-Flags,
-   Bildschirmauswahl, Packaging, E2E-Tests. Offen: Tray, Push-to-Talk, Benachrichtigungen, Deep Links,
-   Auto-Update, Icon, Signierung.
-   - `contextIsolation`, `sandbox`, kein `nodeIntegration`.
-   - Hardware-Encoder-Flags laut `AGENTS.md` (`AcceleratedVideoEncoder`, VA-API unter Linux);
-     Hardware-Beschleunigung nie deaktivieren.
-   - `setDisplayMediaRequestHandler` mit eigenem Quellen-Dialog für die Bildschirmübertragung.
-   - Tray, native Benachrichtigungen, globales Push-to-Talk.
-   - Protokoll-Handler `nexspeak://` für den SSO/OIDC-Rücksprung.
-   - Auto-Update mit electron-updater über GitHub Releases.
-5. **Mobile:** nur Platzhalter und Crypto-Spike, kein produktiver Code vor der Web-/Desktop-Beta.
+## 2. Restructuring – order
 
-## 3. Lizenz, Open Source, Rechtliches
+1. **Cleanup** – done (2026-10-17)
+   - Stop tracking IDE files, remove unused UI components and their dependencies, template assets
+     and `@vercel/analytics`.
+2. **Monorepo move (moves only)** – done (2026-10-17)
+   - With `git mv` so history is kept: `src/` → `apps/web/`, Matrix logic → `packages/core`,
+     i18n → `packages/i18n`.
+   - No separate `packages/config`: tsconfig base, ESLint and Vitest live in the root.
+     `audio-settings.ts` (a browser setting) and `utils.ts` (Tailwind) stay in `apps/web`.
+3. **Static export of the web app** – done (2026-10-17), see `docs/hosting.md`
+   - The security headers moved to `apps/web/security-headers.json`; hosts and the desktop app send
+     them.
+4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
+   screen source picker, packaging, E2E tests. Tray done (#2). Open: push-to-talk (#3),
+   notifications (#4), deep links (#5), auto-update (#6), autostart (#7), icon (#8), signing (#9).
+5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
-### Lizenz: AGPL-3.0
+## 3. License, open source, legal
 
-- `LICENSE` mit AGPL-3.0-or-later im Root; SPDX-Feld `"license": "AGPL-3.0-or-later"` in allen
-  `package.json`.
-- **Netzwerk-Klausel:** Wer eine (veränderte) Instanz hostet, muss den Quellcode anbieten. Der
-  Über-Dialog verlinkt deshalb immer auf den Quellcode der laufenden Version (Repo + Commit).
-- **CLA für Beiträge:** Apple-App-Store-Bedingungen gelten als unvereinbar mit (A)GPL. Als
-  alleiniger Rechteinhaber kannst du die App trotzdem dort vertreiben – das bleibt aber nur so,
-  wenn Beiträge Dritter unter einem CLA stehen (z. B. über die GitHub-App „CLA assistant“). Das
-  CLA vor dem ersten externen Beitrag einführen.
-- Abhängigkeiten: matrix-js-sdk und livekit-client (Apache-2.0) sowie die übrigen MIT/ISC-Pakete
-  sind mit AGPL-3.0 vereinbar.
+### License: AGPL-3.0
 
-### Open-Source-Liste und Credits
+- `LICENSE` with AGPL-3.0-or-later in the root; SPDX field `"license": "AGPL-3.0-or-later"` in all
+  `package.json` files.
+- **Network clause:** anyone hosting a (modified) instance has to offer the source code. The about
+  dialog therefore always links to the source of the running version (repository + commit).
+- **CLA for contributions:** the Apple App Store terms are considered incompatible with the (A)GPL.
+  As the sole copyright holder the app can still be distributed there – but only as long as
+  third-party contributions are covered by a CLA (`CLA.md`, CLA assistant workflow).
+- Dependencies: matrix-js-sdk and livekit-client (Apache-2.0) and the remaining MIT/ISC packages are
+  compatible with the AGPL-3.0.
 
-- Build-Skript (z. B. `generate-license-file`) erzeugt `THIRD_PARTY_NOTICES.md` und ein JSON.
-- Die App zeigt das JSON unter *Einstellungen → Über* an.
-- CI-Check bricht ab, wenn eine Abhängigkeit mit unpassender Lizenz hinzukommt.
-- Eingebaute Emoji-Daten und Icons (lucide: ISC) gesondert aufführen.
-- **Über-Dialog:** Version, Git-Commit, Links (Quellcode, Issues, Datenschutz), Lizenzen,
-  Mitwirkende.
+### Open source list and credits
 
-### Rechtliches und Repo-Dokumente
+- A build script (e.g. `generate-license-file`) generates `THIRD_PARTY_NOTICES.md` and a JSON file.
+- The app shows the JSON under *Settings → About*.
+- A CI check fails when a dependency with an incompatible license is added.
+- List bundled emoji data and icons (lucide: ISC) separately.
+- **About dialog:** version, git commit, links (source, issues, privacy), licenses, contributors.
 
-- Für eine öffentlich gehostete Instanz in Deutschland: Impressum und Datenschutzerklärung.
-- `SECURITY.md` mit Meldeweg für Sicherheitslücken (Pflicht bei einer E2EE-App).
-- `CONTRIBUTING.md` (Setup, Commit-Konventionen, CLA, i18n-Regeln), `CODE_OF_CONDUCT.md`.
+### Legal and repository documents
 
-## 4. Funktionen
+- For a publicly hosted instance in Germany: imprint (Impressum) and privacy policy.
+- `SECURITY.md` with a way to report vulnerabilities (a must for an E2EE app).
+- `CONTRIBUTING.md` (done), `CODE_OF_CONDUCT.md`.
 
-### Milestone „Beta 0.1 – Web“ (Muss)
+## 4. Features
 
-- [ ] Login per OIDC (Next-gen Auth/MAS, nötig für matrix.org), dazu SSO und Registrierung
-- [ ] Markdown senden; `formatted_body` sicher (bereinigt) darstellen
-- [ ] Mentions mit Autovervollständigung (@Person, #Kanal)
-- [ ] Desktop-Benachrichtigungen mit Einstellung pro Server/Kanal (Push-Rules: alle / Mentions / stumm)
-- [ ] Profil bearbeiten (Anzeigename, Avatar), Presence setzen
-- [ ] Threads anzeigen und beantworten
-- [ ] Angepinnte Nachrichten (`m.room.pinned_events`)
-- [ ] Nutzer ignorieren, Inhalte melden
-- [ ] Über-Dialog mit Lizenzen und Quellcode-Link; Feedback über GitHub Issues, kein Tracking
+### Milestone "Beta 0.1 – Web" (must have)
 
-### Milestone „Beta 0.2 – Desktop“
+- [ ] Login via OIDC (next-gen auth/MAS, required for matrix.org), plus SSO and registration
+- [ ] Send Markdown; render `formatted_body` safely (sanitized)
+- [ ] Mentions with autocompletion (@person, #channel)
+- [ ] Desktop notifications with settings per server/channel (push rules: all / mentions / mute)
+- [ ] Profile editing (display name, avatar), set presence
+- [ ] Show and reply to threads
+- [ ] Pinned messages (`m.room.pinned_events`)
+- [ ] Ignore users, report content
+- [ ] About dialog with licenses and source link; feedback via GitHub issues, no tracking
 
-- [ ] Electron-App (siehe Schritt 4)
-- [ ] Push-to-Talk, Tray, Autostart, Auto-Update
-- [ ] Signierte Builds (macOS: Apple-Developer-Account 99 $/Jahr für Signatur/Notarisierung;
-      Windows: optional, sonst SmartScreen-Warnung)
+### Milestone "Beta 0.2 – Desktop"
 
-### Später (0.3+)
+- [x] Electron app
+- [x] Tray (#2)
+- [ ] Push-to-talk (#3), notifications (#4), deep links (#5), auto-update (#6), autostart (#7)
+- [ ] App icon (#8)
+- [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
+      a SmartScreen warning)
 
-- Nachrichtensuche, Link-Vorschau (opt-in), eigene Emojis (`im.ponies`), Umfragen
-- Bessere Rauschunterdrückung und Sprachaktivierung
-- Milestone „Mobile Alpha“ nach erfolgreichem Crypto-Spike
+### Later (0.3+)
 
-## 5. GitHub-Organisation
+- Message search, link previews (opt-in), custom emoji (`im.ponies`), polls
+- Better noise suppression and voice activity detection
+- Milestone "Mobile Alpha" after a successful crypto spike
+
+## 5. GitHub organization
 
 - **Milestones:** `Beta 0.1 – Web`, `Beta 0.2 – Desktop`, `0.3`, `Mobile Alpha`
 - **Labels:**
-  - Bereich: `area:web`, `area:desktop`, `area:mobile`, `area:core`, `area:calls`, `area:repo`
-  - Art: `type:bug`, `type:feature`, `type:chore`
-  - Sonstige: `perf`, `good first issue`, `needs-decision`
-- **Vorlagen:** Issue-Formulare (Bug mit Homeserver/Plattform/Browser, Feature) und
-  PR-Vorlage mit Checkliste (i18n-Schlüssel, Leistung, E2E bei Anruf-Änderungen).
+  - Area: `area:web`, `area:desktop`, `area:mobile`, `area:core`, `area:calls`, `area:repo`
+  - Type: `type:bug`, `type:feature`, `type:chore`
+  - Other: `perf`, `good first issue`, `needs-decision`
+- **Templates:** issue forms (bug with homeserver/platform/browser, feature) and a PR template with a
+  checklist (i18n keys, performance, E2E for call changes).
 - **Board:** GitHub Project.
 - **CI (GitHub Actions):**
-  - Bei jedem PR: Lint, Typecheck, Vitest, Build, Lizenz-Check.
-  - E2E mit Docker-Stack bei PRs auf `main` oder per Label.
-  - Desktop-Builds als Matrix (macOS, Windows, Linux) bei Tags.
-- **Releases:** ein gemeinsamer Versionsstand für Web und Desktop, automatisiert über
-  release-please (Conventional Commits) inkl. Changelog.
-- **Branches:** `main` geschützt, Arbeit über Feature-Branches und PRs; `v1` nach dem Umbau mergen.
-- Lokaler Ordner `nexspeak-web` → `nexspeak` umbenennen (GitHub-Repo heißt bereits `NexSpeak`).
+  - On every PR: lint, typecheck, Vitest, build, license check.
+  - E2E with the Docker stack on PRs to `main` or by label.
+  - Desktop builds as a matrix (macOS, Windows, Linux) on tags.
+- **Releases:** one shared version for web and desktop, automated with release-please (Conventional
+  Commits) including a changelog.
+- **Branches:** `main` protected, work via feature branches and PRs; merge `v1` after the
+  restructuring.
+- Rename the local folder `nexspeak-web` → `nexspeak` (the GitHub repository is already `NexSpeak`).
 
-## Entscheidungen
+## Decisions
 
-| Thema | Entscheidung |
+| Topic | Decision |
 |---|---|
-| Lizenz | AGPL-3.0-or-later (`LICENSE`), CLA für Beiträge (`CLA.md`, `.github/workflows/cla.yml`) |
-| Desktop | Electron, eigener Ordner `apps/desktop` (Empfehlung, offen) |
-| Package-Manager | npm Workspaces (Empfehlung, offen) |
-| Milestones/Labels | angelegt (2026-10-17); `bug`/`enhancement` umbenannt in `type:bug`/`type:feature` |
+| License | AGPL-3.0-or-later (`LICENSE`), CLA for contributions (`CLA.md`, `.github/workflows/cla.yml`) |
+| Desktop | Electron, separate folder `apps/desktop` |
+| Package manager | npm workspaces |
+| Language | English for code, docs, issues and commits; German only as a UI language |
+| Milestones/labels | created (2026-10-17); `bug`/`enhancement` renamed to `type:bug`/`type:feature` |

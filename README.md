@@ -1,45 +1,46 @@
 # NexSpeak
 
-Ein Discord-ähnlicher Client für [Matrix](https://matrix.org): Spaces werden als Server angezeigt, Räume als Kanäle,
-dazu Direktnachrichten, Sprach-/Videoanrufe und Bildschirmfreigabe.
+A Discord-like client for [Matrix](https://matrix.org): spaces are shown as servers, rooms as channels, plus
+direct messages, voice/video calls and screen sharing. Available as a web app and a desktop app (Electron).
 
-- **Chat:** Antworten, Reaktionen, Bearbeiten, Löschen, Tipp-Anzeige, Dateien (auch per Drag & Drop/Einfügen),
-  Lesebestätigungen, Einladungen
-- **Ende-zu-Ende-Verschlüsselung:** Nachrichten und Anhänge, Recovery-Schlüssel mit Schlüssel-Backup,
-  Geräteverifizierung per Emoji-Vergleich (kompatibel mit Element)
-- **Anrufe:** MatrixRTC mit LiveKit, kompatibel mit Element Call; in verschlüsselten Räumen sind auch
-  die Medien Ende-zu-Ende-verschlüsselt. Bedienung wie bei Discord: Kachelansicht mit Sprech-Anzeige,
-  Fokus auf Kamera oder Bildschirmfreigabe, Lautstärke pro Person (Rechtsklick), Chat neben dem Anruf,
-  Stummschalten auch vor dem Beitreten, Bildschirmübertragung mit wählbarer Auflösung (bis Quelle) und
-  Bildrate (bis 60 FPS), auch während des Streams änderbar
-- **Mobile Ansicht:** Navigation und Mitgliederliste als ausklappbare Panels
+- **Chat:** replies, reactions, editing, deletion, typing indicator, files (also via drag & drop/paste),
+  read receipts, invites
+- **End-to-end encryption:** messages and attachments, recovery key with key backup, device verification
+  by emoji comparison (compatible with Element)
+- **Calls:** MatrixRTC with LiveKit, compatible with Element Call; in encrypted rooms the media is end-to-end
+  encrypted as well. Works like Discord: tile view with speaking indicator, focus on a camera or screen share,
+  per-person volume (right click), chat next to the call, mute even before joining, screen sharing with
+  selectable resolution (up to source) and frame rate (up to 60 FPS), adjustable while streaming
+- **Mobile layout:** navigation and member list as slide-in panels
+- **UI languages:** German and English
 
-## Aufbau
+## Structure
 
-| Ordner | Inhalt |
+| Folder | Contents |
 |---|---|
-| `apps/web` | Next.js-Web-App (Oberfläche, E2E-Tests) |
-| `apps/desktop` | Desktop-App mit Electron, verpackt den Web-Build ([README](apps/desktop/README.md)) |
-| `apps/mobile` | Mobile-App mit Expo (geplant) |
-| `packages/core` | Matrix- und Anruf-Logik ohne Oberfläche |
-| `packages/i18n` | Oberflächentexte (Deutsch, Englisch) |
-| `dev` | Lokaler Homeserver mit Anrufen (Docker) |
-| `docs` | Planung und Dokumentation |
+| `apps/web` | Next.js web app (UI, E2E tests) |
+| `apps/desktop` | Desktop app with Electron, packages the web build ([README](apps/desktop/README.md)) |
+| `apps/mobile` | Mobile app with Expo (planned) |
+| `packages/core` | Matrix and call logic without UI |
+| `packages/i18n` | UI texts (German, English) |
+| `dev` | Local homeserver with calls (Docker) |
+| `docs` | Planning and documentation |
 
-Alle Befehle werden im Root-Verzeichnis ausgeführt.
+All commands are run in the repository root.
 
-## Voraussetzungen
+## Requirements
 
-- Node.js 24 (LTS), siehe `.nvmrc` → `nvm use`
-- Ein Matrix-Homeserver. Für **Anrufe** muss er einen MatrixRTC-Dienst (LiveKit SFU + [lk-jwt-service](https://github.com/element-hq/lk-jwt-service))
-  anbieten – derselbe, den Element Call nutzt. NexSpeak findet ihn in dieser Reihenfolge:
+- Node.js 24 (LTS), see `.nvmrc` → `nvm use`
+- A Matrix homeserver. For **calls** it has to offer a MatrixRTC service (LiveKit SFU +
+  [lk-jwt-service](https://github.com/element-hq/lk-jwt-service)) – the same one Element Call uses. NexSpeak
+  looks for it in this order:
   1. `GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports` (Synapse: `matrix_rtc.transports`)
   2. `org.matrix.msc4143.rtc_foci` in `/.well-known/matrix/client`
-  3. Umgebungsvariable `NEXT_PUBLIC_LIVEKIT_SERVICE_URL` (Fallback beim Build)
+  3. Environment variable `NEXT_PUBLIC_LIVEKIT_SERVICE_URL` (fallback at build time)
 
-  Homeserver mit Element Call (z. B. matrix.org) funktionieren ohne weitere Konfiguration.
+  Homeservers with Element Call (e.g. matrix.org) work without further configuration.
 
-## Entwicklung
+## Development
 
 ```bash
 nvm use
@@ -47,23 +48,24 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-### Lokaler Homeserver mit Anrufen
+### Local homeserver with calls
 
-`dev/docker-compose.yml` startet Synapse, LiveKit und lk-jwt-service – fertig konfiguriert für Anrufe:
+`dev/docker-compose.yml` starts Synapse, LiveKit and lk-jwt-service, configured for calls:
 
 ```bash
 docker compose -f dev/docker-compose.yml up -d
 ```
 
-In der App dann als Homeserver `http://localhost:8008` eintragen. Konten lassen sich ohne Bestätigung registrieren,
-z. B. mit Element oder per API. Der Stack ist nur für die Entwicklung gedacht (feste Secrets, selbstsigniertes TLS).
+Then enter `http://localhost:8008` as the homeserver in the app. Accounts can be registered without
+confirmation, e.g. with Element or via the API. The stack is meant for development only (fixed secrets,
+self-signed TLS).
 
-### Desktop-App
+### Desktop app
 
 ```bash
-npm run dev           # Terminal 1
-npm run dev:desktop   # Terminal 2: Electron gegen den Dev-Server
-npm run dist:desktop  # Installationspakete nach apps/desktop/release/
+npm run dev           # terminal 1
+npm run dev:desktop   # terminal 2: Electron against the dev server
+npm run dist:desktop  # installers in apps/desktop/release/
 ```
 
 Details in [apps/desktop/README.md](apps/desktop/README.md).
@@ -71,42 +73,42 @@ Details in [apps/desktop/README.md](apps/desktop/README.md).
 ## Tests
 
 ```bash
-npm test                 # Unit-Tests (Vitest)
+npm test                 # unit tests (Vitest)
 
 docker compose -f dev/docker-compose.yml --profile e2e up -d
-npm run test:e2e:docker  # End-to-End-Tests (Playwright) mit Browsern im Linux-Container
-npm run test:e2e         # dieselben Tests mit lokal installierten Browsern
-npm run test:e2e:desktop # Desktop-App (Electron) mit dem statischen Export
+npm run test:e2e:docker  # end-to-end tests (Playwright) with browsers in a Linux container
+npm run test:e2e         # the same tests with locally installed browsers
+npm run test:e2e:desktop # desktop app (Electron) with the static export
 ```
 
-Die End-to-End-Tests registrieren eigene Benutzer und testen mit mehreren Browsern gleichzeitig Chat,
-Verschlüsselung, Anrufe (inkl. E2EE-Audio), Recovery/Verifizierung und die Mobile-Ansicht. Die Browser laufen
-standardmäßig im Container, weil Chromium auf manchen macOS-Versionen kein (Fake-)Mikrofon öffnen kann.
+The end-to-end tests register their own users and drive several browsers at once to test chat, encryption,
+calls (including E2EE audio), recovery/verification and the mobile layout. By default the browsers run in
+the container, because Chromium cannot open a (fake) microphone on some macOS versions.
 
-## Fehlersuche bei Anrufen
+## Troubleshooting calls
 
-In der Browser-Konsole `localStorage.setItem("nexspeak:debug", "1")` setzen und neu laden – dann loggen
-NexSpeak und LiveKit ausführlich. Typische Ursachen:
+Run `localStorage.setItem("nexspeak:debug", "1")` in the browser console and reload – NexSpeak and LiveKit
+then log verbosely. Common causes:
 
-- „Dein Homeserver bietet keine Sprachkanäle an“: kein MatrixRTC-Dienst gefunden (siehe Voraussetzungen).
-- „Keine Berechtigung“: Mitglieder dürfen in diesem Raum keine Anrufe beitreten. Admins sehen im Anruf
-  „Für alle erlauben“ (setzt das Power-Level für `org.matrix.msc3401.call.member` auf 0, wie Element).
+- "Your homeserver doesn't offer voice channels": no MatrixRTC service found (see requirements).
+- "You aren't allowed to join calls in this room": members may not join calls in this room. Admins see
+  "Allow everyone" in the call (sets the power level for `org.matrix.msc3401.call.member` to 0, like Element).
 
-## Build & Deployment
+## Build & deployment
 
 ```bash
-npm run build   # statischer Export nach apps/web/out/
-npm start       # liefert apps/web/out/ lokal mit den Security-Headern aus
+npm run build   # static export to apps/web/out/
+npm start       # serves apps/web/out/ locally with the security headers
 ```
 
-Die App ist eine rein clientseitige Matrix-Anwendung; Zugangsdaten gehen nur an den Homeserver. Der Export
-läuft auf jedem statischen Webserver – Anforderungen (Security-Header, MIME-Typen, Caching) und Beispiele
-für Caddy und nginx stehen in [docs/hosting.md](docs/hosting.md). Der LiveKit-E2EE-Worker wird beim Build
-nach `apps/web/public/livekit-e2ee-worker.mjs` kopiert.
+The app is a purely client-side Matrix application; credentials only go to the homeserver. The export runs
+on any static web server – requirements (security headers, MIME types, caching) and examples for Caddy and
+nginx are in [docs/hosting.md](docs/hosting.md). The LiveKit E2EE worker is copied to
+`apps/web/public/livekit-e2ee-worker.mjs` during the build.
 
-## Mitwirken & Lizenz
+## Contributing & license
 
-Beiträge sind willkommen – siehe [CONTRIBUTING.md](CONTRIBUTING.md). Vor dem ersten Merge ist einmalig die
-[CLA](CLA.md) zu unterschreiben (per Kommentar im Pull Request).
+Contributions are welcome – see [CONTRIBUTING.md](CONTRIBUTING.md). Before your first merge you sign the
+[CLA](CLA.md) once (by commenting on the pull request).
 
-NexSpeak steht unter der [GNU Affero General Public License v3.0 oder neuer](LICENSE).
+NexSpeak is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).

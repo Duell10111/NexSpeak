@@ -15,9 +15,10 @@ AGPL on its own.
 
 - **Performance first:** NexSpeak runs next to games. Nothing may cost CPU, GPU or memory while
   idle (no polling, no timers, no running animations). See AGENTS.md.
-- **English in code:** comments, identifiers, log messages, test names, commit messages and pull
-  request titles are written in English.
-- **UI texts** are never hard-coded: add a key to `src/lib/i18n/de.ts` and `en.ts`.
+- **English everywhere except the UI:** code, comments, identifiers, log messages, test names,
+  commit messages, pull requests, issues and documentation are written in English. German exists
+  only as a UI language.
+- **UI texts** are never hard-coded: add a key to `packages/i18n/src/de.ts` and `en.ts`.
 - **Commits** follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `perf:`, `chore:`, …).
 - **Dependencies** must be compatible with the AGPL-3.0 and worth their weight.
