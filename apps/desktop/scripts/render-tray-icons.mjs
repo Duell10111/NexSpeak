@@ -1,4 +1,4 @@
-// Renders the tray icons in assets/ from one SVG shape. Placeholder until the real app icon
+// Renders the tray icons and the taskbar badge in assets/ from SVG. Placeholder until the real app icon
 // exists (issue #8). Run: node scripts/render-tray-icons.mjs
 import { chromium } from "@playwright/test"
 import { join } from "node:path"
@@ -27,6 +27,11 @@ const shape = (fill, cutout) => `
     </g>`}
   </svg>`
 
+const badge = `
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="7" fill="#f23f43" stroke="white" stroke-width="1.5" />
+  </svg>`
+
 const icons = [
   // macOS menu bar: black + alpha only, the system tints it ("Template" suffix).
   { name: "trayTemplate.png", size: 16, svg: shape("black", true) },
@@ -34,6 +39,9 @@ const icons = [
   // Windows and Linux: coloured, readable on light and dark task bars.
   { name: "tray.png", size: 16, svg: shape("#23a55a", false) },
   { name: "tray@2x.png", size: 32, svg: shape("#23a55a", false) },
+  // Windows taskbar overlay for unread mentions: a red dot, like Discord.
+  { name: "badge.png", size: 16, svg: badge },
+  { name: "badge@2x.png", size: 32, svg: badge },
 ]
 
 const browser = await chromium.launch()

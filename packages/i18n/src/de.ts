@@ -272,6 +272,14 @@ export const de = {
   'stream.softwareEncoderHint':
     'Firefox kodiert Video ohne Grafikkarte. Das belastet die CPU und reicht oft nicht für hohe Auflösungen mit 60 FPS. Für Spiele besser Chrome, Edge oder Safari verwenden oder 1080p mit 30 FPS wählen.',
 
+  'notification.titleInRoom': '{sender} in {room}',
+  'notification.newMessage': 'Neue Nachricht',
+  'settings.notifications': 'Benachrichtigungen',
+  'settings.notificationsEnabled': 'Benachrichtigungen anzeigen',
+  'settings.notificationsShowContent': 'Nachrichteninhalt anzeigen',
+  'settings.notificationsHint': 'Welche Räume benachrichtigen, folgt deinen Matrix-Einstellungen – wie in Element (stumm, nur Erwähnungen).',
+  'settings.notificationsAllow': 'Im Browser erlauben',
+  'settings.notificationsBlocked': 'Dein Browser blockiert Benachrichtigungen für NexSpeak. Erlaube sie in den Website-Einstellungen.',
   'settings.title': 'Einstellungen',
   'settings.description': 'Audiogeräte, Sprache und Konto verwalten',
   'settings.audio': 'Audio',

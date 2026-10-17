@@ -10,6 +10,7 @@ import { ChatArea } from "@/components/nexspeak/chat-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { CallProvider } from "@/components/nexspeak/call-context"
 import { DesktopTrayVoice } from "@/components/nexspeak/desktop-tray"
+import { useAttentionBadge, useMessageNotifications } from "@/hooks/useMessageNotifications"
 import { SecurityProvider } from "@/components/nexspeak/security-context"
 import { SecurityBanner } from "@/components/nexspeak/security-panel"
 import { NavigationProvider } from "@/components/nexspeak/navigation-context"
@@ -17,7 +18,7 @@ import { useMatrix } from "@/components/matrix-provider"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
-import { useRoomDirectory, type RoomDirectory } from "@/hooks/useRoomDirectory"
+import { attentionCount, useRoomDirectory, type RoomDirectory } from "@/hooks/useRoomDirectory"
 import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { DIRECT_MESSAGES_ID } from "@nexspeak/core/matrix/types"
@@ -143,6 +144,10 @@ export default function NexSpeakApp() {
   const handleRoomJoined = (roomId: string) => {
     setSelection({ serverId: "", channelId: roomId })
   }
+
+  useMessageNotifications(client, channelId, openRoom)
+  // Follows the (throttled) room directory, not every sync event.
+  useAttentionBadge(attentionCount(directory))
 
   if (session === undefined || session === null) {
     return (

@@ -210,3 +210,15 @@ export function useRoomDirectory(client: MatrixClient | null): RoomDirectory {
 
   return state.client === client ? state.directory : EMPTY_DIRECTORY
 }
+
+/**
+ * The number on the app badge, like Discord: mentions everywhere, all unread direct messages and
+ * invites.
+ */
+export function attentionCount(directory: RoomDirectory): number {
+  const spaceRooms = new Map<string, MatrixRoom>()
+  Object.values(directory.roomsBySpace).forEach((rooms) => rooms.forEach((room) => spaceRooms.set(room.id, room)))
+  const highlights = [...spaceRooms.values(), ...directory.otherRooms].reduce((sum, room) => sum + room.highlights, 0)
+  const directUnread = directory.directRooms.reduce((sum, room) => sum + room.unread, 0)
+  return highlights + directUnread + directory.invites.length
+}

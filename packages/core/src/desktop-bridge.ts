@@ -58,4 +58,8 @@ export interface DesktopBridge {
   requestPushToTalkPermission(): Promise<PushToTalkStatus>
   /** Key pressed (true) or released (false). Returns an unsubscribe function. */
   onPushToTalk(handler: (pressed: boolean) => void): () => void
+  /** Brings the window back from the tray, e.g. after a click on a notification. */
+  showWindow(): void
+  /** Dock badge (macOS), taskbar overlay (Windows), launcher count (Linux); 0 clears it. */
+  setBadgeCount(count: number): void
 }

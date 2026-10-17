@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { _electron as electron, chromium, expect, test, type ElectronApplication, type Page } from "@playwright/test"
-import { createRoom, login, openRoom, registerUser, remoteAudioLevel, sendMessage } from "../../web/e2e/helpers"
+import { createRoom, login, openRoom, registerUser, remoteAudioLevel, sendMessage, sendTextAs } from "../../web/e2e/helpers"
 
 const APP_DIR = join(__dirname, "..")
 const WEB_PORT = 3101
@@ -44,6 +44,10 @@ test("serves the web build from app:// as a locked-down, secure origin", async (
       workerType: worker.headers.get("content-type"),
       frameOptions: worker.headers.get("x-frame-options"),
       h264: RTCRtpSender.getCapabilities("video")?.codecs.some((codec) => codec.mimeType === "video/H264"),
+      // Granted by the app itself (the fake media UI flag would hide a denial for getUserMedia).
+      notifications: Notification.permission,
+      microphone: (await navigator.permissions.query({ name: "microphone" as PermissionName })).state,
+      geolocation: (await navigator.permissions.query({ name: "geolocation" })).state,
     }
   })
   expect(info).toEqual({
@@ -53,6 +57,9 @@ test("serves the web build from app:// as a locked-down, secure origin", async (
     workerType: "text/javascript; charset=utf-8",
     frameOptions: "DENY",
     h264: true,
+    notifications: "granted",
+    microphone: "granted",
+    geolocation: "denied",
   })
 })
 
@@ -206,4 +213,37 @@ test("the global push-to-talk key from the main process controls the microphone"
     await browser.close()
     server.kill()
   }
+})
+
+test("notifications are allowed, the badge counts unread messages, the window comes back", async () => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const suffix = Date.now().toString(36)
+  await createRoom(alice, { name: `Ruhig ${suffix}`, members: [] })
+  // Two members: a direct message, where every unread message counts.
+  const directRoomId = await createRoom(alice, { name: `Direkt ${suffix}`, members: [bob] })
+
+  await login(page, alice, "app://nexspeak/login")
+  // Electron shows web notifications natively; the app grants the permission itself.
+  expect(await page.evaluate(() => Notification.permission)).toBe("granted")
+  // No real notifications on the test machine; the badge does not depend on them.
+  await page.evaluate(() => localStorage.setItem("nexspeak_notification_settings", JSON.stringify({ enabled: false })))
+  await openRoom(page, `Ruhig ${suffix}`)
+
+  const badgeCount = () => app.evaluate(({ app }) => app.getBadgeCount())
+  await sendTextAs(bob, directRoomId, "Eins")
+  await sendTextAs(bob, directRoomId, "Zwei")
+  if (process.platform !== "win32") await expect.poll(badgeCount, { timeout: 20_000 }).toBe(2)
+  await expect(page).toHaveTitle(/^\(2\) /)
+
+  // Reading the messages clears it.
+  await openRoom(page, `Direkt ${suffix}`)
+  if (process.platform !== "win32") await expect.poll(badgeCount, { timeout: 20_000 }).toBe(0)
+
+  // A click on a notification brings the window back from the tray.
+  const isVisible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await expect.poll(isVisible).toBe(false)
+  await page.evaluate(() => window.nexspeak?.showWindow())
+  await expect.poll(isVisible).toBe(true)
 })

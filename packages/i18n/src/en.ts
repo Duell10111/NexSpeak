@@ -270,6 +270,14 @@ export const en: Record<MessageKey, string> = {
   'stream.softwareEncoderHint':
     "Firefox encodes video without the graphics card. That loads the CPU and often isn't enough for high resolutions at 60 FPS. For games, use Chrome, Edge or Safari, or pick 1080p at 30 FPS.",
 
+  'notification.titleInRoom': '{sender} in {room}',
+  'notification.newMessage': 'New message',
+  'settings.notifications': 'Notifications',
+  'settings.notificationsEnabled': 'Show notifications',
+  'settings.notificationsShowContent': 'Show message content',
+  'settings.notificationsHint': 'Which rooms notify follows your Matrix settings – like in Element (muted, mentions only).',
+  'settings.notificationsAllow': 'Allow in browser',
+  'settings.notificationsBlocked': 'Your browser blocks notifications for NexSpeak. Allow them in the site settings.',
   'settings.title': 'Settings',
   'settings.description': 'Manage audio devices, language and account',
   'settings.audio': 'Audio',

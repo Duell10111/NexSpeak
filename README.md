@@ -11,6 +11,9 @@ direct messages, voice/video calls and screen sharing. Available as a web app an
   encrypted as well. Works like Discord: tile view with speaking indicator, focus on a camera or screen share,
   per-person volume (right click), chat next to the call, mute even before joining, screen sharing with
   selectable resolution (up to source) and frame rate (up to 60 FPS), adjustable while streaming
+- **Push to talk:** key or mouse button with release delay; system-wide in the desktop app (also in games)
+- **Notifications:** for new messages according to the Matrix push rules (same settings as Element), unread
+  count in the window title and as app badge
 - **Mobile layout:** navigation and member list as slide-in panels
 - **UI languages:** German and English
 

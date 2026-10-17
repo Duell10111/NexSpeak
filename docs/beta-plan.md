@@ -78,8 +78,9 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
    - The security headers moved to `apps/web/security-headers.json`; hosts and the desktop app send
      them.
 4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
-   screen source picker, packaging, E2E tests. Tray (#2) and push to talk (#3) done. Open:
-   notifications (#4), deep links (#5), auto-update (#6), autostart (#7), icon (#8), signing (#9).
+   screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3) and notifications (#4)
+   done. Open: deep links (#5), auto-update (#6), autostart (#7), icon (#8), signing (#9), push-to-talk
+   hook performance (#10).
 5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
 ## 3. License, open source, legal
@@ -117,7 +118,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [ ] Login via OIDC (next-gen auth/MAS, required for matrix.org), plus SSO and registration
 - [ ] Send Markdown; render `formatted_body` safely (sanitized)
 - [ ] Mentions with autocompletion (@person, #channel)
-- [ ] Desktop notifications with settings per server/channel (push rules: all / mentions / mute)
+- [x] Notifications following the push rules, settings for showing them and their content
+- [ ] Notification settings per server/channel in the UI (push rules: all / mentions / mute)
 - [ ] Profile editing (display name, avatar), set presence
 - [ ] Show and reply to threads
 - [ ] Pinned messages (`m.room.pinned_events`)
@@ -129,7 +131,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Electron app
 - [x] Tray (#2)
 - [x] Push to talk (#3)
-- [ ] Notifications (#4), deep links (#5), auto-update (#6), autostart (#7)
+- [x] Notifications and badge (#4)
+- [ ] Deep links (#5), auto-update (#6), autostart (#7)
 - [ ] App icon (#8)
 - [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
       a SmartScreen warning)

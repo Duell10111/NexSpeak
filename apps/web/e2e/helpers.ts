@@ -188,3 +188,12 @@ export async function remoteAudioLevel(page: Page): Promise<number> {
     return level
   })
 }
+
+/** Sends a text message through the API (no browser needed). */
+export async function sendTextAs(user: TestUser, roomId: string, body: string): Promise<void> {
+  const txnId = `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  await api(user.accessToken, "PUT", `/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}`, {
+    msgtype: "m.text",
+    body,
+  })
+}

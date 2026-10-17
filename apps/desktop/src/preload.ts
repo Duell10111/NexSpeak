@@ -14,6 +14,8 @@ const IPC_PTT_SET_KEY = "nexspeak:ptt-set-key"
 const IPC_PTT_STATUS = "nexspeak:ptt-status"
 const IPC_PTT_REQUEST_PERMISSION = "nexspeak:ptt-request-permission"
 const IPC_PTT_PRESSED = "nexspeak:ptt-pressed"
+const IPC_SHOW_WINDOW = "nexspeak:show-window"
+const IPC_BADGE_COUNT = "nexspeak:badge-count"
 
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
@@ -55,6 +57,12 @@ const bridge: DesktopBridge = {
     return () => {
       ipcRenderer.off(IPC_PTT_PRESSED, listener)
     }
+  },
+  showWindow() {
+    ipcRenderer.send(IPC_SHOW_WINDOW)
+  },
+  setBadgeCount(count) {
+    ipcRenderer.send(IPC_BADGE_COUNT, count)
   },
 }
 

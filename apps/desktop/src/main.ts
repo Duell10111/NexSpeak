@@ -17,17 +17,22 @@ import {
   type Session,
 } from "electron"
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import { setBadgeCount } from "./badge"
+import { originOf } from "./origin"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
 import { createTray } from "./tray"
 
 // Same names as in preload.ts (a sandboxed preload cannot import other files).
 const IPC_CHOOSE_DISPLAY_SOURCE = "nexspeak:choose-display-source"
 const IPC_DISPLAY_SOURCE_CHOSEN = "nexspeak:display-source-chosen"
+const IPC_SHOW_WINDOW = "nexspeak:show-window"
+const IPC_BADGE_COUNT = "nexspeak:badge-count"
 
 const APP_ORIGIN = "app://nexspeak"
 /** `npm run dev:desktop` points this at the Next.js dev server instead of the static build. */
 const devUrl = process.env.NEXSPEAK_DEV_URL
 const appOrigin = devUrl ? new URL(devUrl).origin : APP_ORIGIN
+
 
 const webDir = app.isPackaged ? join(process.resourcesPath, "web") : join(__dirname, "..", "..", "web")
 const webRoot = join(webDir, "out")
@@ -37,6 +42,10 @@ const webRoot = join(webDir, "out")
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("enable-features", "AcceleratedVideoEncoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL")
 }
+
+// Windows only shows notifications for apps with an AppUserModelID (same as appId in
+// electron-builder.yml).
+if (process.platform === "win32") app.setAppUserModelId("io.github.duell10111.nexspeak")
 
 // A standard, secure scheme gives the app a real origin (localStorage, IndexedDB), a secure context
 // (microphone, camera, screen capture) and fetch/streaming for the crypto WASM.
@@ -81,6 +90,14 @@ function start() {
   mainWindow = createWindow()
   createTray({ webContents: () => mainWindow?.webContents, showWindow })
   setupPushToTalk(() => mainWindow?.webContents)
+  const fromAppWindow = (event: Electron.IpcMainEvent) => event.sender === mainWindow?.webContents
+  ipcMain.on(IPC_SHOW_WINDOW, (event) => {
+    if (fromAppWindow(event)) showWindow()
+  })
+  ipcMain.on(IPC_BADGE_COUNT, (event, count: unknown) => {
+    if (!fromAppWindow(event) || typeof count !== "number" || !Number.isInteger(count) || count < 0) return
+    setBadgeCount(mainWindow, count)
+  })
 }
 
 function showWindow() {
@@ -143,13 +160,7 @@ const ALLOWED_PERMISSIONS = new Set([
 
 /** Only our own pages get microphone, camera, screen capture and notifications; nothing else. */
 function restrictPermissions(target: Session) {
-  const isOwnOrigin = (url: string) => {
-    try {
-      return new URL(url).origin === appOrigin
-    } catch {
-      return false
-    }
-  }
+  const isOwnOrigin = (url: string) => originOf(url) === appOrigin
   target.setPermissionRequestHandler((contents, permission, callback) => {
     callback(isOwnOrigin(contents.getURL()) && ALLOWED_PERMISSIONS.has(permission))
   })
@@ -254,7 +265,7 @@ function createWindow() {
     return { action: "deny" }
   })
   window.webContents.on("will-navigate", (event, url) => {
-    if (new URL(url).origin === appOrigin) return
+    if (originOf(url) === appOrigin) return
     event.preventDefault()
     openExternal(url)
   })

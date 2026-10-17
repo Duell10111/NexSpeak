@@ -7,6 +7,8 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 |---|---|
 | `src/main.ts` | Window, serving the web build under `app://nexspeak`, permissions, screen capture, hardware encoding flags |
 | `src/push-to-talk.ts` | Global push-to-talk key (uiohook), only running during a call with push to talk |
+| `src/badge.ts` | Unread badge: dock (macOS), taskbar overlay (Windows), launcher (Linux) |
+| `src/origin.ts` | Origin check for `app://` (`URL.origin` is `"null"` for custom schemes in Node) |
 | `src/tray.ts` | Tray icon and menu (open, mute, deafen, leave call, quit) |
 | `src/preload.ts` | `window.nexspeak` (contract: `packages/core/src/desktop-bridge.ts`) |
 | `electron-builder.yml` | Packages for macOS (dmg/zip), Windows (NSIS) and Linux (AppImage/deb) |
@@ -44,6 +46,14 @@ Closing the window only hides it; the app keeps running in the tray (e.g. in a c
 tray menu or Cmd+Q. Texts and voice state come from the web app over the bridge
 (`DesktopTrayLabels`, `DesktopTrayVoice`); the main process has no translations of its own.
 
+## Notifications and badge
+
+The web app decides what notifies (the user's Matrix push rules, see
+`packages/core/src/matrix/notifications.ts`) and uses the web `Notification` API, which Electron
+shows as native OS notifications; a click brings the window back from the tray (`showWindow`).
+The badge shows mentions, unread direct messages and invites (`setBadgeCount`). Windows needs the
+AppUserModelID set in `main.ts` for notifications to appear.
+
 ## Push to talk
 
 The web app owns the setting (key, release delay) and the microphone gate; the main process only
@@ -67,5 +77,5 @@ system-wide hook (uiohook-napi), so the key also works while a game has the focu
 
 ## Still open (milestone "Beta 0.2 – Desktop")
 
-Native notifications (#4), deep links (#5), auto-update (#6), autostart (#7),
+Deep links (#5), auto-update (#6), autostart (#7),
 app icon (#8), signing and notarization (#9).

@@ -154,7 +154,8 @@ export function stripReplyFallback(body: string): string {
   return body.replace(REPLY_FALLBACK_PATTERN, '')
 }
 
-function summarizeEvent(event: MatrixEvent): string {
+/** One-line text for a message: its body, or "Image", "File", … for attachments. */
+export function summarizeEvent(event: MatrixEvent): string {
   if (event.isRedacted()) return t('message.redacted')
   if (event.isDecryptionFailure()) return t('message.encrypted')
   const content = event.getContent()

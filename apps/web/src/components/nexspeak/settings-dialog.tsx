@@ -21,6 +21,7 @@ import { useMatrix } from "@/components/matrix-provider"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
 import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
+import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
 import { useTranslation } from "@/hooks/useTranslation"
 import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
 import {
@@ -178,18 +179,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-md">
+      <DialogContent className="w-full max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("settings.title")}</DialogTitle>
           <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="audio" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>
+            <TabsTrigger value="notifications">{t("settings.notifications")}</TabsTrigger>
             <TabsTrigger value="security">{t("settings.security")}</TabsTrigger>
             <TabsTrigger value="account">{t("settings.account")}</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="notifications">
+            <NotificationSettingsPanel />
+          </TabsContent>
 
           <TabsContent value="security">
             <SecurityPanel />
