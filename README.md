@@ -2,6 +2,16 @@
   <img src="apps/web/src/app/icon.svg" alt="NexSpeak logo" width="128" height="128">
 </p>
 
+<p align="center">
+  <a href="https://github.com/Duell10111/NexSpeak/releases/latest"><img src="https://img.shields.io/github/v/release/Duell10111/NexSpeak?include_prereleases&sort=semver" alt="Latest release"></a>
+  <a href="https://github.com/Duell10111/NexSpeak/actions/workflows/release-please.yml"><img src="https://img.shields.io/github/actions/workflow/status/Duell10111/NexSpeak/release-please.yml?branch=main&label=release" alt="Release workflow"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Duell10111/NexSpeak" alt="License: AGPL-3.0-or-later"></a>
+  <a href="https://matrix.org"><img src="https://img.shields.io/badge/protocol-Matrix-000000?logo=matrix&logoColor=white" alt="Matrix"></a>
+  <img src="https://img.shields.io/badge/platform-web%20%7C%20macOS%20%7C%20Windows%20%7C%20Linux-10b981" alt="Platforms: web, macOS, Windows, Linux">
+  <img src="https://img.shields.io/badge/node-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js 24">
+  <a href="https://github.com/Duell10111/NexSpeak/issues"><img src="https://img.shields.io/github/issues/Duell10111/NexSpeak" alt="Open issues"></a>
+</p>
+
 # NexSpeak
 
 A Discord-like client for [Matrix](https://matrix.org): spaces are shown as servers, rooms as channels, plus
