@@ -31,7 +31,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `npm run build && npx next start -p ${PORT}`,
+    command: `npm run build && PORT=${PORT} node scripts/serve.mjs`,
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: true,
     timeout: 300_000,

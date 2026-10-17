@@ -10,7 +10,7 @@
     "prebuild": "npm run -s check-node && node scripts/copy-livekit-worker.mjs",
     "build": "next build",
     "prestart": "npm run -s check-node",
-    "start": "next start",
+    "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:docker": "E2E_BROWSER_WS=ws://localhost:3030/ playwright test"

@@ -70,6 +70,11 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
     aus `apps/`. Direkte Browser-APIs nur, wo es (noch) nicht anders geht.
   - `packages/i18n` (`@nexspeak/i18n`) – Wörterbücher und `t()`.
   Pakete liefern TypeScript-Quellen direkt aus (kein eigener Build-Schritt).
+- Die Web-App ist ein **statischer Export** (`output: "export"` → `apps/web/out/`), den auch die
+  Desktop-App lädt. Keine Server-Funktionen von Next.js: keine API-Routen, Server Actions,
+  Middleware, `headers()`/Cookies, Bildoptimierung oder dynamische Routen ohne
+  `generateStaticParams`. Security-Header stehen in `apps/web/security-headers.json`
+  (Hosting: `docs/hosting.md`).
 - Node 24 (`.nvmrc`). Befehle im Root: `npm run dev`, `npm run build`, `npm run lint`,
   `npm run typecheck`, `npm test` (Vitest über alle Workspaces), `npm run test:e2e:docker`
   (Playwright gegen `dev/docker-compose.yml`). Abhängigkeiten mit `-w <workspace>` installieren,

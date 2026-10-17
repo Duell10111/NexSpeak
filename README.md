@@ -84,12 +84,14 @@ NexSpeak und LiveKit ausführlich. Typische Ursachen:
 ## Build & Deployment
 
 ```bash
-npm run build
-npm start
+npm run build   # statischer Export nach apps/web/out/
+npm start       # liefert apps/web/out/ lokal mit den Security-Headern aus
 ```
 
-Die App ist eine rein clientseitige Matrix-Anwendung; Zugangsdaten gehen nur an den Homeserver. Der
-LiveKit-E2EE-Worker wird beim Build nach `apps/web/public/livekit-e2ee-worker.mjs` kopiert.
+Die App ist eine rein clientseitige Matrix-Anwendung; Zugangsdaten gehen nur an den Homeserver. Der Export
+läuft auf jedem statischen Webserver – Anforderungen (Security-Header, MIME-Typen, Caching) und Beispiele
+für Caddy und nginx stehen in [docs/hosting.md](docs/hosting.md). Der LiveKit-E2EE-Worker wird beim Build
+nach `apps/web/public/livekit-e2ee-worker.mjs` kopiert.
 
 ## Mitwirken & Lizenz
 

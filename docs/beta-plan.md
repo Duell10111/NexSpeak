@@ -80,7 +80,7 @@ React-Native-SDK.
    - Keine Logikänderungen, damit der PR leicht prüfbar bleibt.
    - Umgesetzt ohne eigenes `packages/config`: tsconfig-Basis, ESLint und Vitest liegen im Root.
      `audio-settings.ts` (Browser-Einstellung) und `utils.ts` (Tailwind) bleiben in `apps/web`.
-3. **Statischer Export der Web-App**
+3. **Statischer Export der Web-App** – erledigt (2026-10-17), siehe `docs/hosting.md`
    - `output: "export"` setzen.
    - Die Security-Header aus `next.config.ts` entfallen dabei: als Hosting-Beispiel
      (Caddy/nginx) nach `docs/`, in Electron per CSP bzw. `session.webRequest`.
