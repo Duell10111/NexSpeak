@@ -18,8 +18,10 @@
 A Discord-like client for [Matrix](https://matrix.org): spaces are shown as servers, rooms as channels, plus
 direct messages, voice/video calls and screen sharing. Available as a web app and a desktop app (Electron).
 
-- **Chat:** replies, reactions, editing, deletion, typing indicator, files (also via drag & drop/paste),
-  read receipts, invites
+- **Chat:** replies, threads, reactions, editing, deletion, pinned messages, Markdown (Discord flavoured,
+  sent as `formatted_body` and rendered sanitized), mentions with autocompletion (@person, #channel, @room),
+  typing indicator, files (also via drag & drop/paste), read receipts, invites
+- **Safety:** ignore people, report messages and channels to the homeserver admins
 - **End-to-end encryption:** messages and attachments, recovery key with key backup, device verification
   by emoji comparison (compatible with Element)
 - **Calls:** MatrixRTC with LiveKit, compatible with Element Call; in encrypted rooms the media is end-to-end
@@ -28,9 +30,12 @@ direct messages, voice/video calls and screen sharing. Available as a web app an
   selectable resolution (up to source) and frame rate (up to 60 FPS), adjustable while streaming
 - **Push to talk:** key or mouse button with release delay; system-wide in the desktop app (also in games)
 - **Notifications:** for new messages according to the Matrix push rules (same settings as Element), unread
-  count in the window title and as app badge
+  count in the window title and as app badge; per channel or whole server: all messages, mentions only or muted
+- **Profile:** display name, avatar and status (online, away, invisible)
 - **Mobile layout:** navigation and member list as slide-in panels
-- **Login:** password or SSO (also via the compatibility layer of OIDC homeservers such as matrix.org)
+- **Login:** password, SSO, or native OIDC including sign-up on homeservers with next-generation auth (Matrix
+  Authentication Service, e.g. matrix.org); the desktop app uses the SSO compatibility layer there
+- **About:** version, source of the running build, open source licenses (generated at build time); no tracking
 - **Links:** matrix.to links to rooms, servers and people open in the app; the desktop app handles
   `nexspeak://` links
 - **UI languages:** German and English

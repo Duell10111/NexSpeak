@@ -4,11 +4,15 @@
  * Security: Tokens are stored clientside only, never sent to servers
  */
 
+import type { OidcSessionInfo } from './oidc'
+
 export interface MatrixSession {
   homeserverUrl: string
   userId: string
   accessToken: string
   deviceId: string
+  /** Set for logins through native OIDC: refresh token and issuer. */
+  oidc?: OidcSessionInfo
 }
 
 const STORAGE_KEY = 'nexspeak_matrix_session'
@@ -63,6 +67,20 @@ export function loadSession(): MatrixSession | null {
     console.error('Failed to load Matrix session:', error)
     return null
   }
+}
+
+/**
+ * Store refreshed OIDC tokens. The session keeps its identity (user and device), so the running
+ * client is not replaced.
+ */
+export function updateSessionTokens(tokens: { accessToken: string; refreshToken?: string }): void {
+  const session = loadSession()
+  if (!session) return
+  saveSession({
+    ...session,
+    accessToken: tokens.accessToken,
+    ...(session.oidc && { oidc: { ...session.oidc, refreshToken: tokens.refreshToken ?? session.oidc.refreshToken } }),
+  })
 }
 
 /**

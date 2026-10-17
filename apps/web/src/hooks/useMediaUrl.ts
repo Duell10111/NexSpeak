@@ -15,10 +15,15 @@ import { t } from '@nexspeak/i18n'
 const MAX_CACHE_ENTRIES = 300
 const cache = new Map<string, Promise<string | null>>()
 
-async function fetchMedia(client: MatrixClient, httpUrl: string): Promise<ArrayBuffer> {
+async function fetchMedia(client: MatrixClient, httpUrl: string, retry = true): Promise<ArrayBuffer> {
   const response = await fetch(httpUrl, {
     headers: { Authorization: `Bearer ${client.getAccessToken() ?? ''}` },
   })
+  if (response.status === 401 && retry && client.getRefreshToken()) {
+    // An expired OIDC access token: any request through the SDK refreshes it, then try again.
+    await client.whoami()
+    return fetchMedia(client, httpUrl, false)
+  }
   if (!response.ok) throw new Error(t('error.downloadStatus', { status: response.status }))
   return response.arrayBuffer()
 }

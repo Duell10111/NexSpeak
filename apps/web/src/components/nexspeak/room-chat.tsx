@@ -7,14 +7,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
-  type ClipboardEvent,
   type DragEvent,
-  type KeyboardEvent,
 } from "react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
 import {
   AlertDialog,
@@ -26,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { AtSign, Hash, PlusCircle, SendHorizonal, Smile, Upload, X } from "lucide-react"
+import { AtSign, Hash, Upload } from "lucide-react"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomTimeline } from "@/hooks/useRoomTimeline"
 import { useRoomInfo } from "@/hooks/useRoomInfo"
@@ -35,7 +31,10 @@ import { useTypingMembers, useTypingNotifier } from "@/hooks/useTyping"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { deleteMessage, sendAttachment, sendTextMessage } from "@nexspeak/core/matrix/messages"
-import { EmojiPicker } from "@/components/nexspeak/emoji-picker"
+import { MessageComposer, type ComposedMessage, type MessageComposerHandle } from "@/components/nexspeak/message-composer"
+import { ReportDialog } from "@/components/nexspeak/report-dialog"
+import { usePinnedEventIds } from "@/hooks/usePinnedEvents"
+import { canPinMessages, setPinned } from "@nexspeak/core/matrix/pins"
 import { DateDivider, MessageItem, type MessageActions } from "@/components/nexspeak/message-item"
 import type { MatrixMessage } from "@nexspeak/core/matrix/types"
 
@@ -43,12 +42,15 @@ interface RoomChatProps {
   roomId: string
   /** Narrow side panel next to a call: smaller paddings, no welcome header. */
   compact?: boolean
+  /** Show this thread (root first, then its replies) instead of the channel. */
+  threadId?: string
+  /** Opens a thread in the side panel; threads don't nest, so unset inside one. */
+  onOpenThread?: (rootId: string) => void
 }
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
 const LOAD_MORE_THRESHOLD_PX = 200
 const STICK_TO_BOTTOM_THRESHOLD_PX = 80
-const MAX_COMPOSER_HEIGHT_PX = 200
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 function isSameDay(a: number, b: number): boolean {
@@ -85,24 +87,29 @@ function TypingIndicator({ names }: { names: string[] }) {
   )
 }
 
-export function RoomChat({ roomId, compact = false }: RoomChatProps) {
-  const [inputValue, setInputValue] = useState("")
+export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: RoomChatProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [replyTo, setReplyTo] = useState<MatrixMessage | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<MatrixMessage | null>(null)
+  const [reporting, setReporting] = useState<MatrixMessage | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const composerRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const composerRef = useRef<MessageComposerHandle>(null)
   const stickToBottomRef = useRef(true)
   const scrollHeightBeforeLoadRef = useRef<number | null>(null)
 
   const { t } = useTranslation()
   const { client, isCryptoReady } = useMatrixClient()
   const roomInfo = useRoomInfo(client, roomId)
-  const { messages, isLoading, hasMore, loadMore } = useRoomTimeline(client, roomId)
-  const typingNames = useTypingMembers(client, roomId)
+  const { messages: timeline, isLoading, hasMore, loadMore } = useRoomTimeline(client, roomId, threadId)
+  // In a thread the root stays on top, above the (paginated) replies.
+  const threadRoot = threadId && timeline[0]?.id === threadId ? timeline[0] : null
+  const messages = threadRoot ? timeline.slice(1) : timeline
+  // Typing notifications are per room in Matrix; a thread shows them in the channel only.
+  const roomTypingNames = useTypingMembers(client, roomId)
+  const typingNames = threadId ? [] : roomTypingNames
+  const pinnedIds = usePinnedEventIds(client, roomId)
   const { notifyTyping, stopTyping } = useTypingNotifier(client, roomId)
 
   const ownUserId = client?.getUserId() ?? ""
@@ -112,7 +119,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
   const roomLabel = `${isDirect ? "@" : "#"}${roomName}`
   const isEncryptedRoom = roomInfo?.isEncrypted ?? false
   const canSend = Boolean(client && roomInfo?.exists && (!isEncryptedRoom || isCryptoReady))
-  const latestSentEvent = messages.findLast((message) => message.status === "sent")?.event
+  const latestSentEvent = timeline.findLast((message) => message.status === "sent")?.event
 
   // Mounted means visible: the chat is the main view or open next to the call.
   useReadReceipt(client, roomId, latestSentEvent, true)
@@ -156,60 +163,28 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
     }
   }
 
-  const resizeComposer = () => {
-    const element = composerRef.current
-    if (!element) return
-    element.style.height = "auto"
-    element.style.height = `${Math.min(element.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`
-  }
-
-  const handleSend = () => {
-    const body = inputValue.trim()
-    if (!body || !client || !canSend) return
-
+  const handleSend = ({ body, mentions, mentionsRoom }: ComposedMessage) => {
+    if (!client || !canSend) return
     const replyEvent = replyTo?.event
-    setInputValue("")
     setReplyTo(null)
-    stopTyping()
-    requestAnimationFrame(resizeComposer)
     stickToBottomRef.current = true
 
     // The local echo shows up immediately; failures stay in the timeline with a retry action.
-    sendTextMessage(client, roomId, body, replyEvent).catch((error: unknown) => {
+    sendTextMessage(client, roomId, body, { replyTo: replyEvent, mentions, mentionsRoom, ...threadTarget() }).catch((error: unknown) => {
       toast.error(describeMatrixError(error, t("chat.sendFailed")))
     })
   }
 
-  const insertEmoji = (emoji: string) => {
-    const element = composerRef.current
-    const start = element?.selectionStart ?? inputValue.length
-    const end = element?.selectionEnd ?? inputValue.length
-    setInputValue(inputValue.slice(0, start) + emoji + inputValue.slice(end))
-    requestAnimationFrame(() => {
-      element?.focus()
-      element?.setSelectionRange(start + emoji.length, start + emoji.length)
-      resizeComposer()
-    })
-  }
+  const threadTarget = () =>
+    threadId ? { threadRootId: threadId, threadLatestEventId: messages.findLast((message) => message.status === "sent")?.id } : {}
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing) return
-
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault()
-      handleSend()
-    } else if (event.key === "Escape" && replyTo) {
-      setReplyTo(null)
-    } else if (event.key === "ArrowUp" && !inputValue) {
-      // Like Discord: arrow up in an empty composer edits your last message.
-      const lastOwn = messages.findLast(
-        (message) => message.senderId === ownUserId && message.status === "sent" && message.kind === "text",
-      )
-      if (lastOwn) {
-        event.preventDefault()
-        setEditingId(lastOwn.id)
-      }
-    }
+  // Like Discord: arrow up in an empty composer edits your last message.
+  const editLastMessage = () => {
+    const lastOwn = messages.findLast(
+      (message) => message.senderId === ownUserId && message.status === "sent" && message.kind === "text",
+    )
+    if (lastOwn) setEditingId(lastOwn.id)
+    return Boolean(lastOwn)
   }
 
   const uploadFiles = async (files: File[]) => {
@@ -227,26 +202,13 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
     stickToBottomRef.current = true
     try {
       for (const file of files) {
-        await sendAttachment(client, roomId, file, isEncryptedRoom, replyEvent)
+        await sendAttachment(client, roomId, file, isEncryptedRoom, { replyTo: replyEvent, ...threadTarget() })
       }
     } catch (error) {
       toast.error(describeMatrixError(error, t("chat.uploadFailed")))
     } finally {
       setIsUploading(false)
     }
-  }
-
-  const handleFileSelected = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    event.target.value = ""
-    void uploadFiles(files)
-  }
-
-  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(event.clipboardData.files)
-    if (files.length === 0) return
-    event.preventDefault()
-    void uploadFiles(files)
   }
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -278,21 +240,45 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
       onEditStart: setEditingId,
       onEditEnd: handleEditEnd,
       onDelete: setPendingDelete,
+      onReport: setReporting,
+      onOpenThread,
+      onSetPinned: (message, pinned) => {
+        if (!client) return
+        setPinned(client, message.roomId, message.id, pinned).catch((error: unknown) => {
+          toast.error(describeMatrixError(error, t("pins.failed")))
+        })
+      },
     }),
-    [handleEditEnd],
+    [handleEditEnd, client, t, onOpenThread],
   )
 
   const room = client?.getRoom(roomId)
+  const canPin = canPinMessages(room, ownUserId)
   const canDelete = (message: MatrixMessage) =>
     message.status === "sent" &&
     message.kind !== "redacted" &&
     Boolean(room && ownUserId && room.currentState.maySendRedactionForEvent(message.event, ownUserId))
 
+  const renderMessage = (message: MatrixMessage, isContinuation: boolean) => (
+    <MessageItem
+      message={message}
+      isContinuation={isContinuation}
+      isOwn={message.senderId === ownUserId}
+      canDelete={canDelete(message)}
+      isEditing={editingId === message.id}
+      isPinned={pinnedIds.includes(message.id)}
+      canPin={canPin}
+      actions={actions}
+    />
+  )
+
   const composerPlaceholder = !roomInfo?.exists
     ? t("chat.loadingRoom")
     : isEncryptedRoom && !isCryptoReady
       ? t("chat.cryptoUnavailable")
-      : t("chat.messageTo", { room: roomLabel })
+      : threadId
+        ? t("thread.replyPlaceholder")
+        : t("chat.messageTo", { room: roomLabel })
 
   return (
     <div
@@ -317,11 +303,16 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="polite">
         <div className="flex min-h-full flex-col justify-end pb-4">
+          {threadId && (
+            <div className="border-b border-border pb-2">
+              {threadRoot ? renderMessage(threadRoot, false) : <Spinner className="mx-auto my-4 h-5 w-5 text-muted-foreground" />}
+            </div>
+          )}
           {hasMore || isLoading ? (
             <div className="flex justify-center py-4 text-muted-foreground">
               <Spinner className="h-5 w-5" />
             </div>
-          ) : (
+          ) : threadId ? null : (
             <div className={cn("px-4 pb-4", compact ? "pt-4" : "pt-8")}>
               <div
                 className={cn(
@@ -345,7 +336,8 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
           )}
 
           {messages.map((message, index) => {
-            const previous = messages[index - 1]
+            // In a thread the first reply follows the root.
+            const previous = messages[index - 1] ?? threadRoot ?? undefined
             const newDay = !previous || !isSameDay(previous.timestamp, message.timestamp)
             const isContinuation =
               !newDay &&
@@ -356,14 +348,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
             return (
               <div key={message.id}>
                 {newDay && <DateDivider timestamp={message.timestamp} />}
-                <MessageItem
-                  message={message}
-                  isContinuation={isContinuation}
-                  isOwn={message.senderId === ownUserId}
-                  canDelete={canDelete(message)}
-                  isEditing={editingId === message.id}
-                  actions={actions}
-                />
+                {renderMessage(message, isContinuation)}
               </div>
             )
           })}
@@ -372,78 +357,34 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
 
       {/* Message input */}
       <div className={cn("shrink-0", compact ? "px-3" : "px-2 sm:px-4")}>
-        {replyTo && (
-          <div className="flex items-center justify-between gap-2 rounded-t-lg bg-secondary px-4 py-2 text-sm text-muted-foreground">
-            <span className="truncate">
-              <Trans k="chat.replyingTo" values={{ name: <span className="font-semibold text-foreground">{replyTo.senderName}</span> }} />
-            </span>
-            <button
-              onClick={() => setReplyTo(null)}
-              className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
-              aria-label={t("chat.cancelReply")}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-        <div className={cn("flex items-start gap-1 bg-nx-chat-input pr-2 pl-1", replyTo ? "rounded-b-lg" : "rounded-lg")}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex h-11 w-11 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                aria-label={t("chat.attachFile")}
-                disabled={!canSend || isUploading}
-              >
-                {isUploading ? <Spinner className="h-5 w-5" /> : <PlusCircle className="h-6 w-6" />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{isEncryptedRoom ? t("chat.attachFileEncrypted") : t("chat.attachFile")}</TooltipContent>
-          </Tooltip>
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelected} />
-          <textarea
-            ref={composerRef}
-            rows={1}
-            value={inputValue}
-            onChange={(event) => {
-              setInputValue(event.target.value)
-              notifyTyping(event.target.value.length > 0)
-              resizeComposer()
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onBlur={stopTyping}
-            placeholder={composerPlaceholder}
-            aria-label={t("chat.message")}
-            className="max-h-[200px] min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15px] leading-[22px] text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
-            disabled={!canSend}
-          />
-          <div className="flex h-11 shrink-0 items-center gap-1">
-            <EmojiPicker onSelect={insertEmoji}>
-              <button
-                className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                aria-label={t("chat.insertEmoji")}
-                disabled={!canSend}
-              >
-                <Smile className="h-6 w-6" />
-              </button>
-            </EmojiPicker>
-            {inputValue.trim() && (
-              <button
-                onClick={handleSend}
-                disabled={!canSend}
-                className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                aria-label={t("chat.send")}
-              >
-                <SendHorizonal className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-        </div>
+        <MessageComposer
+          ref={composerRef}
+          roomId={roomId}
+          placeholder={composerPlaceholder}
+          disabled={!canSend}
+          replyToName={replyTo?.senderName}
+          onCancelReply={() => setReplyTo(null)}
+          onSend={handleSend}
+          onFiles={(files) => void uploadFiles(files)}
+          isUploading={isUploading}
+          attachLabel={isEncryptedRoom ? t("chat.attachFileEncrypted") : t("chat.attachFile")}
+          onEditLast={editLastMessage}
+          onTyping={notifyTyping}
+          onStopTyping={stopTyping}
+        />
         <div className="flex h-6 items-center px-1 text-xs text-muted-foreground" aria-live="polite">
           <TypingIndicator names={typingNames} />
         </div>
       </div>
+
+      <ReportDialog
+        target={
+          reporting
+            ? { kind: "message", roomId, eventId: reporting.id, senderId: reporting.senderId, senderName: reporting.senderName }
+            : null
+        }
+        onOpenChange={(open) => !open && setReporting(null)}
+      />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>

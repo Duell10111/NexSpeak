@@ -96,3 +96,14 @@ export function parseMatrixLink(href: string): MatrixLink | null {
   if (url.protocol === DEEP_LINK_SCHEME) return parseDeepLink(url)
   return null
 }
+
+/** matrix.to link to a person, as used for mention pills. */
+export function userPermalink(userId: string): string {
+  return `https://matrix.to/#/${encodeURIComponent(userId)}`
+}
+
+/** matrix.to link to a room: its alias if it has one, otherwise the id with a server to join via. */
+export function roomPermalink(roomIdOrAlias: string, viaServer?: string): string {
+  const base = `https://matrix.to/#/${encodeURIComponent(roomIdOrAlias)}`
+  return roomIdOrAlias.startsWith('!') && viaServer ? `${base}?via=${encodeURIComponent(viaServer)}` : base
+}

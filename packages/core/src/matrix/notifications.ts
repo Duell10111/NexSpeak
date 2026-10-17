@@ -33,7 +33,8 @@ export interface MessageNotification {
 const NOTIFYING_TYPES = new Set(['m.room.message', 'm.sticker'])
 
 export function notificationFor(client: MatrixClient, event: MatrixEvent, room: Room): MessageNotification | null {
-  if (event.getSender() === client.getUserId()) return null
+  const sender = event.getSender()
+  if (!sender || sender === client.getUserId() || client.isUserIgnored(sender)) return null
   if (!NOTIFYING_TYPES.has(event.getType())) return null
   // Edits update an existing message; they are not new.
   if (event.isRelation('m.replace') || event.isRedacted()) return null

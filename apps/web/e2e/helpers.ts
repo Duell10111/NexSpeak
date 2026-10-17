@@ -223,3 +223,8 @@ export async function createLoginToken(user: TestUser): Promise<string> {
   if (!response.ok || !json.login_token) throw new Error(`get_token failed: ${JSON.stringify(json)}`)
   return json.login_token
 }
+
+/** Raw client-server API call as `user`, for checks the UI doesn't expose. */
+export function matrixApi<T>(user: TestUser, method: string, path: string, body?: unknown): Promise<T> {
+  return api<T>(user.accessToken, method, path, body)
+}

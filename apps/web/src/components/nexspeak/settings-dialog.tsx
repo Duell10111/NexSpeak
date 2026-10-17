@@ -16,12 +16,15 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
-import { Headphones, Languages, LogOut, Mic } from "lucide-react"
+import { ExternalLink, Headphones, Languages, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
 import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
+import { ProfilePanel } from "@/components/nexspeak/profile-panel"
+import { AboutPanel } from "@/components/nexspeak/about-panel"
+import { IgnoredUsersList } from "@/components/nexspeak/ignored-users"
 import { useTranslation } from "@/hooks/useTranslation"
 import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
 import {
@@ -31,9 +34,13 @@ import {
   subscribeAudioSettings,
 } from "@/lib/audio-settings"
 
+export type SettingsTab = "profile" | "audio" | "notifications" | "security" | "account" | "about"
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The tab shown when the dialog opens. */
+  initialTab?: SettingsTab
 }
 
 // Radix Select doesn't allow an empty string as item value.
@@ -159,7 +166,7 @@ function playTestTone(volume: number, outputDeviceId: string) {
   oscillator.onended = () => void audioContext.close()
 }
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: SettingsDialogProps) {
   const { t, locale, setLocale } = useTranslation()
   const { session, logout } = useMatrix()
   const { status: securityStatus } = useSecurity()
@@ -179,19 +186,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-lg">
+      <DialogContent className="max-h-[90dvh] w-full max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("settings.title")}</DialogTitle>
           <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="audio" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+        {/* Remounted per opening, so it starts at the requested tab. */}
+        <Tabs key={String(open)} defaultValue={initialTab} className="w-full">
+          <TabsList className="grid h-auto w-full grid-cols-3">
+            <TabsTrigger value="profile">{t("settings.profile")}</TabsTrigger>
             <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>
             <TabsTrigger value="notifications">{t("settings.notifications")}</TabsTrigger>
             <TabsTrigger value="security">{t("settings.security")}</TabsTrigger>
             <TabsTrigger value="account">{t("settings.account")}</TabsTrigger>
+            <TabsTrigger value="about">{t("settings.about")}</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="profile">
+            <ProfilePanel />
+          </TabsContent>
+
+          <TabsContent value="about">
+            <AboutPanel />
+          </TabsContent>
 
           <TabsContent value="notifications">
             <NotificationSettingsPanel />
@@ -319,6 +337,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <p className="pt-2 text-muted-foreground">{t("settings.device")}</p>
               <p className="break-all font-mono text-xs text-foreground">{session?.deviceId}</p>
             </div>
+            {session?.oidc?.accountManagementUrl?.startsWith("https://") && (
+              <Button asChild variant="outline" className="w-full">
+                <a href={session.oidc.accountManagementUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {t("settings.manageAccount")}
+                </a>
+              </Button>
+            )}
+            <IgnoredUsersList />
             <Button variant="destructive" className="w-full" onClick={() => void handleLogout()} disabled={isLoggingOut}>
               {isLoggingOut ? <Spinner className="mr-2 h-4 w-4" /> : <LogOut className="mr-2 h-4 w-4" />}
               {t("account.logout")}

@@ -5,13 +5,14 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "check-node": "node scripts/check-node.mjs",
-    "predev": "npm run -s check-node && node scripts/copy-livekit-worker.mjs",
+    "predev": "npm run -s check-node && node scripts/copy-livekit-worker.mjs && node scripts/third-party-licenses.mjs",
     "dev": "next dev",
-    "prebuild": "npm run -s check-node && node scripts/copy-livekit-worker.mjs",
+    "prebuild": "npm run -s check-node && node scripts/copy-livekit-worker.mjs && node scripts/third-party-licenses.mjs",
     "build": "next build",
     "prestart": "npm run -s check-node",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
+    "licenses:check": "node scripts/third-party-licenses.mjs --check",
     "test:e2e": "playwright test",
     "test:e2e:docker": "E2E_BROWSER_WS=ws://localhost:3030/ playwright test"
   },

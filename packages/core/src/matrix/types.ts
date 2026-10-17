@@ -3,8 +3,9 @@
  * Plain view models derived from matrix-js-sdk objects. Never mutate SDK state in here.
  */
 
-import { EventStatus, NotificationCountType, type MatrixEvent, type Room } from 'matrix-js-sdk'
+import { EventStatus, NotificationCountType, THREAD_RELATION_TYPE, type MatrixEvent, type Room } from 'matrix-js-sdk'
 import { isEncryptedFile, type EncryptedFile } from './attachments'
+import { parseFormattedBody, type FormattedNode } from './formatted-body'
 import { t } from '@nexspeak/i18n'
 
 export interface MatrixRoom {
@@ -51,6 +52,16 @@ export interface MessageReply {
   body: string
 }
 
+export interface ThreadSummary {
+  /** Replies, not counting the root. */
+  count: number
+  latestSenderName: string
+  latestBody: string
+  latestTimestamp: number
+  /** We wrote in it (Discord highlights threads you follow). */
+  participated: boolean
+}
+
 export interface MatrixMessage {
   id: string
   roomId: string
@@ -59,6 +70,8 @@ export interface MatrixMessage {
   senderAvatarMxc?: string
   kind: MessageKind
   body: string
+  /** Sanitized `formatted_body` of text messages (Markdown, mentions), when there is one. */
+  formatted?: FormattedNode[]
   timestamp: number
   edited: boolean
   status: MessageStatus
@@ -73,6 +86,8 @@ export interface MatrixMessage {
   }
   reactions: MessageReaction[]
   replyTo?: MessageReply
+  /** Set on thread roots that have replies. */
+  thread?: ThreadSummary
   /** The underlying event, needed to retry or cancel failed local echoes. */
   event: MatrixEvent
 }
@@ -173,6 +188,39 @@ export function summarizeEvent(event: MatrixEvent): string {
   }
 }
 
+const HTML_FORMAT = 'org.matrix.custom.html'
+// Timelines are re-derived often; parse each formatted body once.
+const formattedCache = new WeakMap<MatrixEvent, { html: string; nodes: FormattedNode[] }>()
+
+function formattedNodes(event: MatrixEvent, content: Record<string, unknown>): FormattedNode[] | undefined {
+  if (content.format !== HTML_FORMAT || typeof content.formatted_body !== 'string') return undefined
+  const html = content.formatted_body
+  const cached = formattedCache.get(event)
+  if (cached?.html === html) return cached.nodes
+  const nodes = parseFormattedBody(html)
+  formattedCache.set(event, { html, nodes })
+  return nodes
+}
+
+export function threadSummary(event: MatrixEvent): ThreadSummary | undefined {
+  if (!event.isThreadRoot) return undefined
+  const thread = event.getThread()
+  if (!thread || thread.length === 0) return undefined
+  const latest = thread.replyToEvent
+  return {
+    count: thread.length,
+    latestSenderName: latest ? latest.sender?.name || latest.getSender() || '' : '',
+    latestBody: latest ? summarizeEvent(latest) : '',
+    latestTimestamp: latest?.getTs() ?? event.getTs(),
+    participated: thread.hasCurrentUserParticipated,
+  }
+}
+
+/** Replies in a thread live in the thread's own timeline, not in the channel. */
+export function isThreadReply(event: MatrixEvent): boolean {
+  return Boolean(event.threadRootId) && !event.isThreadRoot
+}
+
 function collectReactions(room: Room, eventId: string, ownUserId: string | null): MessageReaction[] {
   const annotations = room.relations
     .getChildEventsForEvent(eventId, 'm.annotation', 'm.reaction')
@@ -216,7 +264,9 @@ export function eventToMatrixMessage(
 
   const senderId = event.getSender() || ''
   const eventId = event.getId()
-  const replyEventId = event.replyEventId
+  // In threads, "is_falling_back" replies only exist for clients without thread support.
+  const relation = event.getWireContent()['m.relates_to'] as { is_falling_back?: unknown } | undefined
+  const replyEventId = event.isRelation(THREAD_RELATION_TYPE.name) && relation?.is_falling_back === true ? undefined : event.replyEventId
   const repliedEvent = replyEventId ? context.room?.findEventById(replyEventId) : undefined
 
   const base = {
@@ -236,6 +286,7 @@ export function eventToMatrixMessage(
           body: repliedEvent ? summarizeEvent(repliedEvent) : t('message.replyNotLoaded'),
         }
       : undefined,
+    thread: threadSummary(event),
     event,
   }
 
@@ -257,11 +308,11 @@ export function eventToMatrixMessage(
 
   switch (content.msgtype) {
     case 'm.text':
-      return { ...base, kind: 'text', body }
+      return { ...base, kind: 'text', body, formatted: formattedNodes(event, content) }
     case 'm.notice':
-      return { ...base, kind: 'notice', body }
+      return { ...base, kind: 'notice', body, formatted: formattedNodes(event, content) }
     case 'm.emote':
-      return { ...base, kind: 'emote', body }
+      return { ...base, kind: 'emote', body, formatted: formattedNodes(event, content) }
     case 'm.image':
     case 'm.video':
     case 'm.audio':

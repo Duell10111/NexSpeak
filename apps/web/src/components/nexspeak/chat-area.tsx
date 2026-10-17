@@ -3,7 +3,8 @@
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
-import { AtSign, Hash, Lock, Menu, Users, Volume2 } from "lucide-react"
+import { useState } from "react"
+import { AtSign, Hash, Lock, Menu, MessagesSquare, Users, Volume2 } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomInfo } from "@/hooks/useRoomInfo"
@@ -11,6 +12,17 @@ import { useTranslation } from "@/hooks/useTranslation"
 import { CallArea } from "@/components/nexspeak/call-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { RoomChat } from "@/components/nexspeak/room-chat"
+import { PinnedMessagesButton } from "@/components/nexspeak/pinned-messages"
+import { ThreadPanel, type ThreadPanelView } from "@/components/nexspeak/thread-panel"
+import { NotificationModeIcon, NotificationModeDropdownItems } from "@/components/nexspeak/notification-mode-menu"
+import { useNotificationMode } from "@/hooks/useNotificationMode"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface ChatAreaProps {
   activeChannelId: string
@@ -54,12 +66,43 @@ export function HeaderButton({
   )
 }
 
+function NotificationModeButton({ roomId }: { roomId: string }) {
+  const { t } = useTranslation()
+  const { client } = useMatrixClient()
+  const mode = useNotificationMode(client, [roomId])
+
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex h-6 w-6 items-center justify-center text-muted-foreground transition-colors hover:text-foreground data-[state=open]:text-foreground"
+              aria-label={t("notify.title")}
+            >
+              <NotificationModeIcon mode={mode} className="h-5 w-5" />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{t("notify.title")}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel>{t("notify.title")}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <NotificationModeDropdownItems roomIds={[roomId]} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpenNavigation }: ChatAreaProps) {
   const { t } = useTranslation()
   const { isInCallInActiveChannel, joinCall, joiningRoomId } = useCallContext()
   const { client } = useMatrixClient()
   const roomInfo = useRoomInfo(client, activeChannelId)
   const roomName = roomInfo?.name || ""
+  // ChatArea is keyed by channel, so this resets when switching channels.
+  const [threadView, setThreadView] = useState<ThreadPanelView | null>(null)
 
   if (!activeChannelId) {
     return (
@@ -116,6 +159,17 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
         <div className="flex shrink-0 items-center gap-4">
           {roomInfo?.exists && (
             <HeaderButton
+              label={t("thread.list")}
+              active={threadView !== null}
+              onClick={() => setThreadView(threadView ? null : { kind: "list" })}
+            >
+              <MessagesSquare className="h-6 w-6" />
+            </HeaderButton>
+          )}
+          {roomInfo?.exists && <PinnedMessagesButton roomId={activeChannelId} />}
+          {roomInfo?.exists && <NotificationModeButton roomId={activeChannelId} />}
+          {roomInfo?.exists && (
+            <HeaderButton
               label={roomInfo.isDirect ? t("call.startCall") : t("call.joinVoice")}
               onClick={() => void joinCall(activeChannelId)}
               disabled={Boolean(joiningRoomId)}
@@ -129,9 +183,24 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <RoomChat key={activeChannelId} roomId={activeChannelId} />
-        {showMembers && <MemberList activeRoomId={activeChannelId} className="hidden lg:flex" />}
+      <div className="relative flex min-h-0 flex-1">
+        <RoomChat
+          key={activeChannelId}
+          roomId={activeChannelId}
+          onOpenThread={(rootId) => setThreadView({ kind: "thread", rootId })}
+        />
+        {threadView ? (
+          // Side by side on wide screens, on top of the chat on narrow ones.
+          <ThreadPanel
+            roomId={activeChannelId}
+            view={threadView}
+            onViewChange={setThreadView}
+            onClose={() => setThreadView(null)}
+            className="absolute inset-0 z-20 lg:static lg:w-[420px] lg:shrink-0"
+          />
+        ) : (
+          showMembers && <MemberList activeRoomId={activeChannelId} className="hidden lg:flex" />
+        )}
       </div>
     </div>
   )

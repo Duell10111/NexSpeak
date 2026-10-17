@@ -99,11 +99,13 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ### Open source list and credits
 
-- A build script (e.g. `generate-license-file`) generates `THIRD_PARTY_NOTICES.md` and a JSON file.
-- The app shows the JSON under *Settings → About*.
-- A CI check fails when a dependency with an incompatible license is added.
+- Done (2026-10-17): `apps/web/scripts/third-party-licenses.mjs` (no dependency) collects the
+  production dependencies of web and desktop into `public/third-party-licenses.json` at build time;
+  *Settings → About* shows it. `--check` (CI step "License check") fails on unknown or incompatible
+  licenses. Open: a `THIRD_PARTY_NOTICES.md` for the repository.
 - List bundled emoji data and icons (lucide: ISC) separately.
-- **About dialog:** version, git commit, links (source, issues, privacy), licenses, contributors.
+- **About dialog:** version, git commit, links (source, issues, privacy), licenses, contributors. Done
+  except privacy (depends on the hosting instance) and contributors.
 
 ### Legal and repository documents
 
@@ -116,16 +118,17 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 ### Milestone "Beta 0.1 – Web" (must have)
 
 - [x] SSO login (m.login.sso; also works with MAS via its compatibility layer)
-- [ ] Native OIDC login (next-gen auth/MAS) and registration
-- [ ] Send Markdown; render `formatted_body` safely (sanitized)
-- [ ] Mentions with autocompletion (@person, #channel)
+- [x] Native OIDC login (next-gen auth/MAS) and registration – web; the desktop app keeps the SSO
+      compatibility flow until it can receive the redirect (loopback or custom scheme)
+- [x] Send Markdown; render `formatted_body` safely (sanitized)
+- [x] Mentions with autocompletion (@person, #channel)
 - [x] Notifications following the push rules, settings for showing them and their content
-- [ ] Notification settings per server/channel in the UI (push rules: all / mentions / mute)
-- [ ] Profile editing (display name, avatar), set presence
-- [ ] Show and reply to threads
-- [ ] Pinned messages (`m.room.pinned_events`)
-- [ ] Ignore users, report content
-- [ ] About dialog with licenses and source link; feedback via GitHub issues, no tracking
+- [x] Notification settings per server/channel in the UI (push rules: all / mentions / mute)
+- [x] Profile editing (display name, avatar), set presence
+- [x] Show and reply to threads
+- [x] Pinned messages (`m.room.pinned_events`)
+- [x] Ignore users, report content
+- [x] About dialog with licenses and source link; feedback via GitHub issues, no tracking
 
 ### Milestone "Beta 0.2 – Desktop"
 

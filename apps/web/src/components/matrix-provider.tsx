@@ -23,8 +23,10 @@ import {
   loadSession,
   saveSession,
   subscribeSession,
+  updateSessionTokens,
   type MatrixSession,
 } from '@nexspeak/core/matrix/storage'
+import { completeOidcLogin, createTokenRefresher, revokeOidcTokens } from '@nexspeak/core/matrix/oidc'
 import {
   createMatrixClient,
   createUnauthenticatedMatrixClient,
@@ -33,6 +35,7 @@ import {
   startMatrixClient,
 } from '@nexspeak/core/matrix/client'
 import { describeLoginError, resolveHomeserverUrl, serverNameFromUserId } from '@nexspeak/core/matrix/errors'
+import { clearStoredPresence } from '@nexspeak/core/matrix/profile'
 import { t } from '@nexspeak/i18n'
 import { desktopBridge } from '@/lib/desktop'
 
@@ -48,6 +51,8 @@ interface MatrixContextType {
   loginError: string | null
   login: (homeserver: string, username: string, password: string) => Promise<void>
   loginWithToken: (homeserverUrl: string, token: string) => Promise<void>
+  /** Back from the OIDC issuer: exchange the code and store the session. */
+  loginWithOidc: (code: string, state: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -66,11 +71,23 @@ async function teardownClient(client: MatrixClient | null): Promise<void> {
 
 export function MatrixAuthProvider({ children }: { children: ReactNode }) {
   const session = useSyncExternalStore(subscribeSession, loadSession, () => undefined)
-  const sessionKey = session ? `${session.userId}|${session.accessToken}` : ''
+  // User and device identify a session; refreshed OIDC tokens don't replace the client.
+  const sessionKey = session ? `${session.userId}|${session.deviceId}` : ''
 
   // The client is derived from the session; createMatrixClient is idempotent per session.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const client = useMemo(() => (session ? createMatrixClient(session) : null), [sessionKey])
+  const client = useMemo(
+    () => {
+      if (!session) return null
+      const { oidc } = session
+      return createMatrixClient({
+        ...session,
+        refreshToken: oidc?.refreshToken,
+        tokenRefreshFunction: oidc ? createTokenRefresher(oidc, session.deviceId, updateSessionTokens) : undefined,
+      })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionKey],
+  )
 
   const [cryptoState, setCryptoState] = useState<{ client: MatrixClient | null; ready: boolean }>({
     client: null,
@@ -175,6 +192,25 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
     [runLogin],
   )
 
+  const loginWithOidc = useCallback(async (code: string, state: string) => {
+    setIsLoggingIn(true)
+    setLoginError(null)
+    try {
+      const { homeserverUrl, userId, deviceId, accessToken, oidc } = await completeOidcLogin(
+        code,
+        state,
+        window.location.origin,
+      )
+      await teardownClient(getMatrixClient())
+      saveSession({ homeserverUrl, userId, accessToken, deviceId, oidc })
+    } catch (error) {
+      setLoginError(describeLoginError(error))
+      throw error
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }, [])
+
   /** The return from an SSO login: the homeserver handed us a short-lived login token. */
   const loginWithToken = useCallback(
     (homeserverUrl: string, token: string) =>
@@ -184,15 +220,22 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const current = getMatrixClient()
+    const oidc = loadSession()?.oidc
     if (current) {
       try {
-        await current.logout(true)
+        if (oidc) {
+          // OIDC sessions end at the issuer; revoking the tokens also removes the device.
+          await revokeOidcTokens(oidc, current.getAccessToken() ?? '', current.getRefreshToken() ?? oidc.refreshToken)
+        } else {
+          await current.logout(true)
+        }
       } catch (error) {
         // Continue with local cleanup even if the server request fails.
         console.warn('Error logging out from homeserver:', error)
       }
     }
     await teardownClient(current)
+    clearStoredPresence()
     clearSession()
   }, [])
 
@@ -206,6 +249,7 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
     loginError,
     login,
     loginWithToken,
+    loginWithOidc,
     logout,
   }
 

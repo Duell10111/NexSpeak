@@ -6,8 +6,9 @@
 
 'use client'
 
-import { createClient, PendingEventOrdering } from 'matrix-js-sdk'
+import { createClient, PendingEventOrdering, type TokenRefreshFunction } from 'matrix-js-sdk'
 import { secretStorageCallbacks } from './secret-storage'
+import { applyStoredPresence } from './profile'
 import type { MatrixClient } from 'matrix-js-sdk'
 
 export interface MatrixClientConfig {
@@ -15,6 +16,9 @@ export interface MatrixClientConfig {
   userId: string
   accessToken: string
   deviceId: string
+  /** OIDC sessions: the SDK refreshes expired access tokens with these. */
+  refreshToken?: string
+  tokenRefreshFunction?: TokenRefreshFunction
 }
 
 let matrixClientInstance: MatrixClient | null = null
@@ -34,13 +38,11 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
     throw new Error('Matrix client can only be created in browser context')
   }
 
-  // Reuse the instance only if it belongs to the same session; otherwise a stale client
-  // from a previous login would keep running with the old token.
+  // Reuse the instance only if it belongs to the same session (user and device; refreshed OIDC
+  // tokens don't make a new session). Otherwise a stale client from a previous login would keep
+  // running with the old token.
   if (matrixClientInstance) {
-    if (
-      matrixClientInstance.getUserId() === config.userId &&
-      matrixClientInstance.getAccessToken() === config.accessToken
-    ) {
+    if (matrixClientInstance.getUserId() === config.userId && matrixClientInstance.getDeviceId() === config.deviceId) {
       return matrixClientInstance
     }
     disposeMatrixClient()
@@ -51,6 +53,8 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
     userId: config.userId,
     accessToken: config.accessToken,
     deviceId: config.deviceId,
+    refreshToken: config.refreshToken,
+    tokenRefreshFunction: config.tokenRefreshFunction,
     timelineSupport: true,
     cryptoCallbacks: secretStorageCallbacks,
   })
@@ -104,7 +108,11 @@ export function startMatrixClient(client: MatrixClient): Promise<boolean> {
       lazyLoadMembers: true,
       // Keep local echoes in a separate list so failed sends can be retried or discarded.
       pendingEventOrdering: PendingEventOrdering.Detached,
+      // Thread replies go into their thread's timeline instead of the channel.
+      threadSupport: true,
     })
+    // Servers with presence disabled reject this; it's not worth failing the start for.
+    applyStoredPresence(client).catch((error: unknown) => console.info('Could not restore presence:', error))
     return isCryptoReady
   })()
 

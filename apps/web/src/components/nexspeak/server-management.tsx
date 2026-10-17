@@ -3,7 +3,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import {
+  Bell,
   ChevronDown,
+  Flag,
   FolderPlus,
   LogOut,
   MoveDown,
@@ -19,6 +21,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -32,6 +37,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
+import { ReportDialog } from "@/components/nexspeak/report-dialog"
+import {
+  NotificationModeContextItems,
+  NotificationModeDropdownItems,
+} from "@/components/nexspeak/notification-mode-menu"
 import {
   ChannelSettingsDialog,
   ConfirmDialog,
@@ -65,6 +75,8 @@ export interface ManagedSection {
 
 interface ServerManagementValue {
   serverId: string
+  /** All channels of the server that we joined (for server-wide settings). */
+  channelIds: string[]
   canManage: boolean
   canEdit: (roomId: string) => boolean
   canInviteTo: (roomId: string) => boolean
@@ -155,6 +167,7 @@ export function ServerManagementProvider({
 
   const value: ServerManagementValue = {
     serverId,
+    channelIds: sections.flatMap((section) => section.rooms.map((room) => room.id)),
     canManage,
     canEdit: (roomId) => Boolean(client && canEditRoom(client, roomId)),
     canInviteTo: (roomId) => Boolean(client?.getRoom(roomId)?.canInvite(ownId)),
@@ -308,6 +321,15 @@ export function ServerHeaderMenu({ title }: { title: string }) {
             <Settings className="h-4 w-4" />
             {t("manage.serverSettings")}
           </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Bell className="h-4 w-4" />
+              {t("notify.serverTitle")}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <NotificationModeDropdownItems roomIds={management.channelIds} />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           {canManage && (
             <>
               <DropdownMenuItem onSelect={() => management.createChannel()}>
@@ -371,7 +393,10 @@ export function ServerHeaderMenu({ title }: { title: string }) {
   )
 }
 
-/** Right-click menu of a channel (long press on touch screens). */
+/**
+ * Right-click menu of a channel or DM (long press on touch screens): notifications and reporting
+ * for everyone, managing for those who may.
+ */
 export function ChannelContextMenu({
   room,
   sections,
@@ -383,69 +408,85 @@ export function ChannelContextMenu({
 }) {
   const { t } = useTranslation()
   const management = useServerManagement()
-  if (!management) return <>{children}</>
-  const canEdit = management.canEdit(room.id)
-  const canInvite = management.canInviteTo(room.id)
-  const { canManage } = management
-  if (!canEdit && !canInvite && !canManage) return <>{children}</>
+  const [reporting, setReporting] = useState(false)
+  const canEdit = Boolean(management?.canEdit(room.id))
+  const canInvite = Boolean(management?.canInviteTo(room.id))
+  const canManage = Boolean(management?.canManage)
   const currentSection = sections.find((section) => section.rooms.some((entry) => entry.id === room.id))
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div>{children}</div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
-        {canEdit && (
-          <ContextMenuItem onSelect={() => management.editRoom(room.id)}>
-            <Pencil className="h-4 w-4" />
-            {t("manage.editChannel")}
-          </ContextMenuItem>
-        )}
-        {canInvite && (
-          <ContextMenuItem onSelect={() => management.addMembers(room.id)}>
-            <UserPlus className="h-4 w-4" />
-            {t("manage.addMembers")}
-          </ContextMenuItem>
-        )}
-        {canManage && (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuItem onSelect={() => management.moveChannelBy(room.id, -1)}>
-              <MoveUp className="h-4 w-4" />
-              {t("manage.moveUp")}
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div>{children}</div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-56">
+          {management && canEdit && (
+            <ContextMenuItem onSelect={() => management.editRoom(room.id)}>
+              <Pencil className="h-4 w-4" />
+              {t("manage.editChannel")}
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => management.moveChannelBy(room.id, 1)}>
-              <MoveDown className="h-4 w-4" />
-              {t("manage.moveDown")}
+          )}
+          {management && canInvite && (
+            <ContextMenuItem onSelect={() => management.addMembers(room.id)}>
+              <UserPlus className="h-4 w-4" />
+              {t("manage.addMembers")}
             </ContextMenuItem>
-            {sections.length > 1 && (
-              <ContextMenuSub>
-                <ContextMenuSubTrigger>{t("manage.moveTo")}</ContextMenuSubTrigger>
-                <ContextMenuSubContent className="w-48">
-                  {sections
-                    .filter((section) => section.id !== currentSection?.id)
-                    .map((section) => (
-                      <ContextMenuItem key={section.id} onSelect={() => management.moveChannel(room.id, section.id, null)}>
-                        {section.isCategory ? section.name : t("manage.noCategory")}
-                      </ContextMenuItem>
-                    ))}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
-            )}
-          </>
-        )}
-        {canManage && canEdit && (
-          <>
-            <ContextMenuSeparator />
+          )}
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Bell className="h-4 w-4" />
+              {t("notify.title")}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-52">
+              <NotificationModeContextItems roomIds={[room.id]} />
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          {management && canManage && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => management.moveChannelBy(room.id, -1)}>
+                <MoveUp className="h-4 w-4" />
+                {t("manage.moveUp")}
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => management.moveChannelBy(room.id, 1)}>
+                <MoveDown className="h-4 w-4" />
+                {t("manage.moveDown")}
+              </ContextMenuItem>
+              {sections.length > 1 && (
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>{t("manage.moveTo")}</ContextMenuSubTrigger>
+                  <ContextMenuSubContent className="w-48">
+                    {sections
+                      .filter((section) => section.id !== currentSection?.id)
+                      .map((section) => (
+                        <ContextMenuItem key={section.id} onSelect={() => management.moveChannel(room.id, section.id, null)}>
+                          {section.isCategory ? section.name : t("manage.noCategory")}
+                        </ContextMenuItem>
+                      ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              )}
+            </>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={() => setReporting(true)}>
+            <Flag className="h-4 w-4" />
+            {t("report.room")}
+          </ContextMenuItem>
+          {management && canManage && canEdit && (
             <ContextMenuItem variant="destructive" onSelect={() => management.deleteRoom(room.id)}>
               <Trash2 className="h-4 w-4" />
               {t("manage.deleteChannel")}
             </ContextMenuItem>
-          </>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
+      <ReportDialog
+        target={reporting ? { kind: "room", roomId: room.id, roomName: room.name } : null}
+        onOpenChange={setReporting}
+      />
+    </>
   )
 }
 

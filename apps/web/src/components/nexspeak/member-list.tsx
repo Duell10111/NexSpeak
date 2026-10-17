@@ -14,7 +14,12 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useTranslation } from "@/hooks/useTranslation"
-import { MessageCircle, Volume2 } from "lucide-react"
+import { EyeOff, MessageCircle, Volume2 } from "lucide-react"
+import { toast } from "sonner"
+import { ConfirmDialog } from "@/components/nexspeak/server-dialogs"
+import { useIsIgnored } from "@/hooks/useIgnoredUsers"
+import { describeMatrixError } from "@nexspeak/core/matrix/errors"
+import { setIgnored } from "@nexspeak/core/matrix/safety"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
@@ -122,6 +127,47 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
   return state && state.roomId === roomId ? state.members : []
 }
 
+/** Ignore (after confirming) or stop ignoring someone; shared by profile popouts. */
+export function IgnoreButton({ userId, name, onDone }: { userId: string; name: string; onDone?: () => void }) {
+  const { t } = useTranslation()
+  const { client } = useMatrixClient()
+  const [confirming, setConfirming] = useState(false)
+  const ignored = useIsIgnored(client, userId)
+
+  const apply = (ignore: boolean) => {
+    setConfirming(false)
+    if (!client) return
+    setIgnored(client, userId, ignore)
+      .then(() => {
+        toast.success(t(ignore ? "ignore.ignored" : "ignore.unignored", { name }))
+        onDone?.()
+      })
+      .catch((error: unknown) => toast.error(describeMatrixError(error, t("ignore.failed"))))
+  }
+
+  return (
+    <>
+      <Button
+        className="w-full"
+        size="sm"
+        variant="outline"
+        onClick={() => (ignored ? apply(false) : setConfirming(true))}
+      >
+        <EyeOff className="mr-2 h-4 w-4" />
+        {ignored ? t("ignore.unignore") : t("ignore.ignore")}
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t("ignore.confirmTitle", { name })}
+        description={t("ignore.confirmDescription")}
+        confirmLabel={t("ignore.ignore")}
+        onConfirm={() => apply(true)}
+      />
+    </>
+  )
+}
+
 /** Discord's profile popout: who it is and a way to message them directly. */
 function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: boolean; onDone: () => void }) {
   const { t } = useTranslation()
@@ -147,10 +193,13 @@ function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: b
         </div>
       </div>
       {!isSelf && (
-        <Button className="w-full" size="sm" onClick={() => void message()} disabled={isOpening}>
-          {isOpening ? <Spinner className="mr-2 h-4 w-4" /> : <MessageCircle className="mr-2 h-4 w-4" />}
-          {t("dm.sendMessage")}
-        </Button>
+        <div className="space-y-2">
+          <Button className="w-full" size="sm" onClick={() => void message()} disabled={isOpening}>
+            {isOpening ? <Spinner className="mr-2 h-4 w-4" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+            {t("dm.sendMessage")}
+          </Button>
+          <IgnoreButton userId={member.userId} name={member.name} onDone={onDone} />
+        </div>
       )}
     </div>
   )

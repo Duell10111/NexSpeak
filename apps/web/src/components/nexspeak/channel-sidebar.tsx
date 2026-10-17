@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { UserEvent, type MatrixClient } from "matrix-js-sdk"
+import { useState } from "react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -15,6 +14,7 @@ import {
   Mic,
   MicOff,
   MonitorUp,
+  Pencil,
   PhoneOff,
   Plus,
   Search,
@@ -26,12 +26,15 @@ import {
 } from "lucide-react"
 import { useCallContext, type RoomCallInfo } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
+import { useOwnPresence, useOwnProfile } from "@/hooks/useOwnProfile"
 import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { joinSpaceChannels, rememberDirectRoom } from "@nexspeak/core/matrix/direct"
 import type { MatrixRoom } from "@nexspeak/core/matrix/types"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
-import { SettingsDialog } from "@/components/nexspeak/settings-dialog"
+import { SettingsDialog, type SettingsTab } from "@/components/nexspeak/settings-dialog"
+import { PRESENCE_DOT, PRESENCE_LABEL, PresencePicker } from "@/components/nexspeak/profile-panel"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
 import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
 import {
@@ -70,36 +73,6 @@ interface VoiceMember {
   isSpeaking: boolean
   isMicMuted: boolean
   isScreensharing: boolean
-}
-
-function useOwnProfile(client: MatrixClient | null) {
-  const [profile, setProfile] = useState<{ userId: string; name: string; avatarMxc?: string } | null>(null)
-
-  useEffect(() => {
-    const userId = client?.getUserId()
-    if (!client || !userId) return
-
-    const refresh = () => {
-      const user = client.getUser(userId)
-      setProfile({ userId, name: user?.displayName || userId, avatarMxc: user?.avatarUrl || undefined })
-    }
-
-    queueMicrotask(refresh)
-    // The own user object is often only populated after the first sync; fetch it explicitly.
-    client
-      .getProfileInfo(userId)
-      .then((info) => setProfile({ userId, name: info.displayname || userId, avatarMxc: info.avatar_url || undefined }))
-      .catch(() => {})
-
-    client.on(UserEvent.DisplayName, refresh)
-    client.on(UserEvent.AvatarUrl, refresh)
-    return () => {
-      client.removeListener(UserEvent.DisplayName, refresh)
-      client.removeListener(UserEvent.AvatarUrl, refresh)
-    }
-  }, [client])
-
-  return profile
 }
 
 /** Who to list under a room: live state for our own call, MatrixRTC memberships otherwise. */
@@ -631,7 +604,13 @@ function ChannelList({
                     onSelect={() => onChannelSelect(room.id)}
                   />
                 )
-                if (isDirectMessages || !management) return <div key={room.id}>{item}</div>
+                if (isDirectMessages || !management) {
+                  return (
+                    <ChannelContextMenu key={room.id} room={room} sections={[]}>
+                      {item}
+                    </ChannelContextMenu>
+                  )
+                }
                 return (
                   <div
                     key={room.id}
@@ -685,11 +664,19 @@ export function ChannelSidebar({
 }: ChannelSidebarProps) {
   const { t } = useTranslation()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("audio")
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const ownPresence = useOwnPresence()
   const [newDmOpen, setNewDmOpen] = useState(false)
   const { client } = useMatrixClient()
   const profile = useOwnProfile(client)
   const openDirectMessage = useOpenDirectMessage()
   const { isMicMuted, isDeafened, toggleMicrophone, toggleDeafen } = useCallContext()
+
+  const openSettings = (tab: SettingsTab) => {
+    setSettingsTab(tab)
+    setSettingsOpen(true)
+  }
 
   const isEmpty = sections.every((section) => section.rooms.length === 0 && !section.isCategory) && invites.length === 0
 
@@ -755,19 +742,45 @@ export function ChannelSidebar({
 
         {/* User panel */}
         <div className="flex h-[52px] items-center gap-1 px-2">
-          <div className="group flex min-w-0 flex-1 items-center gap-2 rounded py-1 pr-1 pl-0.5">
-            <div className="relative shrink-0">
-              <MatrixAvatar mxcUrl={profile?.avatarMxc} name={profile?.name || "?"} size={32} />
-              <span className="absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-nx-panel bg-nx-online" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm leading-tight font-semibold text-foreground">{profile?.name || "…"}</p>
-              <p className="truncate text-xs leading-tight text-muted-foreground">
-                <span className="group-hover:hidden">{t("presence.online")}</span>
-                <span className="hidden group-hover:inline">{profile?.userId}</span>
-              </p>
-            </div>
-          </div>
+          <Popover open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="group flex min-w-0 flex-1 items-center gap-2 rounded py-1 pr-1 pl-0.5 text-left hover:bg-nx-hover"
+                aria-label={t("profile.menu")}
+              >
+                <div className="relative shrink-0">
+                  <MatrixAvatar mxcUrl={profile?.avatarMxc} name={profile?.name || "?"} size={32} />
+                  <span
+                    className={cn(
+                      "absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-nx-panel",
+                      PRESENCE_DOT[ownPresence],
+                    )}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm leading-tight font-semibold text-foreground">{profile?.name || "…"}</p>
+                  <p className="truncate text-xs leading-tight text-muted-foreground">
+                    <span className="group-hover:hidden">{t(PRESENCE_LABEL[ownPresence])}</span>
+                    <span className="hidden group-hover:inline">{profile?.userId}</span>
+                  </p>
+                </div>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-64 p-1.5">
+              <PresencePicker onPicked={() => setProfileMenuOpen(false)} />
+              <div className="my-1 h-px bg-border" />
+              <button
+                onClick={() => {
+                  setProfileMenuOpen(false)
+                  openSettings("profile")
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
+              >
+                <Pencil className="h-4 w-4 text-muted-foreground" />
+                {t("profile.edit")}
+              </button>
+            </PopoverContent>
+          </Popover>
           <PanelButton
             label={isMicMuted ? t("call.unmuteMic") : t("call.muteMic")}
             danger={isMicMuted}
@@ -778,13 +791,13 @@ export function ChannelSidebar({
           <PanelButton label={isDeafened ? t("call.undeafen") : t("call.deafen")} danger={isDeafened} onClick={toggleDeafen}>
             {isDeafened ? <HeadphoneOff className="h-5 w-5" /> : <Headphones className="h-5 w-5" />}
           </PanelButton>
-          <PanelButton label={t("settings.title")} onClick={() => setSettingsOpen(true)}>
+          <PanelButton label={t("settings.title")} onClick={() => openSettings("audio")}>
             <Settings className="h-5 w-5" />
           </PanelButton>
         </div>
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialTab={settingsTab} />
       <UserPickerDialog
         open={newDmOpen}
         onOpenChange={setNewDmOpen}

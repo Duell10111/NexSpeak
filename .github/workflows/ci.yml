@@ -1,4 +1,4 @@
-# Lint, typecheck, unit tests and the static web build for every push to main and every pull
+# Lint, license check, typecheck, unit tests and the static web build for every push to main and every pull
 # request. The E2E tests need the Docker stack (dev/docker-compose.yml) and run locally.
 name: CI
 
@@ -30,6 +30,9 @@ jobs:
       - run: npm ci
 
       - run: npm run lint
+
+      - name: License check
+        run: npm run licenses:check -w @nexspeak/web
 
       - run: npm run typecheck
 

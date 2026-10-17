@@ -3,6 +3,18 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 // Single source for the dev server, scripts/serve.mjs, the hosting examples in docs/hosting.md
 // and the desktop app. The app holds an access token; it must never be framed (clickjacking).
 import securityHeaders from "./security-headers.json";
+import { execSync } from "node:child_process";
+import packageJson from "./package.json";
+
+// Settings → About links to the source of exactly this build (AGPL network clause).
+function gitCommit(): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  try {
+    return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
 
 export default function config(phase: string): NextConfig {
   return {
@@ -19,6 +31,10 @@ export default function config(phase: string): NextConfig {
     // Workspace packages ship TypeScript sources.
     transpilePackages: ["@nexspeak/core", "@nexspeak/i18n"],
     poweredByHeader: false,
+    env: {
+      NEXT_PUBLIC_APP_VERSION: packageJson.version,
+      NEXT_PUBLIC_GIT_COMMIT: gitCommit(),
+    },
     // A static export cannot send headers; the host does that in production. The dev server sends
     // the same ones so problems show up early.
     ...(phase === PHASE_DEVELOPMENT_SERVER && {

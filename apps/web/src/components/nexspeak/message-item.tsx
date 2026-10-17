@@ -1,7 +1,24 @@
 "use client"
 
 import { Fragment, memo, useState, type KeyboardEvent } from "react"
-import { AlertCircle, CornerUpLeft, Download, FileIcon, Lock, Pencil, RotateCw, SmilePlus, Trash2 } from "lucide-react"
+import {
+  AlertCircle,
+  ChevronRight,
+  Copy,
+  CornerUpLeft,
+  Download,
+  FileIcon,
+  Flag,
+  Lock,
+  MessagesSquare,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  RotateCw,
+  SmilePlus,
+  Trash2,
+} from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
@@ -12,17 +29,27 @@ import { editTextMessage, toggleReaction } from "@nexspeak/core/matrix/messages"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { EmojiPicker } from "@/components/nexspeak/emoji-picker"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import type { MatrixMessage } from "@nexspeak/core/matrix/types"
-import { parseMatrixLink } from "@nexspeak/core/matrix/links"
-import { setPendingLink } from "@/lib/pending-link"
-
-const URL_PATTERN = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g
+import { formattedLinks } from "@nexspeak/core/matrix/formatted-body"
+import { FormattedMessage, LinkifiedText } from "@/components/nexspeak/formatted-message"
+import { jumpToMessage } from "@/lib/jump-to-message"
 
 export interface MessageActions {
   onReply: (message: MatrixMessage) => void
   onEditStart: (messageId: string) => void
   onEditEnd: () => void
   onDelete: (message: MatrixMessage) => void
+  onReport: (message: MatrixMessage) => void
+  onSetPinned: (message: MatrixMessage, pinned: boolean) => void
+  /** Missing inside a thread: threads don't nest. */
+  onOpenThread?: (rootId: string) => void
 }
 
 function formatTime(timestamp: number, locale: string): string {
@@ -34,36 +61,6 @@ function formatSize(bytes?: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-function LinkifiedText({ text }: { text: string }) {
-  const parts = text.split(URL_PATTERN)
-  return (
-    <>
-      {parts.map((part, index) =>
-        index % 2 === 1 ? (
-          <a
-            key={index}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-            onClick={(event) => {
-              // matrix.to links to rooms and people open in the app, like in Element.
-              const link = parseMatrixLink(part)
-              if (!link || link.kind === "sso") return
-              event.preventDefault()
-              setPendingLink(link)
-            }}
-            className="break-all text-primary hover:underline"
-          >
-            {part}
-          </a>
-        ) : (
-          <Fragment key={index}>{part}</Fragment>
-        ),
-      )}
-    </>
-  )
 }
 
 function ImageAttachment({ message }: { message: MatrixMessage }) {
@@ -123,21 +120,25 @@ function FileAttachment({ message }: { message: MatrixMessage }) {
   )
 }
 
+function TextBody({ message }: { message: MatrixMessage }) {
+  return message.formatted ? <FormattedMessage nodes={message.formatted} /> : <LinkifiedText text={message.body} />
+}
+
 function MessageBody({ message }: { message: MatrixMessage }) {
   const { t } = useTranslation()
   switch (message.kind) {
     case "text":
-      return <LinkifiedText text={message.body} />
+      return <TextBody message={message} />
     case "notice":
       return (
         <span className="text-muted-foreground">
-          <LinkifiedText text={message.body} />
+          <TextBody message={message} />
         </span>
       )
     case "emote":
       return (
         <span className="italic">
-          * {message.senderName} <LinkifiedText text={message.body} />
+          * {message.senderName} <TextBody message={message} />
         </span>
       )
     case "image":
@@ -162,22 +163,38 @@ function MessageBody({ message }: { message: MatrixMessage }) {
 }
 
 function ReplyPreview({ reply }: { reply: NonNullable<MatrixMessage["replyTo"]> }) {
-  const jumpToOriginal = () => {
-    const element = document.getElementById(`msg-${reply.eventId}`)
-    if (!element) return
-    element.scrollIntoView({ behavior: "smooth", block: "center" })
-    element.classList.add("bg-primary/10")
-    setTimeout(() => element.classList.remove("bg-primary/10"), 1500)
-  }
-
   return (
     <button
-      onClick={jumpToOriginal}
+      onClick={() => jumpToMessage(reply.eventId)}
       className="mb-0.5 flex max-w-full items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
     >
       <CornerUpLeft className="h-3 w-3 shrink-0" />
       {reply.senderName && <span className="shrink-0 font-semibold">{reply.senderName}</span>}
       <span className="truncate">{reply.body}</span>
+    </button>
+  )
+}
+
+/** Discord's thread bar under a message: reply count and the latest reply. */
+function ThreadSummaryBar({ message, onOpen }: { message: MatrixMessage; onOpen: () => void }) {
+  const { t } = useTranslation()
+  const thread = message.thread
+  if (!thread) return null
+  const replies = thread.count === 1 ? t("thread.replyOne") : t("thread.replies", { count: thread.count })
+  return (
+    <button
+      onClick={onOpen}
+      className="mt-1 flex max-w-full items-center gap-2 rounded-md border border-border bg-secondary px-2 py-1 text-left text-xs hover:bg-nx-hover"
+      aria-label={`${t("thread.open")}: ${replies}`}
+    >
+      <MessagesSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 font-semibold text-primary">{replies}</span>
+      {thread.latestBody && (
+        <span className="min-w-0 truncate text-muted-foreground">
+          <span className="font-medium text-foreground">{thread.latestSenderName}</span> {thread.latestBody}
+        </span>
+      )}
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     </button>
   )
 }
@@ -234,7 +251,8 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
       onDone()
       return
     }
-    editTextMessage(client, message.roomId, message.event, body).catch((error: unknown) => {
+    const links = message.formatted ? formattedLinks(message.formatted) : []
+    editTextMessage(client, message.roomId, message.event, body, links).catch((error: unknown) => {
       toast.error(describeMatrixError(error, t("chat.editFailed")))
     })
     onDone()
@@ -336,7 +354,67 @@ interface MessageItemProps {
   isOwn: boolean
   canDelete: boolean
   isEditing: boolean
+  isPinned: boolean
+  /** Whether we may change the room's pins. */
+  canPin: boolean
   actions: MessageActions
+}
+
+function MoreActions({
+  message,
+  isOwn,
+  isPinned,
+  canPin,
+  actions,
+  onOpenChange,
+}: {
+  message: MatrixMessage
+  isOwn: boolean
+  isPinned: boolean
+  canPin: boolean
+  actions: MessageActions
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const copyText = () => {
+    navigator.clipboard.writeText(message.body).then(
+      () => toast.success(t("common.copied")),
+      () => toast.error(t("chat.copyFailed")),
+    )
+  }
+
+  return (
+    <DropdownMenu modal={false} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.moreActions")}>
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {["text", "notice", "emote"].includes(message.kind) && (
+          <DropdownMenuItem onSelect={copyText}>
+            <Copy className="h-4 w-4" />
+            {t("chat.copyText")}
+          </DropdownMenuItem>
+        )}
+        {canPin && (
+          <DropdownMenuItem onSelect={() => actions.onSetPinned(message, !isPinned)}>
+            {isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+            {isPinned ? t("pins.unpin") : t("pins.pin")}
+          </DropdownMenuItem>
+        )}
+        {!isOwn && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => actions.onReport(message)}>
+              <Flag className="h-4 w-4" />
+              {t("report.message")}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export const MessageItem = memo(function MessageItem({
@@ -345,14 +423,19 @@ export const MessageItem = memo(function MessageItem({
   isOwn,
   canDelete,
   isEditing,
+  isPinned,
+  canPin,
   actions,
 }: MessageItemProps) {
   const { t, intl } = useTranslation()
   const { client } = useMatrixClient()
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const isSent = message.status === "sent"
   const isInteractive = isSent && !["redacted", "decrypting", "undecryptable"].includes(message.kind)
   const canEdit = isOwn && isInteractive && ["text", "emote"].includes(message.kind)
   const showHeader = !isContinuation || Boolean(message.replyTo)
+  // Mentions and keywords (push rule "highlight"); the SDK caches the actions per event.
+  const mentionsMe = !isOwn && Boolean(client?.getPushActionsForEvent(message.event)?.tweaks?.highlight)
 
   const react = (key: string) => {
     if (!client) return
@@ -370,10 +453,17 @@ export const MessageItem = memo(function MessageItem({
         showHeader && "mt-[17px]",
         message.status === "sending" && "opacity-60",
         isEditing && "bg-black/[0.06]",
+        mentionsMe && "border-l-2 border-nx-idle bg-nx-idle/10 pl-[14px] hover:bg-nx-idle/15",
       )}
     >
       {isInteractive && !isEditing && (
-        <div className="absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex">
+        <div
+          className={cn(
+            "absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex",
+            // The open menu is portaled; keep its button (the anchor) visible meanwhile.
+            isMenuOpen && "flex",
+          )}
+        >
           <EmojiPicker onSelect={react}>
             <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.addReaction")}>
               <SmilePlus className="h-4 w-4" />
@@ -382,6 +472,14 @@ export const MessageItem = memo(function MessageItem({
           <ActionButton label={t("chat.reply")} onClick={() => actions.onReply(message)}>
             <CornerUpLeft className="h-4 w-4" />
           </ActionButton>
+          {actions.onOpenThread && (
+            <ActionButton
+              label={message.thread ? t("thread.open") : t("thread.start")}
+              onClick={() => actions.onOpenThread?.(message.id)}
+            >
+              <MessagesSquare className="h-4 w-4" />
+            </ActionButton>
+          )}
           {canEdit && (
             <ActionButton label={t("chat.edit")} onClick={() => actions.onEditStart(message.id)}>
               <Pencil className="h-4 w-4" />
@@ -392,6 +490,14 @@ export const MessageItem = memo(function MessageItem({
               <Trash2 className="h-4 w-4 text-destructive" />
             </ActionButton>
           )}
+          <MoreActions
+            message={message}
+            isOwn={isOwn}
+            isPinned={isPinned}
+            canPin={canPin}
+            actions={actions}
+            onOpenChange={setIsMenuOpen}
+          />
         </div>
       )}
 
@@ -412,6 +518,7 @@ export const MessageItem = memo(function MessageItem({
               {message.senderName}
             </span>
             <span className="text-xs text-muted-foreground">{formatTime(message.timestamp, intl)}</span>
+            {isPinned && <Pin className="h-3 w-3 self-center text-muted-foreground" aria-label={t("pins.pinned")} />}
           </div>
         )}
         {isEditing ? (
@@ -423,6 +530,7 @@ export const MessageItem = memo(function MessageItem({
           </div>
         )}
         <Reactions message={message} />
+        {actions.onOpenThread && <ThreadSummaryBar message={message} onOpen={() => actions.onOpenThread?.(message.id)} />}
         {message.status === "failed" && <FailedMessageActions message={message} />}
       </div>
     </div>

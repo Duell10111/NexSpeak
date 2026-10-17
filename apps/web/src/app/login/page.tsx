@@ -21,6 +21,7 @@ import {
   takeSsoHomeserver,
   type LoginOptions,
 } from '@nexspeak/core/matrix/sso'
+import { readOidcCallback, startOidcLogin, supportsRegistration } from '@nexspeak/core/matrix/oidc'
 import { desktopBridge } from '@/lib/desktop'
 import { getPendingLink, subscribePendingLink, takePendingLink } from '@/lib/pending-link'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -29,7 +30,7 @@ import { AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { session, login, loginWithToken, isLoggingIn, loginError } = useMatrix()
+  const { session, login, loginWithToken, loginWithOidc, isLoggingIn, loginError } = useMatrix()
   const { t, locale, setLocale } = useTranslation()
 
   const [homeserver, setHomeserver] = useState('matrix.org')
@@ -39,6 +40,7 @@ export default function LoginPage() {
   const [ssoNotice, setSsoNotice] = useState<string | null>(null)
   const pendingLink = useSyncExternalStore(subscribePendingLink, getPendingLink, () => null)
   const handledToken = useRef<string | null>(null)
+  const handledOidcState = useRef<string | null>(null)
 
   // How the entered homeserver lets people log in (password, SSO), once typing pauses.
   useEffect(() => {
@@ -74,6 +76,34 @@ export default function LoginPage() {
     }
   }, [pendingLink, loginWithToken, t])
 
+  // Back from the OIDC issuer: /login?code=…&state=… (or ?error=… when cancelled).
+  useEffect(() => {
+    const callback = readOidcCallback(window.location.search)
+    if (!callback) return
+    window.history.replaceState(null, '', window.location.pathname)
+    if ('error' in callback) {
+      // A one-off reaction to the URL, not state derived from props.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSsoNotice(t('login.oidcFailed', { reason: callback.error }))
+      return
+    }
+    if (handledOidcState.current === callback.state) return
+    handledOidcState.current = callback.state
+    loginWithOidc(callback.code, callback.state).catch(() => {})
+  }, [loginWithOidc, t])
+
+  const startOidc = async (register: boolean) => {
+    const config = loginOptions?.oidc
+    if (!config) return
+    setSsoNotice(null)
+    try {
+      const homeserverUrl = await resolveHomeserverUrl(homeserver.trim())
+      window.location.assign(await startOidcLogin({ homeserverUrl, config, origin: window.location.origin, register }))
+    } catch (error) {
+      setSsoNotice(describeLoginError(error))
+    }
+  }
+
   const startSso = async (identityProviderId?: string) => {
     setSsoNotice(null)
     try {
@@ -91,9 +121,12 @@ export default function LoginPage() {
     }
   }
 
+  // Native OIDC replaces password and SSO buttons. The desktop app can't receive the web
+  // redirect, so it keeps the SSO compatibility flow through the browser.
+  const oidcConfig = desktopBridge() ? null : (loginOptions?.oidc ?? null)
   // Unknown (yet): offer the password form, every homeserver used to have it.
-  const showPassword = loginOptions?.password ?? true
-  const ssoProviders = loginOptions?.sso
+  const showPassword = !oidcConfig && (loginOptions?.password ?? true)
+  const ssoProviders = oidcConfig ? null : loginOptions?.sso
 
   // Already logged in (or just logged in): go to the app.
   useEffect(() => {
@@ -162,6 +195,21 @@ export default function LoginPage() {
                 <Alert>
                   <AlertDescription>{ssoNotice}</AlertDescription>
                 </Alert>
+              )}
+
+              {oidcConfig && (
+                <div className="space-y-2">
+                  <Button type="button" className="w-full" disabled={isLoggingIn} onClick={() => void startOidc(false)}>
+                    {isLoggingIn ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                    {t('login.oidcContinue', { server: homeserver.trim() })}
+                  </Button>
+                  {supportsRegistration(oidcConfig) && (
+                    <Button type="button" variant="outline" className="w-full" disabled={isLoggingIn} onClick={() => void startOidc(true)}>
+                      {t('login.oidcRegister')}
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground">{t('login.oidcHint')}</p>
+                </div>
               )}
 
               {ssoProviders && (
@@ -234,19 +282,22 @@ export default function LoginPage() {
               )}
             </form>
 
-            <div className="mt-6 text-center text-sm text-muted-foreground">
-              <p>
-                {t('login.noAccount')}{' '}
-                <a
-                  href="https://matrix.org/try-matrix/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  {t('login.createAccount')}
-                </a>
-              </p>
-            </div>
+            {/* OIDC homeservers that allow sign-ups have their own button above. */}
+            {!(oidcConfig && supportsRegistration(oidcConfig)) && (
+              <div className="mt-6 text-center text-sm text-muted-foreground">
+                <p>
+                  {t('login.noAccount')}{' '}
+                  <a
+                    href="https://matrix.org/try-matrix/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    {t('login.createAccount')}
+                  </a>
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

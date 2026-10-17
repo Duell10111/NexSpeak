@@ -17,9 +17,14 @@ function event(content: Record<string, unknown>, extra: Record<string, unknown> 
   })
 }
 
-function client(actions: { notify: boolean; tweaks?: { highlight?: boolean } } | null, directRooms: string[] = []) {
+function client(
+  actions: { notify: boolean; tweaks?: { highlight?: boolean } } | null,
+  directRooms: string[] = [],
+  ignored: string[] = [],
+) {
   return {
     getUserId: () => OWN,
+    isUserIgnored: (userId: string) => ignored.includes(userId),
     getPushActionsForEvent: () => actions,
     getAccountData: () => ({ getContent: () => ({ "@alice:example.org": directRooms }) }),
   } as unknown as MatrixClient
@@ -28,6 +33,11 @@ function client(actions: { notify: boolean; tweaks?: { highlight?: boolean } } |
 const room = { roomId: ROOM_ID, name: "Allgemein", isSpaceRoom: () => false, getDMInviter: () => undefined } as unknown as Room
 
 describe("notificationFor", () => {
+  it("never notifies about ignored people", () => {
+    const message = event({ msgtype: "m.text", body: "Hallo" })
+    expect(notificationFor(client({ notify: true }, [], ["@alice:example.org"]), message, room)).toBeNull()
+  })
+
   it("follows the push rules", () => {
     const message = event({ msgtype: "m.text", body: "Hallo" })
     expect(notificationFor(client({ notify: false }), message, room)).toBeNull()

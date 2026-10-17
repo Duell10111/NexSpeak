@@ -3,7 +3,9 @@
  * on the new OIDC auth (MAS, e.g. matrix.org) offer the same flow through their compatibility layer.
  */
 
+import type { OidcClientConfig } from 'matrix-js-sdk'
 import { createUnauthenticatedMatrixClient } from './client'
+import { fetchOidcConfig } from './oidc'
 
 export interface IdentityProvider {
   id: string
@@ -14,6 +16,8 @@ export interface LoginOptions {
   password: boolean
   /** Present when the homeserver offers SSO; empty list = one generic "SSO" button. */
   sso: IdentityProvider[] | null
+  /** Native OIDC (next-gen auth): preferred over the SSO compatibility flow where possible. */
+  oidc: OidcClientConfig | null
 }
 
 interface SsoFlow {
@@ -22,7 +26,10 @@ interface SsoFlow {
 }
 
 export async function fetchLoginOptions(homeserverUrl: string): Promise<LoginOptions> {
-  const { flows } = await createUnauthenticatedMatrixClient(homeserverUrl).loginFlows()
+  const [{ flows }, oidc] = await Promise.all([
+    createUnauthenticatedMatrixClient(homeserverUrl).loginFlows(),
+    fetchOidcConfig(homeserverUrl),
+  ])
   const ssoFlow = flows.find((flow) => flow.type === 'm.login.sso' || flow.type === 'm.login.cas') as SsoFlow | undefined
   return {
     password: flows.some((flow) => flow.type === 'm.login.password'),
@@ -31,6 +38,7 @@ export async function fetchLoginOptions(homeserverUrl: string): Promise<LoginOpt
           .filter((provider) => typeof provider.id === 'string' && typeof provider.name === 'string')
           .map((provider) => ({ id: provider.id as string, name: provider.name as string }))
       : null,
+    oidc,
   }
 }
 
