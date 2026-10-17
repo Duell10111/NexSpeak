@@ -36,12 +36,12 @@ nexspeak/
 ├─ packages/
 │  ├─ core/         Matrix-Logik ohne UI: matrix/*, Server-Modell, space-order, call-layout,
 │  │                screenshare-quality, Fehler, Typen – Plattformzugriffe nur über Adapter
-│  ├─ i18n/         de.ts / en.ts / t(), von allen Apps genutzt
-│  └─ config/       gemeinsame tsconfig-Basis und ESLint-Konfiguration
+│  └─ i18n/         de.ts / en.ts / t(), von allen Apps genutzt
 ├─ dev/             Docker-Stack (Synapse, LiveKit, lk-jwt-service)
 ├─ docs/            Architektur, Release-Ablauf, Hosting (CSP-/Header-Beispiele)
 ├─ .github/         Workflows, Issue-/PR-Vorlagen, CODEOWNERS
 ├─ LICENSE, THIRD_PARTY_NOTICES.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md
+├─ tsconfig.base.json, eslint.config.mjs, vitest.config.ts   gemeinsame Konfiguration
 └─ AGENTS.md        übergreifende Regeln; je App eine kurze eigene AGENTS.md
 ```
 
@@ -73,11 +73,13 @@ React-Native-SDK.
    - Ungenutzte UI-Komponenten und ihre Abhängigkeiten entfernen (recharts, embla-carousel,
      react-day-picker, input-otp, cmdk, vaul, react-resizable-panels, … – jeweils prüfen).
    - Vorlagen-Assets und `@vercel/analytics` entfernen.
-2. **Monorepo-Umzug (eigener PR, nur Verschiebungen)**
+2. **Monorepo-Umzug (eigener PR, nur Verschiebungen)** – erledigt (2026-10-17)
    - Mit `git mv`, damit die Historie erhalten bleibt.
    - `src/` → `apps/web/`, Matrix-Logik → `packages/core`, i18n → `packages/i18n`.
    - Pfad-Aliase, Vitest-, Playwright- und ESLint-Konfiguration anpassen.
    - Keine Logikänderungen, damit der PR leicht prüfbar bleibt.
+   - Umgesetzt ohne eigenes `packages/config`: tsconfig-Basis, ESLint und Vitest liegen im Root.
+     `audio-settings.ts` (Browser-Einstellung) und `utils.ts` (Tailwind) bleiben in `apps/web`.
 3. **Statischer Export der Web-App**
    - `output: "export"` setzen.
    - Die Security-Header aus `next.config.ts` entfallen dabei: als Hosting-Beispiel

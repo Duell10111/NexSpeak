@@ -3,10 +3,10 @@ import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: { "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)) },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["apps/*/src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
     environment: "node",
   },
 })

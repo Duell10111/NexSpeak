@@ -5,17 +5,19 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  { settings: { next: { rootDir: "apps/web/" } } },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-    // Copied from livekit-client at build time (scripts/copy-livekit-worker.mjs).
-    "public/livekit-e2ee-worker.mjs",
-    "test-results/**",
-    "playwright-report/**",
+    "**/.next/**",
+    "**/out/**",
+    "**/build/**",
+    "**/next-env.d.ts",
+    // Copied from livekit-client at build time (apps/web/scripts/copy-livekit-worker.mjs).
+    "apps/web/public/livekit-e2ee-worker.mjs",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "dev/.data/**",
   ]),
 ]);
 

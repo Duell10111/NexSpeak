@@ -1,4 +1,4 @@
-# NexSpeak Web
+# NexSpeak
 
 Ein Discord-ähnlicher Client für [Matrix](https://matrix.org): Spaces werden als Server angezeigt, Räume als Kanäle,
 dazu Direktnachrichten, Sprach-/Videoanrufe und Bildschirmfreigabe.
@@ -13,6 +13,20 @@ dazu Direktnachrichten, Sprach-/Videoanrufe und Bildschirmfreigabe.
   Stummschalten auch vor dem Beitreten, Bildschirmübertragung mit wählbarer Auflösung (bis Quelle) und
   Bildrate (bis 60 FPS), auch während des Streams änderbar
 - **Mobile Ansicht:** Navigation und Mitgliederliste als ausklappbare Panels
+
+## Aufbau
+
+| Ordner | Inhalt |
+|---|---|
+| `apps/web` | Next.js-Web-App (Oberfläche, E2E-Tests) |
+| `apps/desktop` | Desktop-App mit Electron (geplant), verpackt den Web-Build |
+| `apps/mobile` | Mobile-App mit Expo (geplant) |
+| `packages/core` | Matrix- und Anruf-Logik ohne Oberfläche |
+| `packages/i18n` | Oberflächentexte (Deutsch, Englisch) |
+| `dev` | Lokaler Homeserver mit Anrufen (Docker) |
+| `docs` | Planung und Dokumentation |
+
+Alle Befehle werden im Root-Verzeichnis ausgeführt.
 
 ## Voraussetzungen
 
@@ -75,7 +89,7 @@ npm start
 ```
 
 Die App ist eine rein clientseitige Matrix-Anwendung; Zugangsdaten gehen nur an den Homeserver. Der
-LiveKit-E2EE-Worker wird beim Build nach `public/livekit-e2ee-worker.mjs` kopiert.
+LiveKit-E2EE-Worker wird beim Build nach `apps/web/public/livekit-e2ee-worker.mjs` kopiert.
 
 ## Mitwirken & Lizenz
 

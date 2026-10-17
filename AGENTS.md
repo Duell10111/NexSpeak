@@ -12,8 +12,8 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
 
 ### Medien (Anrufe, Kamera, Bildschirmübertragung)
 
-- **Video wird mit H.264 kodiert** (`src/lib/video-codec.ts`, `publishDefaults` in
-  `src/lib/matrix/call-session.ts`). H.264 ist der Codec, den alle Zielplattformen in Hardware
+- **Video wird mit H.264 kodiert** (`packages/core/src/video-codec.ts`, `publishDefaults` in
+  `packages/core/src/matrix/call-session.ts`). H.264 ist der Codec, den alle Zielplattformen in Hardware
   kodieren:
   - macOS: VideoToolbox (Apple Silicon und Intel)
   - Windows mit NVIDIA: NVENC, mit AMD: AMF, mit Intel: Quick Sync (jeweils über Media Foundation)
@@ -21,14 +21,14 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
     `VaapiVideoEncoder`. Für eine spätere Desktop-App (Electron o. Ä.) diese Flags setzen und
     Hardware-Beschleunigung nicht deaktivieren.
 
-  Zwei Fallen, die sonst still zu Software-Kodierung führen (`src/lib/video-codec.ts`):
+  Zwei Fallen, die sonst still zu Software-Kodierung führen (`packages/core/src/video-codec.ts`):
   - LiveKit handelt nur H.264 Constrained Baseline aus, Chrome auf macOS kodiert dieses Profil
     aber nur in Software. Die Sendeverbindung nutzt deshalb lokal Main unter derselben
     Payload-Type-Nummer (`installH264MainProfilePreference`); nicht entfernen.
   - Hardware-Encoder lehnen ungerade Bildgrößen ab (z. B. ein 1728×1117-Fenster). Die
     Bildschirmübertragung skaliert deshalb minimal auf gerade Maße (`evenScale`).
 
-  Prüfen auf einem Rechner mit GPU: `E2E_HARDWARE=1 npx playwright test hardware-encoding`
+  Prüfen auf einem Rechner mit GPU: `cd apps/web && E2E_HARDWARE=1 npx playwright test hardware-encoding`
   (lokales Chrome, nicht die Docker-Browser).
 
   Firefox nutzt für H.264 (zumindest auf macOS) immer Software (OpenH264) und meldet weder
@@ -42,7 +42,7 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
   Encoder-Session (NVIDIA-Consumer-Karten erlauben nur wenige gleichzeitige Sessions, die sich
   Spiel-Aufnahme-Tools teilen). Deshalb höchstens zwei Ebenen pro Videospur (Kamera: Original +
   360p, Bildschirm: Original + halbe Auflösung). Keine zusätzlichen Ebenen ohne guten Grund.
-- Qualität kommt aus den Einstellungen des Nutzers (`src/lib/screenshare-quality.ts`), nicht aus
+- Qualität kommt aus den Einstellungen des Nutzers (`packages/core/src/screenshare-quality.ts`), nicht aus
   festen hohen Werten. Nichts kodieren, was niemand sieht: `dynacast` und `adaptiveStream`
   bleiben aktiv.
 - Keine Bildverarbeitung im Hauptthread (Canvas-Kopien, Filter, eigene Frame-Schleifen). Wenn
@@ -62,14 +62,27 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
 
 ## Projekt
 
-- Node 24 (`.nvmrc`). Befehle: `npm run dev`, `npm run build`, `npm run lint`, `npm test`
-  (Vitest), `npm run test:e2e:docker` (Playwright gegen `dev/docker-compose.yml`).
-- Die Oberfläche gibt es auf Deutsch und Englisch (`src/lib/i18n`, ohne Bibliothek). Neue Texte
+- Monorepo mit npm Workspaces:
+  - `apps/web` – Next.js-App (Oberfläche, Hooks, E2E-Tests); `@/` zeigt auf `apps/web/src`.
+  - `apps/desktop` – Electron-Hülle um den Web-Build (geplant), kein eigener UI-Code.
+  - `apps/mobile` – Expo-App (geplant).
+  - `packages/core` (`@nexspeak/core/...`) – Matrix- und Anruf-Logik ohne UI; importiert nie
+    aus `apps/`. Direkte Browser-APIs nur, wo es (noch) nicht anders geht.
+  - `packages/i18n` (`@nexspeak/i18n`) – Wörterbücher und `t()`.
+  Pakete liefern TypeScript-Quellen direkt aus (kein eigener Build-Schritt).
+- Node 24 (`.nvmrc`). Befehle im Root: `npm run dev`, `npm run build`, `npm run lint`,
+  `npm run typecheck`, `npm test` (Vitest über alle Workspaces), `npm run test:e2e:docker`
+  (Playwright gegen `dev/docker-compose.yml`). Abhängigkeiten mit `-w <workspace>` installieren,
+  z. B. `npm install foo -w @nexspeak/web`.
+- Werte (keine reinen Typen) aus Unterordnern von `matrix-js-sdk` mit vollem Pfad importieren
+  (`matrix-js-sdk/lib/matrixrtc/index.js`), sonst kann Next.js das SDK nicht als externes Paket
+  laden („Package matrix-js-sdk can't be external“).
+- Die Oberfläche gibt es auf Deutsch und Englisch (`packages/i18n`, ohne Bibliothek). Neue Texte
   nie fest in Komponenten schreiben, sondern als Schlüssel in `de.ts` (Referenz) und `en.ts`
   anlegen; in Komponenten `useTranslation()`, außerhalb von React `t()`. Ohne gespeicherte Wahl
   folgt die Sprache dem Browser. Die E2E-Tests laufen mit `locale: "de-DE"` gegen die deutsche
   Oberfläche.
-- Änderungen an Anrufen mit den E2E-Tests in `e2e/call.spec.ts` prüfen (inklusive E2EE).
+- Änderungen an Anrufen mit den E2E-Tests in `apps/web/e2e/call.spec.ts` prüfen (inklusive E2EE).
 - **Alles im Code ist Englisch:** Kommentare, Bezeichner, Log- und Fehlermeldungen für
   Entwickler, Testnamen, Commit-Messages und PR-Titel. Deutsch gibt es nur in den
   Oberflächentexten (`de.ts`) und in Dokumenten für Menschen (README, `docs/`).
@@ -79,10 +92,10 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
 
 ## Server-Modell (Discord → Matrix)
 
-Wie Element, damit beide Clients dieselbe Struktur sehen (`src/lib/matrix/server.ts`):
+Wie Element, damit beide Clients dieselbe Struktur sehen (`packages/core/src/matrix/server.ts`):
 
 - Server = Space, Kategorie = Unter-Space, Kanal = Raum (Text und Sprache zugleich).
-- Reihenfolge = `order` in `m.space.child` (`src/lib/matrix/space-order.ts`). Verschieben
+- Reihenfolge = `order` in `m.space.child` (`packages/core/src/matrix/space-order.ts`). Verschieben
   schreibt möglichst nur ein Event, denn echte Homeserver begrenzen Events pro Sekunde stark.
 - Offener Kanal = Join-Rule `restricted` auf den Server; privater Kanal = `invite`.
   Server-Einladungen laden nie in private Kanäle ein.
