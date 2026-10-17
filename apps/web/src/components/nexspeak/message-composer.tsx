@@ -3,6 +3,7 @@
 import {
   forwardRef,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -139,6 +140,9 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const membersRequestedRef = useRef(false)
+  // Caret for text we inserted ourselves; set right after the commit, before the next keystroke
+  // can land in between (a later frame would move the caret back in front of it).
+  const pendingCaretRef = useRef<number | null>(null)
 
   useImperativeHandle(ref, () => ({ focus: () => textareaRef.current?.focus() }), [])
 
@@ -148,6 +152,16 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     element.style.height = "auto"
     element.style.height = `${Math.min(element.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`
   }
+
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current
+    const element = textareaRef.current
+    if (caret === null || !element) return
+    pendingCaretRef.current = null
+    element.focus()
+    element.setSelectionRange(caret, caret)
+    resize()
+  }, [value])
 
   /** Only computed while a trigger is typed; nothing runs for normal text. */
   const updateSuggestions = (text: string, caret: number) => {
@@ -179,12 +193,9 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     const next = value.slice(0, suggestions.start) + insert + value.slice(suggestions.end)
     const caret = suggestions.start + insert.length
     if (candidate.kind !== "everyone") mentionsRef.current = [...mentionsRef.current, candidate]
+    pendingCaretRef.current = caret
     setValue(next)
     setSuggestions(null)
-    requestAnimationFrame(() => {
-      textareaRef.current?.setSelectionRange(caret, caret)
-      resize()
-    })
   }
 
   const send = () => {
@@ -206,12 +217,8 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     const element = textareaRef.current
     const start = element?.selectionStart ?? value.length
     const end = element?.selectionEnd ?? value.length
+    pendingCaretRef.current = start + emoji.length
     setValue(value.slice(0, start) + emoji + value.slice(end))
-    requestAnimationFrame(() => {
-      element?.focus()
-      element?.setSelectionRange(start + emoji.length, start + emoji.length)
-      resize()
-    })
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
