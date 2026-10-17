@@ -49,6 +49,12 @@ experimental_features:
   msc4143_enabled: true
   msc3266_enabled: true
   msc4222_enabled: true
+# Login tokens for an existing session (MSC3882): the E2E tests use them to simulate the return
+# from an SSO login (m.login.token), since the dev stack has no identity provider.
+login_via_existing_session:
+  enabled: true
+  require_ui_auth: false
+  token_timeout: 5m
 matrix_rtc:
   transports:
     - type: livekit

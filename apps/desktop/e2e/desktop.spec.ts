@@ -3,7 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { _electron as electron, chromium, expect, test, type ElectronApplication, type Page } from "@playwright/test"
-import { createRoom, login, openRoom, registerUser, remoteAudioLevel, sendMessage, sendTextAs } from "../../web/e2e/helpers"
+import {
+  createLoginToken,
+  createRoom,
+  HOMESERVER_URL,
+  login,
+  openRoom,
+  registerUser,
+  remoteAudioLevel,
+  sendMessage,
+  sendTextAs,
+} from "../../web/e2e/helpers"
 
 const APP_DIR = join(__dirname, "..")
 const WEB_PORT = 3101
@@ -12,7 +22,8 @@ let app: ElectronApplication
 let page: Page
 let userDataDir: string
 
-test.beforeEach(async () => {
+/** Starts the app with a fresh profile; `extraArgs` like the OS passes a deep link. */
+async function launch(extraArgs: string[] = []) {
   userDataDir = mkdtempSync(join(tmpdir(), "nexspeak-desktop-e2e-"))
   app = await electron.launch({
     args: [
@@ -22,10 +33,15 @@ test.beforeEach(async () => {
       "--lang=de-DE",
       "--use-fake-device-for-media-stream",
       "--use-fake-ui-for-media-stream",
+      ...extraArgs,
     ],
   })
   page = await app.firstWindow()
   page.on("pageerror", (error) => console.log(`[pageerror] ${error.message}`))
+}
+
+test.beforeEach(async () => {
+  await launch()
 })
 
 test.afterEach(async () => {
@@ -246,4 +262,55 @@ test("notifications are allowed, the badge counts unread messages, the window co
   await expect.poll(isVisible).toBe(false)
   await page.evaluate(() => window.nexspeak?.showWindow())
   await expect.poll(isVisible).toBe(true)
+})
+
+/** What Windows and Linux do with a link while the app runs: start a second instance with it. */
+function openDeepLink(url: string) {
+  return app.evaluate(({ app }, link) => {
+    app.emit("second-instance", { preventDefault() {} }, [process.execPath, link], process.cwd())
+  }, url)
+}
+
+test("a deep link that starts the app opens the room after login", async () => {
+  const alice = await registerUser("alice")
+  const room = `Tiefer Link ${Date.now().toString(36)}`
+  const roomId = await createRoom(alice, { name: room, members: [] })
+
+  await app.close()
+  rmSync(userDataDir, { recursive: true, force: true })
+  await launch([`nexspeak://room/${encodeURIComponent(roomId)}`])
+
+  await login(page, alice, "app://nexspeak/login")
+  await expect(page.getByRole("heading", { level: 3, name: room })).toBeVisible()
+})
+
+test("deep links bring the window back and open rooms", async () => {
+  const alice = await registerUser("alice")
+  const suffix = Date.now().toString(36)
+  await createRoom(alice, { name: `Erster ${suffix}`, members: [] })
+  const secondId = await createRoom(alice, { name: `Zweiter ${suffix}`, members: [] })
+  await login(page, alice, "app://nexspeak/login")
+  await openRoom(page, `Erster ${suffix}`)
+
+  const isVisible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await expect.poll(isVisible).toBe(false)
+
+  await openDeepLink(`nexspeak://room/${encodeURIComponent(secondId)}`)
+  await expect.poll(isVisible).toBe(true)
+  await expect(page.getByRole("heading", { level: 3, name: `Zweiter ${suffix}` })).toBeVisible()
+})
+
+test("the SSO login returns through nexspeak://sso", async () => {
+  const alice = await registerUser("alice")
+  await expect(page).toHaveURL("app://nexspeak/login")
+  // What the login page remembered before opening the identity provider in the browser.
+  await page.evaluate(
+    (homeserverUrl) =>
+      localStorage.setItem("nexspeak_sso_pending", JSON.stringify({ homeserverUrl, startedAt: Date.now() })),
+    HOMESERVER_URL,
+  )
+  await openDeepLink(`nexspeak://sso?loginToken=${encodeURIComponent(await createLoginToken(alice))}`)
+  await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus."))).toBeVisible({ timeout: 60_000 })
+  expect(await page.evaluate(() => localStorage.getItem("nexspeak_sso_pending"))).toBeNull()
 })

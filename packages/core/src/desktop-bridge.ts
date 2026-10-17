@@ -62,4 +62,9 @@ export interface DesktopBridge {
   showWindow(): void
   /** Dock badge (macOS), taskbar overlay (Windows), launcher count (Linux); 0 clears it. */
   setBadgeCount(count: number): void
+  /**
+   * nexspeak:// links opened from the OS (browser, other apps), including links that started the
+   * app. Parse them with parseMatrixLink. Returns an unsubscribe function.
+   */
+  onDeepLink(handler: (url: string) => void): () => void
 }

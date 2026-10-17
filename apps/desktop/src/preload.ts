@@ -16,6 +16,8 @@ const IPC_PTT_REQUEST_PERMISSION = "nexspeak:ptt-request-permission"
 const IPC_PTT_PRESSED = "nexspeak:ptt-pressed"
 const IPC_SHOW_WINDOW = "nexspeak:show-window"
 const IPC_BADGE_COUNT = "nexspeak:badge-count"
+const IPC_DEEP_LINK = "nexspeak:deep-link"
+const IPC_DEEP_LINKS_READY = "nexspeak:deep-links-ready"
 
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
@@ -63,6 +65,16 @@ const bridge: DesktopBridge = {
   },
   setBadgeCount(count) {
     ipcRenderer.send(IPC_BADGE_COUNT, count)
+  },
+  onDeepLink(handler) {
+    const listener = (_event: IpcRendererEvent, url: string) => handler(url)
+    ipcRenderer.on(IPC_DEEP_LINK, listener)
+    // Links that arrived before (e.g. the one that started the app) are delivered now.
+    ipcRenderer.send(IPC_DEEP_LINKS_READY, true)
+    return () => {
+      ipcRenderer.send(IPC_DEEP_LINKS_READY, false)
+      ipcRenderer.off(IPC_DEEP_LINK, listener)
+    }
   },
 }
 

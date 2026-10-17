@@ -8,6 +8,7 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 | `src/main.ts` | Window, serving the web build under `app://nexspeak`, permissions, screen capture, hardware encoding flags |
 | `src/push-to-talk.ts` | Global push-to-talk key (uiohook), only running during a call with push to talk |
 | `src/badge.ts` | Unread badge: dock (macOS), taskbar overlay (Windows), launcher (Linux) |
+| `src/deep-links.ts` | `nexspeak://` links from the OS (open-url, second instance, launch arguments) |
 | `src/origin.ts` | Origin check for `app://` (`URL.origin` is `"null"` for custom schemes in Node) |
 | `src/tray.ts` | Tray icon and menu (open, mute, deafen, leave call, quit) |
 | `src/preload.ts` | `window.nexspeak` (contract: `packages/core/src/desktop-bridge.ts`) |
@@ -54,6 +55,15 @@ shows as native OS notifications; a click brings the window back from the tray (
 The badge shows mentions, unread direct messages and invites (`setBadgeCount`). Windows needs the
 AppUserModelID set in `main.ts` for notifications to appear.
 
+## Deep links
+
+`nexspeak://room/<room id or alias>[?via=server]`, `nexspeak://user/<user id>` and
+`nexspeak://sso?loginToken=…` (the return from the SSO login, which runs in the default browser).
+The main process only validates and queues them until the web app listens; parsing
+(`packages/core/src/matrix/links.ts`) and handling happen in the web app, which also opens
+matrix.to links from messages the same way. Packaged builds register the scheme with the OS;
+an unpackaged dev run does not (it would register the bare Electron binary).
+
 ## Push to talk
 
 The web app owns the setting (key, release delay) and the microphone gate; the main process only
@@ -77,5 +87,5 @@ system-wide hook (uiohook-napi), so the key also works while a game has the focu
 
 ## Still open (milestone "Beta 0.2 – Desktop")
 
-Deep links (#5), auto-update (#6), autostart (#7),
+Auto-update (#6), autostart (#7),
 app icon (#8), signing and notarization (#9).

@@ -197,3 +197,29 @@ export async function sendTextAs(user: TestUser, roomId: string, body: string): 
     body,
   })
 }
+
+/** A public room anyone can join, with an address (#alias:<server name>). */
+export async function createPublicRoom(
+  owner: TestUser,
+  name: string,
+  aliasLocalpart: string,
+): Promise<{ roomId: string; alias: string }> {
+  const { room_id: roomId } = await api<{ room_id: string }>(owner.accessToken, "POST", "/createRoom", {
+    name,
+    preset: "public_chat",
+    room_alias_name: aliasLocalpart,
+  })
+  return { roomId, alias: `#${aliasLocalpart}:${owner.userId.split(":")[1]}` }
+}
+
+/** A short-lived token for m.login.token, as the homeserver hands out after an SSO login. */
+export async function createLoginToken(user: TestUser): Promise<string> {
+  const response = await fetch(`${HOMESERVER_URL}/_matrix/client/v1/login/get_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${user.accessToken}` },
+    body: "{}",
+  })
+  const json = (await response.json()) as { login_token?: string }
+  if (!response.ok || !json.login_token) throw new Error(`get_token failed: ${JSON.stringify(json)}`)
+  return json.login_token
+}

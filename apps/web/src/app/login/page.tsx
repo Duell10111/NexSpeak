@@ -4,7 +4,7 @@
 
 'use client'
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,19 +13,87 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { useMatrix } from '@/components/matrix-provider'
-import { serverNameFromUserId } from '@nexspeak/core/matrix/errors'
+import { describeLoginError, resolveHomeserverUrl, serverNameFromUserId } from '@nexspeak/core/matrix/errors'
+import {
+  fetchLoginOptions,
+  rememberSsoHomeserver,
+  ssoLoginUrl,
+  takeSsoHomeserver,
+  type LoginOptions,
+} from '@nexspeak/core/matrix/sso'
+import { desktopBridge } from '@/lib/desktop'
+import { getPendingLink, subscribePendingLink, takePendingLink } from '@/lib/pending-link'
 import { useTranslation } from '@/hooks/useTranslation'
 import { LOCALE_NAMES, LOCALES } from '@nexspeak/i18n'
 import { AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { session, login, isLoggingIn, loginError } = useMatrix()
+  const { session, login, loginWithToken, isLoggingIn, loginError } = useMatrix()
   const { t, locale, setLocale } = useTranslation()
 
   const [homeserver, setHomeserver] = useState('matrix.org')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [loginOptions, setLoginOptions] = useState<LoginOptions | null>(null)
+  const [ssoNotice, setSsoNotice] = useState<string | null>(null)
+  const pendingLink = useSyncExternalStore(subscribePendingLink, getPendingLink, () => null)
+  const handledToken = useRef<string | null>(null)
+
+  // How the entered homeserver lets people log in (password, SSO), once typing pauses.
+  useEffect(() => {
+    const target = homeserver.trim()
+    if (!target) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      resolveHomeserverUrl(target)
+        .then(fetchLoginOptions)
+        .then((options) => !cancelled && setLoginOptions(options))
+        .catch(() => !cancelled && setLoginOptions(null))
+    }, 500)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [homeserver])
+
+  // Back from SSO: the web app gets ?loginToken=…, the desktop app a nexspeak://sso link.
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('loginToken')
+    const token = fromUrl ?? (pendingLink?.kind === 'sso' ? takePendingLink(['sso'])?.loginToken : null)
+    if (!token || token === handledToken.current) return
+    handledToken.current = token
+    if (fromUrl) window.history.replaceState(null, '', window.location.pathname)
+    const homeserverUrl = takeSsoHomeserver()
+    if (homeserverUrl) {
+      loginWithToken(homeserverUrl, token).catch(() => {})
+    } else {
+      // A one-off reaction to the URL or deep link, not state derived from props.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSsoNotice(t('login.ssoExpired'))
+    }
+  }, [pendingLink, loginWithToken, t])
+
+  const startSso = async (identityProviderId?: string) => {
+    setSsoNotice(null)
+    try {
+      const homeserverUrl = await resolveHomeserverUrl(homeserver.trim())
+      rememberSsoHomeserver(homeserverUrl)
+      if (desktopBridge()) {
+        // The desktop app logs in through the default browser, which returns via nexspeak://sso.
+        window.open(ssoLoginUrl(homeserverUrl, 'nexspeak://sso', identityProviderId), '_blank')
+        setSsoNotice(t('login.ssoInBrowser'))
+      } else {
+        window.location.assign(ssoLoginUrl(homeserverUrl, `${window.location.origin}/login`, identityProviderId))
+      }
+    } catch (error) {
+      setSsoNotice(describeLoginError(error))
+    }
+  }
+
+  // Unknown (yet): offer the password form, every homeserver used to have it.
+  const showPassword = loginOptions?.password ?? true
+  const ssoProviders = loginOptions?.sso
 
   // Already logged in (or just logged in): go to the app.
   useEffect(() => {
@@ -88,46 +156,80 @@ export default function LoginPage() {
                 <p className="text-xs text-muted-foreground">{t('login.homeserverHint')}</p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="username">{t('login.username')}</Label>
-                <Input
-                  id="username"
-                  type="text"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder={t('login.usernamePlaceholder')}
-                  value={username}
-                  onChange={(event) => handleUsernameChange(event.target.value)}
-                  disabled={isLoggingIn}
-                  required
-                />
-              </div>
+              {ssoNotice && (
+                <Alert>
+                  <AlertDescription>{ssoNotice}</AlertDescription>
+                </Alert>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="password">{t('login.password')}</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  disabled={isLoggingIn}
-                  required
-                />
-              </div>
+              {ssoProviders && (
+                <div className="space-y-2">
+                  {(ssoProviders.length > 0 ? ssoProviders : [null]).map((provider) => (
+                    <Button
+                      key={provider?.id ?? 'sso'}
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      disabled={isLoggingIn}
+                      onClick={() => void startSso(provider?.id)}
+                    >
+                      {provider ? t('login.ssoWith', { name: provider.name }) : t('login.sso')}
+                    </Button>
+                  ))}
+                  {showPassword && (
+                    <div className="flex items-center gap-3 text-xs uppercase text-muted-foreground">
+                      <span className="h-px flex-1 bg-border" />
+                      {t('login.or')}
+                      <span className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
+                </div>
+              )}
 
-              <Button type="submit" className="w-full" disabled={isLoggingIn}>
-                {isLoggingIn ? (
-                  <>
-                    <Spinner className="mr-2 h-4 w-4" />
-                    {t('login.submitting')}
-                  </>
-                ) : (
-                  t('login.submit')
-                )}
-              </Button>
+              {showPassword && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="username">{t('login.username')}</Label>
+                    <Input
+                      id="username"
+                      type="text"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder={t('login.usernamePlaceholder')}
+                      value={username}
+                      onChange={(event) => handleUsernameChange(event.target.value)}
+                      disabled={isLoggingIn}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password">{t('login.password')}</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      disabled={isLoggingIn}
+                      required
+                    />
+                  </div>
+
+                  <Button type="submit" className="w-full" disabled={isLoggingIn}>
+                    {isLoggingIn ? (
+                      <>
+                        <Spinner className="mr-2 h-4 w-4" />
+                        {t('login.submitting')}
+                      </>
+                    ) : (
+                      t('login.submit')
+                    )}
+                  </Button>
+                </>
+              )}
             </form>
 
             <div className="mt-6 text-center text-sm text-muted-foreground">

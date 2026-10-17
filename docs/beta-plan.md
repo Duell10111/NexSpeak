@@ -78,8 +78,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
    - The security headers moved to `apps/web/security-headers.json`; hosts and the desktop app send
      them.
 4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
-   screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3) and notifications (#4)
-   done. Open: deep links (#5), auto-update (#6), autostart (#7), icon (#8), signing (#9), push-to-talk
+   screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3), notifications (#4) and
+   deep links (#5) done. Open: auto-update (#6), autostart (#7), icon (#8), signing (#9), push-to-talk
    hook performance (#10).
 5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
@@ -115,7 +115,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ### Milestone "Beta 0.1 – Web" (must have)
 
-- [ ] Login via OIDC (next-gen auth/MAS, required for matrix.org), plus SSO and registration
+- [x] SSO login (m.login.sso; also works with MAS via its compatibility layer)
+- [ ] Native OIDC login (next-gen auth/MAS) and registration
 - [ ] Send Markdown; render `formatted_body` safely (sanitized)
 - [ ] Mentions with autocompletion (@person, #channel)
 - [x] Notifications following the push rules, settings for showing them and their content
@@ -132,7 +133,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Tray (#2)
 - [x] Push to talk (#3)
 - [x] Notifications and badge (#4)
-- [ ] Deep links (#5), auto-update (#6), autostart (#7)
+- [x] Deep links and SSO login (#5)
+- [ ] Auto-update (#6), autostart (#7)
 - [ ] App icon (#8)
 - [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
       a SmartScreen warning)

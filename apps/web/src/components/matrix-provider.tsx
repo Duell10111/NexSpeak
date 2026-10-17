@@ -34,6 +34,7 @@ import {
 } from '@nexspeak/core/matrix/client'
 import { describeLoginError, resolveHomeserverUrl, serverNameFromUserId } from '@nexspeak/core/matrix/errors'
 import { t } from '@nexspeak/i18n'
+import { desktopBridge } from '@/lib/desktop'
 
 interface MatrixContextType {
   /** undefined until the session has been read from storage on the client. */
@@ -46,6 +47,7 @@ interface MatrixContextType {
   isLoggingIn: boolean
   loginError: string | null
   login: (homeserver: string, username: string, password: string) => Promise<void>
+  loginWithToken: (homeserverUrl: string, token: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -126,43 +128,59 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [client])
 
-  const login = useCallback(async (homeserver: string, username: string, password: string) => {
-    setIsLoggingIn(true)
-    setLoginError(null)
+  /** Runs a login request and stores the session; shared by password and SSO login. */
+  const runLogin = useCallback(
+    async (resolveHomeserver: () => Promise<string>, credentials: Record<string, unknown>) => {
+      setIsLoggingIn(true)
+      setLoginError(null)
+      try {
+        const homeserverUrl = await resolveHomeserver()
+        const response = await createUnauthenticatedMatrixClient(homeserverUrl).loginRequest({
+          ...credentials,
+          initial_device_display_name: desktopBridge() ? 'NexSpeak Desktop' : 'NexSpeak Web',
+        } as Parameters<MatrixClient['loginRequest']>[0])
 
-    try {
+        if (!response.access_token || !response.user_id || !response.device_id) {
+          throw new Error(t('login.invalidResponse'))
+        }
+
+        // Drop any leftover client (and its crypto store) from a previous account.
+        await teardownClient(getMatrixClient())
+
+        saveSession({
+          homeserverUrl: response.well_known?.['m.homeserver']?.base_url?.replace(/\/+$/, '') || homeserverUrl,
+          userId: response.user_id,
+          accessToken: response.access_token,
+          deviceId: response.device_id,
+        })
+      } catch (error) {
+        setLoginError(describeLoginError(error))
+        throw error
+      } finally {
+        setIsLoggingIn(false)
+      }
+    },
+    [],
+  )
+
+  const login = useCallback(
+    (homeserver: string, username: string, password: string) => {
       const trimmedUser = username.trim()
-      const serverFromUser = serverNameFromUserId(trimmedUser)
-      const homeserverUrl = await resolveHomeserverUrl(homeserver.trim() || serverFromUser || '')
-
-      const response = await createUnauthenticatedMatrixClient(homeserverUrl).loginRequest({
+      return runLogin(() => resolveHomeserverUrl(homeserver.trim() || serverNameFromUserId(trimmedUser) || ''), {
         type: 'm.login.password',
         identifier: { type: 'm.id.user', user: trimmedUser },
         password,
-        initial_device_display_name: 'NexSpeak Web',
       })
+    },
+    [runLogin],
+  )
 
-      if (!response.access_token || !response.user_id || !response.device_id) {
-        throw new Error(t('login.invalidResponse'))
-      }
-
-      // Drop any leftover client (and its crypto store) from a previous account.
-      await teardownClient(getMatrixClient())
-
-      saveSession({
-        homeserverUrl: response.well_known?.['m.homeserver']?.base_url?.replace(/\/+$/, '') || homeserverUrl,
-        userId: response.user_id,
-        accessToken: response.access_token,
-        deviceId: response.device_id,
-      })
-    } catch (error) {
-      const message = describeLoginError(error)
-      setLoginError(message)
-      throw error
-    } finally {
-      setIsLoggingIn(false)
-    }
-  }, [])
+  /** The return from an SSO login: the homeserver handed us a short-lived login token. */
+  const loginWithToken = useCallback(
+    (homeserverUrl: string, token: string) =>
+      runLogin(async () => homeserverUrl, { type: 'm.login.token', token }),
+    [runLogin],
+  )
 
   const logout = useCallback(async () => {
     const current = getMatrixClient()
@@ -187,6 +205,7 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
     isLoggingIn,
     loginError,
     login,
+    loginWithToken,
     logout,
   }
 

@@ -18,6 +18,7 @@ import {
 } from "electron"
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
 import { setBadgeCount } from "./badge"
+import { registerDeepLinks, setupDeepLinks } from "./deep-links"
 import { originOf } from "./origin"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
 import { createTray } from "./tray"
@@ -64,6 +65,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on("second-instance", showWindow)
+  registerDeepLinks()
   app.whenReady().then(start)
 }
 
@@ -87,6 +89,7 @@ function start() {
   serveWebBuild(securityHeaders)
   restrictPermissions(session.defaultSession)
   handleDisplayMedia(session.defaultSession)
+  setupDeepLinks({ webContents: () => mainWindow?.webContents, showWindow })
   mainWindow = createWindow()
   createTray({ webContents: () => mainWindow?.webContents, showWindow })
   setupPushToTalk(() => mainWindow?.webContents)

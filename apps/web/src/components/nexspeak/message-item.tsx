@@ -13,6 +13,8 @@ import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { EmojiPicker } from "@/components/nexspeak/emoji-picker"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { MatrixMessage } from "@nexspeak/core/matrix/types"
+import { parseMatrixLink } from "@nexspeak/core/matrix/links"
+import { setPendingLink } from "@/lib/pending-link"
 
 const URL_PATTERN = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g
 
@@ -45,6 +47,13 @@ function LinkifiedText({ text }: { text: string }) {
             href={part}
             target="_blank"
             rel="noopener noreferrer nofollow"
+            onClick={(event) => {
+              // matrix.to links to rooms and people open in the app, like in Element.
+              const link = parseMatrixLink(part)
+              if (!link || link.kind === "sso") return
+              event.preventDefault()
+              setPendingLink(link)
+            }}
             className="break-all text-primary hover:underline"
           >
             {part}

@@ -15,6 +15,9 @@ direct messages, voice/video calls and screen sharing. Available as a web app an
 - **Notifications:** for new messages according to the Matrix push rules (same settings as Element), unread
   count in the window title and as app badge
 - **Mobile layout:** navigation and member list as slide-in panels
+- **Login:** password or SSO (also via the compatibility layer of OIDC homeservers such as matrix.org)
+- **Links:** matrix.to links to rooms, servers and people open in the app; the desktop app handles
+  `nexspeak://` links
 - **UI languages:** German and English
 
 ## Structure
