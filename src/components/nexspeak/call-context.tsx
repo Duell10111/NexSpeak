@@ -15,6 +15,7 @@ import type { MatrixClient } from "matrix-js-sdk"
 import { toast } from "sonner"
 import { CallSession, type CallSnapshot } from "@/lib/matrix/call-session"
 import { describeMatrixError } from "@/lib/matrix/errors"
+import { t } from "@/lib/i18n"
 import { CallPermissionError, enableCallsInRoom } from "@/lib/matrix/rtc"
 import { getDefaultAudioSettings, loadAudioSettings, subscribeAudioSettings } from "@/lib/audio-settings"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
@@ -102,7 +103,7 @@ function reportError(error: unknown, fallback: string) {
   console.error(fallback, error)
   const message =
     error instanceof DOMException && error.name === "NotAllowedError"
-      ? "Zugriff verweigert. Bitte erlaube Mikrofon, Kamera bzw. Bildschirmfreigabe im Browser."
+      ? t("call.error.accessDenied")
       : describeMatrixError(error, fallback)
   toast.error(message)
 }
@@ -173,18 +174,18 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           toast.error(error.message, {
             duration: 15_000,
             action: {
-              label: "Anrufe erlauben",
+              label: t("call.allowCalls"),
               onClick: () => {
                 enableCallsInRoom(client, roomId)
-                  .then(() => toast.success("Anrufe sind jetzt für alle Mitglieder erlaubt."))
-                  .catch((enableError: unknown) => reportError(enableError, "Berechtigungen konnten nicht geändert werden."))
+                  .then(() => toast.success(t("call.callsEnabled")))
+                  .catch((enableError: unknown) => reportError(enableError, t("call.permissionsFailed")))
               },
             },
           })
         } else if (error instanceof CallPermissionError) {
           toast.error(error.message)
         } else {
-          reportError(error, "Dem Sprachkanal konnte nicht beigetreten werden.")
+          reportError(error, t("call.error.joinFailed"))
         }
       } finally {
         setJoiningRoomId("")
@@ -204,7 +205,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       if (isMuted && isDeafened) current?.setDeafened(false)
       updateVoicePrefs({ muted: !isMuted, deafened: isMuted ? false : isDeafened, mutedByDeafen: false })
     } catch (error) {
-      reportError(error, "Mikrofon konnte nicht umgeschaltet werden.")
+      reportError(error, t("call.error.micToggleFailed"))
     }
   }, [updateVoicePrefs])
 
@@ -214,7 +215,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     try {
       await current.setCameraEnabled(!current.getSnapshot().isCameraOn)
     } catch (error) {
-      reportError(error, "Kamera konnte nicht umgeschaltet werden.")
+      reportError(error, t("call.error.cameraToggleFailed"))
     }
   }, [])
 
@@ -228,7 +229,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     try {
       await current.setScreenShareEnabled(false)
     } catch (error) {
-      reportError(error, "Bildschirmfreigabe konnte nicht beendet werden.")
+      reportError(error, t("call.error.screenshareStopFailed"))
     }
   }, [])
 
@@ -253,7 +254,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       } catch (error) {
         // Closing the browser's picker is not an error worth reporting.
         if (error instanceof DOMException && error.name === "NotAllowedError") return
-        reportError(error, "Bildschirmfreigabe konnte nicht gestartet werden.")
+        reportError(error, t("call.error.screenshareStartFailed"))
       }
     },
     [updateScreenShareQuality],
@@ -265,7 +266,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       try {
         await sessionRef.current?.setScreenShareQuality(quality)
       } catch (error) {
-        reportError(error, "Stream-Qualität konnte nicht geändert werden.")
+        reportError(error, t("call.error.qualityFailed"))
       }
     },
     [updateScreenShareQuality],
@@ -288,7 +289,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       current?.setDeafened(false)
       const unmute = prefs.mutedByDeafen
       if (unmute) {
-        current?.setMicrophoneEnabled(true).catch((error: unknown) => reportError(error, "Mikrofon konnte nicht aktiviert werden."))
+        current?.setMicrophoneEnabled(true).catch((error: unknown) => reportError(error, t("call.error.micEnableFailed")))
       }
       updateVoicePrefs({ muted: unmute ? false : isMuted, deafened: false, mutedByDeafen: false })
     }
@@ -306,7 +307,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     try {
       await sessionRef.current?.startAudio()
     } catch (error) {
-      reportError(error, "Audio konnte nicht gestartet werden.")
+      reportError(error, t("call.error.audioFailed"))
     }
   }, [])
 

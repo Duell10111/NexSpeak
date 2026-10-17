@@ -4,6 +4,8 @@
  * (AES-CTR-256, SHA-256 hash of the ciphertext, "v2" format as used by Element).
  */
 
+import { t } from '@/lib/i18n'
+
 export interface EncryptedFile {
   url: string
   key: {
@@ -80,7 +82,7 @@ export async function decryptAttachment(ciphertext: ArrayBuffer, file: Omit<Encr
   const expected = file.hashes.sha256
   const actual = toUnpaddedBase64(await crypto.subtle.digest('SHA-256', ciphertext))
   if (actual !== expected.replace(/=+$/, '')) {
-    throw new Error('Die Datei wurde verändert oder ist beschädigt.')
+    throw new Error(t('error.fileCorrupted'))
   }
 
   const key = await crypto.subtle.importKey(

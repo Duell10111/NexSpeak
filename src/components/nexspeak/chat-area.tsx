@@ -3,10 +3,11 @@
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
-import { Hash, Lock, Menu, Users, Volume2 } from "lucide-react"
+import { AtSign, Hash, Lock, Menu, Users, Volume2 } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomInfo } from "@/hooks/useRoomInfo"
+import { useTranslation } from "@/hooks/useTranslation"
 import { CallArea } from "@/components/nexspeak/call-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { RoomChat } from "@/components/nexspeak/room-chat"
@@ -54,6 +55,7 @@ export function HeaderButton({
 }
 
 export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpenNavigation }: ChatAreaProps) {
+  const { t } = useTranslation()
   const { isInCallInActiveChannel, joinCall, joiningRoomId } = useCallContext()
   const { client } = useMatrixClient()
   const roomInfo = useRoomInfo(client, activeChannelId)
@@ -63,11 +65,11 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
     return (
       <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-12 items-center border-b border-nx-guild-bar px-2 md:hidden">
-          <button onClick={onOpenNavigation} className="rounded p-1.5 text-muted-foreground" aria-label="Navigation öffnen">
+          <button onClick={onOpenNavigation} className="rounded p-1.5 text-muted-foreground" aria-label={t("nav.open")}>
             <Menu className="h-5 w-5" />
           </button>
         </header>
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Wähle einen Raum aus.</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{t("chat.selectRoom")}</div>
       </div>
     )
   }
@@ -84,18 +86,22 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
           <button
             onClick={onOpenNavigation}
             className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
-            aria-label="Navigation öffnen"
+            aria-label={t("nav.open")}
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Hash className="h-6 w-6 shrink-0 text-muted-foreground" />
+          {roomInfo?.isDirect ? (
+            <AtSign className="h-6 w-6 shrink-0 text-muted-foreground" />
+          ) : (
+            <Hash className="h-6 w-6 shrink-0 text-muted-foreground" />
+          )}
           <h3 className="truncate text-base font-semibold text-foreground">{roomName}</h3>
           {roomInfo?.isEncrypted && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Ende-zu-Ende-verschlüsselt" />
+                <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={t("chat.encrypted")} />
               </TooltipTrigger>
-              <TooltipContent>Ende-zu-Ende-verschlüsselt</TooltipContent>
+              <TooltipContent>{t("chat.encrypted")}</TooltipContent>
             </Tooltip>
           )}
           {roomInfo?.topic && (
@@ -110,14 +116,14 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
         <div className="flex shrink-0 items-center gap-4">
           {roomInfo?.exists && (
             <HeaderButton
-              label="Sprachkanal beitreten"
+              label={roomInfo.isDirect ? t("call.startCall") : t("call.joinVoice")}
               onClick={() => void joinCall(activeChannelId)}
               disabled={Boolean(joiningRoomId)}
             >
               {joiningRoomId === activeChannelId ? <Spinner className="h-5 w-5" /> : <Volume2 className="h-6 w-6" />}
             </HeaderButton>
           )}
-          <HeaderButton label="Mitgliederliste" active={showMembers} onClick={onToggleMembers}>
+          <HeaderButton label={t("members.list")} active={showMembers} onClick={onToggleMembers}>
             <Users className="h-6 w-6" />
           </HeaderButton>
         </div>

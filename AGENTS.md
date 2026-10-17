@@ -64,5 +64,9 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
 
 - Node 24 (`.nvmrc`). Befehle: `npm run dev`, `npm run build`, `npm run lint`, `npm test`
   (Vitest), `npm run test:e2e:docker` (Playwright gegen `dev/docker-compose.yml`).
-- Die Oberfläche ist deutsch.
+- Die Oberfläche gibt es auf Deutsch und Englisch (`src/lib/i18n`, ohne Bibliothek). Neue Texte
+  nie fest in Komponenten schreiben, sondern als Schlüssel in `de.ts` (Referenz) und `en.ts`
+  anlegen; in Komponenten `useTranslation()`, außerhalb von React `t()`. Ohne gespeicherte Wahl
+  folgt die Sprache dem Browser. Die E2E-Tests laufen mit `locale: "de-DE"` gegen die deutsche
+  Oberfläche.
 - Änderungen an Anrufen mit den E2E-Tests in `e2e/call.spec.ts` prüfen (inklusive E2EE).

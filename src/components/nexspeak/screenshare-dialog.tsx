@@ -12,6 +12,7 @@ import {
   type ScreenShareQuality,
 } from "@/lib/screenshare-quality"
 import { hasSoftwareOnlyVideoEncoder } from "@/lib/video-codec"
+import { useTranslation } from "@/hooks/useTranslation"
 
 function OptionGroup<T extends string | number>({
   label,
@@ -59,30 +60,31 @@ export function StreamQualityOptions({
   quality: ScreenShareQuality
   onChange: (quality: ScreenShareQuality) => void
 }) {
+  const { t, intl } = useTranslation()
   return (
     <div className="space-y-4">
       <OptionGroup
-        label="Auflösung"
+        label={t("stream.resolution")}
         options={SCREENSHARE_RESOLUTIONS}
         value={quality.resolution}
         format={resolutionLabel}
         onChange={(resolution) => onChange({ ...quality, resolution })}
       />
       <OptionGroup
-        label="Bildrate"
+        label={t("stream.framerate")}
         options={SCREENSHARE_FRAMERATES}
         value={quality.fps}
         format={(fps) => `${fps} FPS`}
         onChange={(fps) => onChange({ ...quality, fps })}
       />
       <p className="text-xs text-muted-foreground">
-        Benötigt bis zu {(screenShareBitrate(quality) / 1_000_000).toLocaleString("de-DE", { maximumFractionDigits: 1 })}{" "}
-        Mbit/s Upload. Für Spiele 60 FPS wählen, für Text und Code reichen 15 FPS in hoher Auflösung.
+        {t("stream.bitrateHint", {
+          rate: (screenShareBitrate(quality) / 1_000_000).toLocaleString(intl, { maximumFractionDigits: 1 }),
+        })}
       </p>
       {hasSoftwareOnlyVideoEncoder() && (
         <p className="rounded-md bg-nx-idle/10 px-3 py-2 text-xs text-nx-idle" data-testid="software-encoder-hint">
-          Firefox kodiert Video ohne Grafikkarte. Das belastet die CPU und reicht oft nicht für hohe Auflösungen mit
-          60 FPS. Für Spiele besser Chrome, Edge oder Safari verwenden oder 1080p mit 30 FPS wählen.
+          {t("stream.softwareEncoderHint")}
         </p>
       )}
     </div>
@@ -98,6 +100,7 @@ function StreamQualityForm({
   onStart: (quality: ScreenShareQuality) => void
   onCancel: () => void
 }) {
+  const { t } = useTranslation()
   const [quality, setQuality] = useState(initialQuality)
   return (
     <>
@@ -108,7 +111,7 @@ function StreamQualityForm({
           onClick={onCancel}
           className="h-10 rounded-md px-4 text-sm font-medium text-foreground hover:underline"
         >
-          Abbrechen
+          {t("common.cancel")}
         </button>
         <button
           type="button"
@@ -116,7 +119,7 @@ function StreamQualityForm({
           className="flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           <MonitorUp className="h-4 w-4" />
-          Live gehen
+          {t("stream.goLive")}
         </button>
       </DialogFooter>
     </>
@@ -134,17 +137,15 @@ export function ScreenshareDialog({
   initialQuality: ScreenShareQuality
   onStart: (quality: ScreenShareQuality) => void
 }) {
+  const { t } = useTranslation()
   // In fullscreen only the fullscreen element is visible, so the dialog has to live there.
   const container = open && typeof document !== "undefined" ? (document.fullscreenElement as HTMLElement | null) : null
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent container={container} className="gap-5 border-none bg-background sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Bildschirm teilen</DialogTitle>
-          <DialogDescription>
-            Wähle die Stream-Qualität. Danach fragt der Browser, welchen Bildschirm, welches Fenster oder welchen Tab du
-            teilen möchtest.
-          </DialogDescription>
+          <DialogTitle>{t("call.shareScreen")}</DialogTitle>
+          <DialogDescription>{t("stream.dialogDescription")}</DialogDescription>
         </DialogHeader>
         {/* Remount per opening so the form starts from the remembered quality. */}
         {open && <StreamQualityForm initialQuality={initialQuality} onStart={onStart} onCancel={() => onOpenChange(false)} />}

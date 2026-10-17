@@ -21,7 +21,9 @@ import { Plus, Volume2 } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useMediaUrl } from "@/hooks/useMediaUrl"
+import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@/lib/matrix/errors"
+import { joinSpaceChannels } from "@/lib/matrix/direct"
 import { DIRECT_MESSAGES_ID, type MatrixRoom, type MatrixSpace } from "@/lib/matrix/types"
 
 interface ServerSidebarProps {
@@ -60,10 +62,11 @@ function UnreadBadge({ mentions, unread, isActive }: { mentions: number; unread:
 
 /** Discord marks the server you are talking in with a small speaker. */
 function VoiceBadge() {
+  const { t } = useTranslation()
   return (
     <span
       className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-[3px] border-nx-guild-bar bg-nx-online text-white"
-      aria-label="Aktiver Sprachkanal"
+      aria-label={t("call.activeVoiceChannel")}
     >
       <Volume2 className="h-2.5 w-2.5" />
     </span>
@@ -150,6 +153,7 @@ function JoinRoomDialog({
   onOpenChange: (open: boolean) => void
   onJoined: (roomId: string) => void
 }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [address, setAddress] = useState("")
   const [isJoining, setIsJoining] = useState(false)
@@ -160,19 +164,22 @@ function JoinRoomDialog({
     if (!client || !target) return
 
     if (!/^[#!][^:]+:.+$/.test(target)) {
-      toast.error("Bitte gib eine Adresse wie #raum:server.org oder eine Raum-ID an.")
+      toast.error(t("join.invalidAddress"))
       return
     }
 
     setIsJoining(true)
     try {
       const room = await client.joinRoom(target)
-      toast.success(`${room.name || target} beigetreten`)
+      // Joining a server means joining its channels, like on Discord. The room type may not
+      // have synced yet; for an ordinary room the hierarchy is just the room itself.
+      await joinSpaceChannels(client, room.roomId).catch((error: unknown) => console.info("No channels joined:", error))
+      toast.success(t("join.joined", { name: room.name || target }))
       setAddress("")
       onOpenChange(false)
       onJoined(room.roomId)
     } catch (error) {
-      toast.error(describeMatrixError(error, "Beitritt fehlgeschlagen."))
+      toast.error(describeMatrixError(error, t("invite.acceptFailed")))
     } finally {
       setIsJoining(false)
     }
@@ -183,11 +190,11 @@ function JoinRoomDialog({
       <DialogContent className="sm:max-w-md">
         <form onSubmit={(event) => void handleSubmit(event)}>
           <DialogHeader>
-            <DialogTitle>Server oder Raum beitreten</DialogTitle>
-            <DialogDescription>Gib die Adresse eines Matrix-Space oder -Raums ein.</DialogDescription>
+            <DialogTitle>{t("join.title")}</DialogTitle>
+            <DialogDescription>{t("join.description")}</DialogDescription>
           </DialogHeader>
           <div className="my-4 space-y-2">
-            <Label htmlFor="join-address">Adresse</Label>
+            <Label htmlFor="join-address">{t("join.address")}</Label>
             <Input
               id="join-address"
               placeholder="#community:matrix.org"
@@ -200,7 +207,7 @@ function JoinRoomDialog({
           <DialogFooter>
             <Button type="submit" disabled={isJoining || !address.trim()}>
               {isJoining && <Spinner className="mr-2 h-4 w-4" />}
-              Beitreten
+              {t("join.submit")}
             </Button>
           </DialogFooter>
         </form>
@@ -217,6 +224,7 @@ export function ServerSidebar({
   onServerSelect,
   onRoomJoined,
 }: ServerSidebarProps) {
+  const { t } = useTranslation()
   const [joinOpen, setJoinOpen] = useState(false)
   const { call } = useCallContext()
   const isHomeActive = activeServerId === DIRECT_MESSAGES_ID
@@ -227,7 +235,7 @@ export function ServerSidebar({
   return (
     <nav
       className="flex h-full w-[72px] shrink-0 flex-col items-center overflow-y-auto bg-nx-guild-bar py-3"
-      aria-label="Server-Liste"
+      aria-label={t("nav.serverList")}
     >
       {/* Home / DM button */}
       <Tooltip>
@@ -240,7 +248,7 @@ export function ServerSidebar({
                 ? "bg-primary text-primary-foreground"
                 : "bg-nx-guild-bar text-foreground hover:bg-primary hover:text-primary-foreground",
             )}
-            aria-label="Direktnachrichten"
+            aria-label={t("dm.title")}
             aria-current={isHomeActive ? "page" : undefined}
           >
             <svg width="28" height="20" viewBox="0 0 28 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -254,7 +262,7 @@ export function ServerSidebar({
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" className="font-semibold">
-          Direktnachrichten
+          {t("dm.title")}
         </TooltipContent>
       </Tooltip>
 
@@ -285,13 +293,13 @@ export function ServerSidebar({
           <button
             onClick={() => setJoinOpen(true)}
             className="mx-3 mt-2 flex h-12 w-12 items-center justify-center rounded-[24px] bg-nx-guild-bar text-nx-online transition-all hover:rounded-[16px] hover:bg-nx-online hover:text-primary-foreground"
-            aria-label="Server beitreten"
+            aria-label={t("join.server")}
           >
             <Plus className="h-5 w-5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" className="font-semibold">
-          Server beitreten
+          {t("join.server")}
         </TooltipContent>
       </Tooltip>
 

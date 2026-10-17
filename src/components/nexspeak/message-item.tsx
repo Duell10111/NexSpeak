@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { downloadMedia, useMediaUrl } from "@/hooks/useMediaUrl"
+import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@/lib/matrix/errors"
 import { editTextMessage, toggleReaction } from "@/lib/matrix/messages"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
@@ -22,8 +23,8 @@ export interface MessageActions {
   onDelete: (message: MatrixMessage) => void
 }
 
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+function formatTime(timestamp: number, locale: string): string {
+  return new Date(timestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })
 }
 
 function formatSize(bytes?: number): string {
@@ -75,6 +76,7 @@ function ImageAttachment({ message }: { message: MatrixMessage }) {
 }
 
 function FileAttachment({ message }: { message: MatrixMessage }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [isDownloading, setIsDownloading] = useState(false)
 
@@ -84,7 +86,7 @@ function FileAttachment({ message }: { message: MatrixMessage }) {
     try {
       await downloadMedia(client, message.media, message.body)
     } catch (error) {
-      toast.error(describeMatrixError(error, "Download fehlgeschlagen."))
+      toast.error(describeMatrixError(error, t("chat.downloadFailed")))
     } finally {
       setIsDownloading(false)
     }
@@ -96,7 +98,7 @@ function FileAttachment({ message }: { message: MatrixMessage }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{message.body}</p>
         <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          {message.media?.file && <Lock className="h-3 w-3" aria-label="Verschlüsselt" />}
+          {message.media?.file && <Lock className="h-3 w-3" aria-label={t("chat.encryptedFile")} />}
           {formatSize(message.media?.size)}
         </p>
       </div>
@@ -104,7 +106,7 @@ function FileAttachment({ message }: { message: MatrixMessage }) {
         onClick={() => void handleDownload()}
         disabled={isDownloading || !(message.media?.mxc || message.media?.file)}
         className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-        aria-label="Herunterladen"
+        aria-label={t("chat.download")}
       >
         <Download className="h-4 w-4" />
       </button>
@@ -113,6 +115,7 @@ function FileAttachment({ message }: { message: MatrixMessage }) {
 }
 
 function MessageBody({ message }: { message: MatrixMessage }) {
+  const { t } = useTranslation()
   switch (message.kind) {
     case "text":
       return <LinkifiedText text={message.body} />
@@ -140,7 +143,8 @@ function MessageBody({ message }: { message: MatrixMessage }) {
       return (
         <span className="inline-flex items-center gap-1.5 italic text-muted-foreground">
           {message.kind === "undecryptable" && <Lock className="h-3.5 w-3.5" />}
-          {message.body}
+          {/* Rendered here, not taken from the cached body, so a language switch applies at once. */}
+          {t(`message.${message.kind}`)}
         </span>
       )
     default:
@@ -170,13 +174,14 @@ function ReplyPreview({ reply }: { reply: NonNullable<MatrixMessage["replyTo"]> 
 }
 
 function Reactions({ message }: { message: MatrixMessage }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   if (message.reactions.length === 0) return null
 
   const react = (key: string, ownEventId?: string) => {
     if (!client) return
     toggleReaction(client, message.roomId, message.id, key, ownEventId).catch((error: unknown) => {
-      toast.error(describeMatrixError(error, "Reaktion konnte nicht gesendet werden."))
+      toast.error(describeMatrixError(error, t("chat.reactionFailed")))
     })
   }
 
@@ -210,6 +215,7 @@ function Reactions({ message }: { message: MatrixMessage }) {
 }
 
 function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () => void }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [value, setValue] = useState(message.body)
 
@@ -220,7 +226,7 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
       return
     }
     editTextMessage(client, message.roomId, message.event, body).catch((error: unknown) => {
-      toast.error(describeMatrixError(error, "Nachricht konnte nicht bearbeitet werden."))
+      toast.error(describeMatrixError(error, t("chat.editFailed")))
     })
     onDone()
   }
@@ -245,24 +251,38 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
         onFocus={(event) => event.currentTarget.setSelectionRange(value.length, value.length)}
         rows={Math.min(8, value.split("\n").length)}
         className="w-full resize-none rounded-md bg-nx-chat-input px-3 py-2 text-sm text-foreground outline-none"
-        aria-label="Nachricht bearbeiten"
+        aria-label={t("chat.editMessage")}
       />
       <p className="mt-1 text-[11px] text-muted-foreground">
-        Escape zum <button className="text-primary hover:underline" onClick={onDone}>Abbrechen</button> • Enter zum{" "}
-        <button className="text-primary hover:underline" onClick={save}>Speichern</button>
+        <Trans
+          k="chat.editHint"
+          values={{
+            cancel: (
+              <button className="text-primary hover:underline" onClick={onDone}>
+                {t("common.cancel")}
+              </button>
+            ),
+            save: (
+              <button className="text-primary hover:underline" onClick={save}>
+                {t("common.save")}
+              </button>
+            ),
+          }}
+        />
       </p>
     </div>
   )
 }
 
 function FailedMessageActions({ message }: { message: MatrixMessage }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
 
   const retry = () => {
     const room = client?.getRoom(message.roomId)
     if (!client || !room) return
     client.resendEvent(message.event, room).catch((error: unknown) => {
-      toast.error(describeMatrixError(error, "Nachricht konnte nicht gesendet werden."))
+      toast.error(describeMatrixError(error, t("chat.sendFailed")))
     })
   }
 
@@ -277,12 +297,12 @@ function FailedMessageActions({ message }: { message: MatrixMessage }) {
   return (
     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-destructive">
       <AlertCircle className="h-3.5 w-3.5" />
-      <span>Senden fehlgeschlagen.</span>
+      <span>{t("chat.sendFailedShort")}</span>
       <button onClick={retry} className="inline-flex items-center gap-1 hover:underline">
-        <RotateCw className="h-3 w-3" /> Erneut senden
+        <RotateCw className="h-3 w-3" /> {t("chat.resend")}
       </button>
       <button onClick={discard} className="inline-flex items-center gap-1 hover:underline">
-        <Trash2 className="h-3 w-3" /> Verwerfen
+        <Trash2 className="h-3 w-3" /> {t("chat.discard")}
       </button>
     </div>
   )
@@ -318,6 +338,7 @@ export const MessageItem = memo(function MessageItem({
   isEditing,
   actions,
 }: MessageItemProps) {
+  const { t, intl } = useTranslation()
   const { client } = useMatrixClient()
   const isSent = message.status === "sent"
   const isInteractive = isSent && !["redacted", "decrypting", "undecryptable"].includes(message.kind)
@@ -328,7 +349,7 @@ export const MessageItem = memo(function MessageItem({
     if (!client) return
     const existing = message.reactions.find((reaction) => reaction.key === key)
     toggleReaction(client, message.roomId, message.id, key, existing?.ownEventId).catch((error: unknown) => {
-      toast.error(describeMatrixError(error, "Reaktion konnte nicht gesendet werden."))
+      toast.error(describeMatrixError(error, t("chat.reactionFailed")))
     })
   }
 
@@ -345,20 +366,20 @@ export const MessageItem = memo(function MessageItem({
       {isInteractive && !isEditing && (
         <div className="absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex">
           <EmojiPicker onSelect={react}>
-            <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Reaktion hinzufügen">
+            <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.addReaction")}>
               <SmilePlus className="h-4 w-4" />
             </button>
           </EmojiPicker>
-          <ActionButton label="Antworten" onClick={() => actions.onReply(message)}>
+          <ActionButton label={t("chat.reply")} onClick={() => actions.onReply(message)}>
             <CornerUpLeft className="h-4 w-4" />
           </ActionButton>
           {canEdit && (
-            <ActionButton label="Bearbeiten" onClick={() => actions.onEditStart(message.id)}>
+            <ActionButton label={t("chat.edit")} onClick={() => actions.onEditStart(message.id)}>
               <Pencil className="h-4 w-4" />
             </ActionButton>
           )}
           {canDelete && (
-            <ActionButton label="Löschen" onClick={() => actions.onDelete(message)}>
+            <ActionButton label={t("common.delete")} onClick={() => actions.onDelete(message)}>
               <Trash2 className="h-4 w-4 text-destructive" />
             </ActionButton>
           )}
@@ -370,7 +391,7 @@ export const MessageItem = memo(function MessageItem({
           <MatrixAvatar mxcUrl={message.senderAvatarMxc} name={message.senderName} size={40} className={cn(message.replyTo ? "mt-5" : "mt-0.5")} />
         ) : (
           <span className="invisible block pt-[3px] text-right text-[11px] text-muted-foreground group-hover:visible">
-            {formatTime(message.timestamp)}
+            {formatTime(message.timestamp, intl)}
           </span>
         )}
       </div>
@@ -381,7 +402,7 @@ export const MessageItem = memo(function MessageItem({
             <span className="cursor-default text-[15px] leading-[22px] font-medium text-foreground hover:underline" title={message.senderId}>
               {message.senderName}
             </span>
-            <span className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</span>
+            <span className="text-xs text-muted-foreground">{formatTime(message.timestamp, intl)}</span>
           </div>
         )}
         {isEditing ? (
@@ -389,7 +410,7 @@ export const MessageItem = memo(function MessageItem({
         ) : (
           <div className="whitespace-pre-wrap break-words text-[15px] leading-[22px] text-foreground" data-testid="message-body">
             <MessageBody message={message} />
-            {message.edited && <span className="ml-1 text-[10px] text-muted-foreground">(bearbeitet)</span>}
+            {message.edited && <span className="ml-1 text-[10px] text-muted-foreground">{t("chat.edited")}</span>}
           </div>
         )}
         <Reactions message={message} />
@@ -400,7 +421,8 @@ export const MessageItem = memo(function MessageItem({
 })
 
 export function DateDivider({ timestamp }: { timestamp: number }) {
-  const label = new Date(timestamp).toLocaleDateString("de-DE", {
+  const { intl } = useTranslation()
+  const label = new Date(timestamp).toLocaleDateString(intl, {
     weekday: "long",
     day: "numeric",
     month: "long",

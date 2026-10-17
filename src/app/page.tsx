@@ -11,11 +11,13 @@ import { MemberList } from "@/components/nexspeak/member-list"
 import { CallProvider } from "@/components/nexspeak/call-context"
 import { SecurityProvider } from "@/components/nexspeak/security-context"
 import { SecurityBanner } from "@/components/nexspeak/security-panel"
+import { NavigationProvider } from "@/components/nexspeak/navigation-context"
 import { useMatrix } from "@/components/matrix-provider"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { useRoomDirectory, type RoomDirectory } from "@/hooks/useRoomDirectory"
+import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@/lib/matrix/errors"
 import { DIRECT_MESSAGES_ID } from "@/lib/matrix/types"
 
@@ -61,6 +63,7 @@ export default function NexSpeakApp() {
   const router = useRouter()
   const { session, client, syncState, startError, logout } = useMatrix()
   const directory = useRoomDirectory(client)
+  const { t } = useTranslation()
 
   const [selection, setSelection] = useState<Selection>(() =>
     typeof window === "undefined" ? { serverId: "", channelId: "" } : loadSelection(),
@@ -93,8 +96,8 @@ export default function NexSpeakApp() {
 
   const sections: RoomSection[] = isDirectMessages
     ? [
-        { id: "direct", title: "Direktnachrichten", rooms: directory.directRooms },
-        { id: "other", title: "Räume", rooms: directory.otherRooms },
+        { id: "direct", title: t("dm.title"), rooms: directory.directRooms },
+        { id: "other", title: t("nav.rooms"), rooms: directory.otherRooms },
       ]
     : [{ id: serverId, rooms: directory.roomsBySpace[serverId] ?? [] }]
   const serverRooms = sections.flatMap((section) => section.rooms)
@@ -105,8 +108,8 @@ export default function NexSpeakApp() {
       : serverRooms[0]?.id || ""
 
   const title = isDirectMessages
-    ? "Startseite"
-    : directory.spaces.find((space) => space.id === serverId)?.name || "Server"
+    ? t("nav.home")
+    : directory.spaces.find((space) => space.id === serverId)?.name || t("nav.server")
   const homeUnread =
     directory.directRooms.reduce((sum, room) => sum + room.unread, 0) + directory.invites.length
 
@@ -122,12 +125,13 @@ export default function NexSpeakApp() {
     }
   }
 
-  const handleChannelSelect = (roomId: string) => {
+  const openRoom = (roomId: string, targetServer?: string) => {
     setIsNavigationOpen(false)
-    const targetServer = findServerFor(directory, roomId)
+    setIsMemberSheetOpen(false)
     // Unknown yet (e.g. just joined): let the server be derived once the directory catches up.
-    setSelection({ serverId: targetServer ?? "", channelId: roomId })
-    if (targetServer) setLastChannelByServer((prev) => ({ ...prev, [targetServer]: roomId }))
+    const server = targetServer ?? findServerFor(directory, roomId) ?? ""
+    setSelection({ serverId: server, channelId: roomId })
+    if (server) setLastChannelByServer((prev) => ({ ...prev, [server]: roomId }))
   }
 
   const handleRoomJoined = (roomId: string) => {
@@ -145,12 +149,12 @@ export default function NexSpeakApp() {
   if (startError) {
     return (
       <FullscreenStatus>
-        <h1 className="text-lg font-semibold text-foreground">Verbindung fehlgeschlagen</h1>
+        <h1 className="text-lg font-semibold text-foreground">{t("app.connectionFailed")}</h1>
         <p className="max-w-md text-sm text-muted-foreground">{describeMatrixError(startError)}</p>
         <div className="flex gap-2">
-          <Button onClick={() => window.location.reload()}>Erneut versuchen</Button>
+          <Button onClick={() => window.location.reload()}>{t("common.retry")}</Button>
           <Button variant="outline" onClick={() => void logout()}>
-            Abmelden
+            {t("account.logout")}
           </Button>
         </div>
       </FullscreenStatus>
@@ -163,11 +167,11 @@ export default function NexSpeakApp() {
       <FullscreenStatus>
         <Spinner className="h-6 w-6 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          {syncState === SyncState.Error ? "Server nicht erreichbar, neuer Versuch läuft…" : "Synchronisiere mit deinem Homeserver…"}
+          {syncState === SyncState.Error ? t("app.serverUnreachable") : t("app.syncing")}
         </p>
         {syncState === SyncState.Error && (
           <Button variant="outline" size="sm" onClick={() => void logout()}>
-            Abmelden
+            {t("account.logout")}
           </Button>
         )}
       </FullscreenStatus>
@@ -191,54 +195,57 @@ export default function NexSpeakApp() {
         sections={sections}
         invites={isDirectMessages ? directory.invites : []}
         isDirectMessages={isDirectMessages}
+        serverId={isDirectMessages ? undefined : serverId}
         activeChannelId={channelId}
-        onChannelSelect={handleChannelSelect}
+        onChannelSelect={openRoom}
       />
     </>
   )
 
   return (
     <SecurityProvider client={client}>
-      <CallProvider client={client} activeChannelId={channelId}>
-        <div className="flex h-dvh w-screen flex-col overflow-hidden">
-          <SecurityBanner />
-          {isConnectionLost && (
-            <div
-              className="flex shrink-0 items-center justify-center gap-2 bg-destructive px-4 py-1 text-xs font-medium text-destructive-foreground"
-              role="status"
-            >
-              <WifiOff className="h-3.5 w-3.5" />
-              Verbindung zum Server unterbrochen – neuer Versuch läuft…
-            </div>
-          )}
-          <main className="flex min-h-0 flex-1">
-            <div className="hidden md:flex">{navigation}</div>
-            <ChatArea
-              key={channelId}
-              activeChannelId={channelId}
-              showMembers={showMembers}
-              onToggleMembers={handleToggleMembers}
-              onOpenNavigation={() => setIsNavigationOpen(true)}
-            />
-          </main>
+      <NavigationProvider openRoom={openRoom}>
+        <CallProvider client={client} activeChannelId={channelId}>
+          <div className="flex h-dvh w-screen flex-col overflow-hidden">
+            <SecurityBanner />
+            {isConnectionLost && (
+              <div
+                className="flex shrink-0 items-center justify-center gap-2 bg-destructive px-4 py-1 text-xs font-medium text-destructive-foreground"
+                role="status"
+              >
+                <WifiOff className="h-3.5 w-3.5" />
+                {t("app.connectionLost")}
+              </div>
+            )}
+            <main className="flex min-h-0 flex-1">
+              <div className="hidden md:flex">{navigation}</div>
+              <ChatArea
+                key={channelId}
+                activeChannelId={channelId}
+                showMembers={showMembers}
+                onToggleMembers={handleToggleMembers}
+                onOpenNavigation={() => setIsNavigationOpen(true)}
+              />
+            </main>
 
-          {/* Mobile: navigation and member list as slide-in panels, closed by tapping outside (their X would cover the headers). */}
-          <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
-            <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none [&>button:last-child]:hidden">
-              <SheetTitle className="sr-only">Navigation</SheetTitle>
-              <SheetDescription className="sr-only">Server und Räume</SheetDescription>
-              <div className="flex h-full">{navigation}</div>
-            </SheetContent>
-          </Sheet>
-          <Sheet open={isMemberSheetOpen} onOpenChange={setIsMemberSheetOpen}>
-            <SheetContent side="right" className="w-auto gap-0 p-0 [&>button:last-child]:hidden">
-              <SheetTitle className="sr-only">Mitglieder</SheetTitle>
-              <SheetDescription className="sr-only">Mitglieder des Raums</SheetDescription>
-              {channelId && <MemberList activeRoomId={channelId} />}
-            </SheetContent>
-          </Sheet>
-        </div>
-      </CallProvider>
+            {/* Mobile: navigation and member list as slide-in panels, closed by tapping outside (their X would cover the headers). */}
+            <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
+              <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none [&>button:last-child]:hidden">
+                <SheetTitle className="sr-only">{t("nav.navigation")}</SheetTitle>
+                <SheetDescription className="sr-only">{t("nav.navigationDescription")}</SheetDescription>
+                <div className="flex h-full">{navigation}</div>
+              </SheetContent>
+            </Sheet>
+            <Sheet open={isMemberSheetOpen} onOpenChange={setIsMemberSheetOpen}>
+              <SheetContent side="right" className="w-auto gap-0 p-0 [&>button:last-child]:hidden">
+                <SheetTitle className="sr-only">{t("members.title")}</SheetTitle>
+                <SheetDescription className="sr-only">{t("members.description")}</SheetDescription>
+                {channelId && <MemberList activeRoomId={channelId} />}
+              </SheetContent>
+            </Sheet>
+          </div>
+        </CallProvider>
+      </NavigationProvider>
     </SecurityProvider>
   )
 }

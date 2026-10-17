@@ -52,6 +52,8 @@ import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { RoomChat } from "@/components/nexspeak/room-chat"
 import { useCallContext, type CallParticipant, type CallVideoFeed } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
+import { useTranslation } from "@/hooks/useTranslation"
+import type { Translate } from "@/lib/i18n"
 import { enableCallsInRoom, membersCanJoinCalls } from "@/lib/matrix/rtc"
 import { describeMatrixError } from "@/lib/matrix/errors"
 import { fitGrid, TILE_ASPECT, TILE_GAP_PX } from "@/lib/call-layout"
@@ -152,6 +154,7 @@ function TileMenu({
   onToggleFocus: () => void
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   const { setParticipantVolume, setParticipantMuted } = useCallContext()
   const { participant } = tile
 
@@ -159,12 +162,12 @@ function TileMenu({
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
-        <ContextMenuItem onSelect={onToggleFocus}>{isFocused ? "Fokus beenden" : "Fokussieren"}</ContextMenuItem>
+        <ContextMenuItem onSelect={onToggleFocus}>{isFocused ? t("call.unfocus") : t("call.focus")}</ContextMenuItem>
         {tile.feed && !tile.feed.isLocal && (
           <>
             <ContextMenuSeparator />
             <ContextMenuLabel className="text-xs font-normal text-muted-foreground">
-              {tile.isScreenshare ? "Stream-Info" : "Video-Info"}
+              {tile.isScreenshare ? t("call.streamInfo") : t("call.videoInfo")}
             </ContextMenuLabel>
             <DecoderStatus feed={tile.feed} />
           </>
@@ -172,7 +175,7 @@ function TileMenu({
         {!participant.isLocal && (
           <>
             <ContextMenuSeparator />
-            <ContextMenuLabel className="text-xs font-normal text-muted-foreground">Benutzerlautstärke</ContextMenuLabel>
+            <ContextMenuLabel className="text-xs font-normal text-muted-foreground">{t("call.userVolume")}</ContextMenuLabel>
             <div className="flex items-center gap-2 px-2 pb-2" onKeyDown={(event) => event.stopPropagation()}>
               <Slider
                 min={0}
@@ -180,7 +183,7 @@ function TileMenu({
                 step={1}
                 value={[Math.round(participant.volume * 100)]}
                 onValueChange={([value]) => setParticipantVolume(participant.identity, value / 100)}
-                aria-label={`Lautstärke von ${participant.name}`}
+                aria-label={t("call.volumeOf", { name: participant.name })}
               />
               <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
                 {Math.round(participant.volume * 100)}%
@@ -190,7 +193,7 @@ function TileMenu({
               checked={participant.isLocallyMuted}
               onCheckedChange={(checked) => setParticipantMuted(participant.identity, checked)}
             >
-              Stummschalten
+              {t("call.mute")}
             </ContextMenuCheckboxItem>
           </>
         )}
@@ -214,6 +217,7 @@ function CallTileView({
   className?: string
   style?: React.CSSProperties
 }) {
+  const { t } = useTranslation()
   const { participant, feed, isScreenshare } = tile
   const isSpeaking = participant.isSpeaking && !participant.isMicMuted && !isScreenshare
   const avatarSize = size === "strip" ? 40 : size === "stage" ? 96 : 80
@@ -261,14 +265,14 @@ function CallTileView({
           )}
         >
           {isScreenshare && (
-            <span className="rounded bg-nx-dnd px-1 text-[10px] font-bold uppercase tracking-wide">Live</span>
+            <span className="rounded bg-nx-dnd px-1 text-[10px] font-bold uppercase tracking-wide">{t("call.live")}</span>
           )}
           {!isScreenshare && participant.isMicMuted && !participant.isConnecting && (
-            <MicOff className="h-3.5 w-3.5 shrink-0 text-nx-dnd" aria-label="Stummgeschaltet" />
+            <MicOff className="h-3.5 w-3.5 shrink-0 text-nx-dnd" aria-label={t("call.muted")} />
           )}
-          {participant.isLocallyMuted && <VolumeX className="h-3.5 w-3.5 shrink-0 text-nx-dnd" aria-label="Für dich stummgeschaltet" />}
+          {participant.isLocallyMuted && <VolumeX className="h-3.5 w-3.5 shrink-0 text-nx-dnd" aria-label={t("call.mutedForYou")} />}
           <span className="truncate">{participant.name}</span>
-          {participant.isConnecting && <span className="shrink-0 text-white/70">· Verbindet…</span>}
+          {participant.isConnecting && <span className="shrink-0 text-white/70">· {t("call.connecting")}</span>}
         </div>
 
         {size !== "strip" && (
@@ -278,7 +282,7 @@ function CallTileView({
               onToggleFocus()
             }}
             className="absolute top-2 right-2 rounded-md bg-black/60 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label={isFocused ? "Fokus beenden" : "Fokussieren"}
+            aria-label={isFocused ? t("call.unfocus") : t("call.focus")}
           >
             {isFocused ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
@@ -336,6 +340,7 @@ function FocusView({ focused, others, onFocus }: { focused: CallTile; others: Ca
 
 /** Admins learn that other members can't join yet, and can fix it in one click. */
 function CallPermissionHint({ roomId }: { roomId: string }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [isEnabling, setIsEnabling] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -350,9 +355,9 @@ function CallPermissionHint({ roomId }: { roomId: string }) {
     try {
       await enableCallsInRoom(client, roomId)
       setEnabled(true)
-      toast.success("Anrufe sind jetzt für alle Mitglieder erlaubt.")
+      toast.success(t("call.callsEnabled"))
     } catch (error) {
-      toast.error(describeMatrixError(error, "Berechtigungen konnten nicht geändert werden."))
+      toast.error(describeMatrixError(error, t("call.permissionsFailed")))
     } finally {
       setIsEnabling(false)
     }
@@ -360,13 +365,13 @@ function CallPermissionHint({ roomId }: { roomId: string }) {
 
   return (
     <div className="flex flex-wrap items-center justify-center gap-3 rounded-lg bg-nx-idle/15 px-4 py-2 text-sm text-white">
-      <span>Andere Mitglieder dürfen diesem Sprachkanal noch nicht beitreten.</span>
+      <span>{t("call.othersCannotJoin")}</span>
       <button
         onClick={() => void enable()}
         disabled={isEnabling}
         className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
-        Für alle erlauben
+        {t("call.allowEveryone")}
       </button>
     </div>
   )
@@ -440,13 +445,14 @@ function usePolledStats<T>(createSampler: () => (() => Promise<T | null>) | null
   return stats
 }
 
-function hardwareLabel(hardware: boolean | null, implementation: string, kind: "Encoder" | "Decoder"): string {
-  const base = hardware === null ? `${kind} unbekannt` : hardware ? "Hardware" : "Software"
+function hardwareLabel(t: Translate, hardware: boolean | null, implementation: string, kind: "Encoder" | "Decoder"): string {
+  const base = hardware === null ? t("call.codecUnknown", { kind }) : hardware ? "Hardware" : "Software"
   return implementation ? `${base} (${implementation})` : base
 }
 
 /** Live encoder diagnostics of our own stream. */
 function EncoderStatus() {
+  const { t, intl } = useTranslation()
   const { createScreenShareEncoderSampler, screenShareQuality } = useCallContext()
   const info = usePolledStats(createScreenShareEncoderSampler)
   if (!info) return null
@@ -456,34 +462,33 @@ function EncoderStatus() {
   return (
     <div className="space-y-0.5 px-2 pb-1.5 text-xs text-muted-foreground" data-testid="encoder-status">
       <div className="break-words">
-        {info.codec || "Video"} · {hardwareLabel(info.hardware, info.implementation, "Encoder")}
+        {info.codec || "Video"} · {hardwareLabel(t, info.hardware, info.implementation, "Encoder")}
       </div>
       {info.height > 0 && (
         <div>
           {info.height}p · {info.fps} FPS
           {info.encodeMs !== null &&
-            ` · ${info.encodeMs.toLocaleString("de-DE", { maximumFractionDigits: 1 })} ms/Bild`}
+            ` · ${t("call.msPerFrame", { ms: info.encodeMs.toLocaleString(intl, { maximumFractionDigits: 1 }) })}`}
         </div>
       )}
       {info.bitrate !== null && (
         <div>
-          Upload {formatMbit(info.bitrate)}
-          {info.targetBitrate > 0 && ` (Ziel ${formatMbit(info.targetBitrate)})`}
+          {t("call.upload", { rate: formatMbit(info.bitrate) })}
+          {info.targetBitrate > 0 && ` ${t("call.uploadTarget", { rate: formatMbit(info.targetBitrate) })}`}
         </div>
       )}
-      {info.limitation === "cpu" && <div className="text-nx-idle">Durch die CPU begrenzt</div>}
+      {info.limitation === "cpu" && <div className="text-nx-idle">{t("call.limitedByCpu")}</div>}
       {overloaded && (
-        <div className="text-nx-idle">
-          Encoder am Limit – niedrigere Auflösung oder Bildrate wählen, sonst sinken Schärfe und FPS
-        </div>
+        <div className="text-nx-idle">{t("call.encoderOverloaded")}</div>
       )}
-      {info.limitation === "bandwidth" && <div className="text-nx-idle">Durch den Upload begrenzt</div>}
+      {info.limitation === "bandwidth" && <div className="text-nx-idle">{t("call.limitedByBandwidth")}</div>}
     </div>
   )
 }
 
 /** What arrives from a remote video and how it decodes (right-click menu of a tile). */
 function DecoderStatus({ feed }: { feed: CallVideoFeed }) {
+  const { t } = useTranslation()
   const createSampler = useCallback(() => {
     const receiver = (feed.track as RemoteVideoTrack).receiver
     return receiver ? createDecoderSampler(receiver) : null
@@ -496,10 +501,10 @@ function DecoderStatus({ feed }: { feed: CallVideoFeed }) {
         {info.height}p · {info.fps} FPS{info.bitrate !== null && ` · ${formatMbit(info.bitrate)}`}
       </div>
       <div className="break-words">
-        {info.codec || "Video"} · {hardwareLabel(info.hardware, info.implementation, "Decoder")}
+        {info.codec || "Video"} · {hardwareLabel(t, info.hardware, info.implementation, "Decoder")}
       </div>
       <div>
-        Verworfene Bilder {info.framesDropped} · Hänger {info.freezeCount} · Pakete verloren {info.packetsLost}
+        {t("call.decoderStats", { dropped: info.framesDropped, freezes: info.freezeCount, lost: info.packetsLost })}
       </div>
     </div>
   )
@@ -510,12 +515,13 @@ function DecoderStatus({ feed }: { feed: CallVideoFeed }) {
  * on the fly or end the stream.
  */
 function ScreenshareControl() {
+  const { t } = useTranslation()
   const { call, toggleScreenshare, screenShareQuality, changeScreenShareQuality } = useCallContext()
   // In fullscreen only the fullscreen element is visible, so the menu has to live there.
   const container = typeof document !== "undefined" ? (document.fullscreenElement as HTMLElement | null) : null
   if (!call?.isScreensharing) {
     return (
-      <ControlButton label="Bildschirm teilen" onClick={() => void toggleScreenshare()}>
+      <ControlButton label={t("call.shareScreen")} onClick={() => void toggleScreenshare()}>
         <MonitorUp className="h-6 w-6" />
       </ControlButton>
     )
@@ -525,18 +531,18 @@ function ScreenshareControl() {
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <button className={controlButtonClass("on")} aria-label="Stream-Einstellungen">
+            <button className={controlButtonClass("on")} aria-label={t("call.streamSettings")}>
               <ScreenShareOff className="h-6 w-6" />
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>Stream-Einstellungen</TooltipContent>
+        <TooltipContent>{t("call.streamSettings")}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent container={container} side="top" align="center" className="w-56">
-        <DropdownMenuLabel>Stream</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("call.stream")}</DropdownMenuLabel>
         <EncoderStatus />
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Auflösung</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("stream.resolution")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={screenShareQuality.resolution}
           onValueChange={(value) =>
@@ -550,7 +556,7 @@ function ScreenshareControl() {
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Bildrate</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("stream.framerate")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={String(screenShareQuality.fps)}
           onValueChange={(value) =>
@@ -566,7 +572,7 @@ function ScreenshareControl() {
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={() => void toggleScreenshare()}>
           <ScreenShareOff className="h-4 w-4" />
-          Stream beenden
+          {t("call.endStream")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -625,6 +631,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
     leaveCall,
     resumeAudio,
   } = useCallContext()
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const rootRef = useRef<HTMLDivElement>(null)
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(rootRef)
@@ -650,7 +657,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
 
   if (!call) return null
 
-  const roomName = client?.getRoom(call.roomId)?.name || "Sprachkanal"
+  const roomName = client?.getRoom(call.roomId)?.name || t("call.voiceChannel")
   const isReconnecting = call.connectionState === "reconnecting"
 
   return (
@@ -662,7 +669,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
             <button
               onClick={onOpenNavigation}
               className="rounded p-1.5 text-white/70 hover:text-white md:hidden"
-              aria-label="Navigation öffnen"
+              aria-label={t("nav.open")}
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -671,22 +678,22 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
             {call.isEncrypted && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-white/60" aria-label="Ende-zu-Ende-verschlüsselt" />
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-white/60" aria-label={t("chat.encrypted")} />
                 </TooltipTrigger>
-                <TooltipContent>Ende-zu-Ende-verschlüsselt</TooltipContent>
+                <TooltipContent>{t("chat.encrypted")}</TooltipContent>
               </Tooltip>
             )}
             {isReconnecting && (
               <span className="flex items-center gap-1.5 text-xs text-nx-idle">
-                <Spinner className="h-3.5 w-3.5" /> Verbindung wird wiederhergestellt…
+                <Spinner className="h-3.5 w-3.5" /> {t("call.restoring")}
               </span>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <TopBarButton label={isChatOpen ? "Chat ausblenden" : "Chat anzeigen"} active={isChatOpen} onClick={() => setIsChatOpen((open) => !open)}>
+            <TopBarButton label={isChatOpen ? t("call.hideChat") : t("call.showChat")} active={isChatOpen} onClick={() => setIsChatOpen((open) => !open)}>
               <MessageSquare className="h-5 w-5" />
             </TopBarButton>
-            <TopBarButton label={isFullscreen ? "Vollbild beenden" : "Vollbild"} onClick={toggleFullscreen}>
+            <TopBarButton label={isFullscreen ? t("call.exitFullscreen") : t("call.fullscreen")} onClick={toggleFullscreen}>
               {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
             </TopBarButton>
           </div>
@@ -699,7 +706,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               <Volume2 className="h-4 w-4" />
-              Der Browser hat die Wiedergabe blockiert – klicke hier, um die anderen zu hören
+              {t("call.audioBlocked")}
             </button>
           )}
           <CallPermissionHint roomId={call.roomId} />
@@ -717,7 +724,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
         {/* Controls */}
         <div className="flex shrink-0 items-center justify-center gap-2 px-2 py-4 sm:gap-3">
           <ControlButton
-            label={call.isCameraOn ? "Kamera ausschalten" : "Kamera einschalten"}
+            label={call.isCameraOn ? t("call.cameraOff") : t("call.cameraOn")}
             variant={call.isCameraOn ? "on" : "default"}
             onClick={() => void toggleCamera()}
           >
@@ -726,20 +733,20 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
           <ScreenshareControl />
           <div className="mx-1 h-8 w-px bg-white/15 sm:mx-2" />
           <ControlButton
-            label={isMicMuted ? "Mikrofon aktivieren" : "Mikrofon stummschalten"}
+            label={isMicMuted ? t("call.unmuteMic") : t("call.muteMic")}
             variant={isMicMuted ? "off" : "default"}
             onClick={() => void toggleMicrophone()}
           >
             {isMicMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </ControlButton>
           <ControlButton
-            label={isDeafened ? "Ton aktivieren" : "Ton stummschalten"}
+            label={isDeafened ? t("call.undeafen") : t("call.deafen")}
             variant={isDeafened ? "off" : "default"}
             onClick={toggleDeafen}
           >
             {isDeafened ? <HeadphoneOff className="h-6 w-6" /> : <Headphones className="h-6 w-6" />}
           </ControlButton>
-          <ControlButton label="Anruf verlassen" variant="danger" onClick={leaveCall}>
+          <ControlButton label={t("call.leave")} variant="danger" onClick={leaveCall}>
             <PhoneOff className="h-6 w-6" />
           </ControlButton>
         </div>
@@ -749,7 +756,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
       {isChatOpen && (
         <aside
           className="absolute inset-0 z-20 flex flex-col bg-background lg:static lg:w-[380px] lg:shrink-0 lg:border-l lg:border-nx-guild-bar"
-          aria-label="Chat"
+          aria-label={t("call.chat")}
         >
           <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4 shadow-[0_1px_0_rgba(4,4,5,0.2)]">
             <div className="flex min-w-0 items-center gap-2">
@@ -759,7 +766,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
             <button
               onClick={() => setIsChatOpen(false)}
               className="rounded p-1 text-muted-foreground hover:text-foreground"
-              aria-label="Chat schließen"
+              aria-label={t("call.closeChat")}
             >
               <X className="h-5 w-5" />
             </button>

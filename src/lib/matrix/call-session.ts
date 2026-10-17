@@ -48,6 +48,7 @@ import {
   preferredVideoCodec,
   type EncoderInfo,
 } from '@/lib/video-codec'
+import { t } from '@/lib/i18n'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -201,7 +202,7 @@ export class CallSession {
 
   static async start(client: MatrixClient, roomId: string, audio: CallAudioOptions): Promise<CallSession> {
     const room = client.getRoom(roomId)
-    if (!room) throw new Error('Raum nicht gefunden.')
+    if (!room) throw new Error(t('error.roomNotFound'))
 
     const userId = client.getUserId() ?? ''
     if (!canJoinCalls(room, userId)) {
@@ -331,8 +332,8 @@ export class CallSession {
       if (this.isLeaving) return
       const message =
         reason === DisconnectReason.DUPLICATE_IDENTITY
-          ? 'Du bist diesem Anruf auf einem anderen Gerät beigetreten.'
-          : 'Die Verbindung zum Sprachkanal wurde getrennt.'
+          ? t('call.error.duplicateIdentity')
+          : t('call.error.disconnected')
       void this.leave(message)
     }
 

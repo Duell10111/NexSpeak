@@ -26,12 +26,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Hash, PlusCircle, SendHorizonal, Smile, Upload, X } from "lucide-react"
+import { AtSign, Hash, PlusCircle, SendHorizonal, Smile, Upload, X } from "lucide-react"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomTimeline } from "@/hooks/useRoomTimeline"
 import { useRoomInfo } from "@/hooks/useRoomInfo"
 import { useReadReceipt } from "@/hooks/useReadReceipt"
 import { useTypingMembers, useTypingNotifier } from "@/hooks/useTyping"
+import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@/lib/matrix/errors"
 import { deleteMessage, sendAttachment, sendTextMessage } from "@/lib/matrix/messages"
 import { EmojiPicker } from "@/components/nexspeak/emoji-picker"
@@ -55,20 +56,17 @@ function isSameDay(a: number, b: number): boolean {
 }
 
 function TypingIndicator({ names }: { names: string[] }) {
+  const { t } = useTranslation()
   if (names.length === 0) return null
 
+  const strong = (name: string) => <strong className="font-semibold text-foreground">{name}</strong>
   const label =
     names.length === 1 ? (
-      <>
-        <strong className="font-semibold text-foreground">{names[0]}</strong> tippt…
-      </>
+      <Trans k="chat.typingOne" values={{ name: strong(names[0]) }} />
     ) : names.length === 2 ? (
-      <>
-        <strong className="font-semibold text-foreground">{names[0]}</strong> und{" "}
-        <strong className="font-semibold text-foreground">{names[1]}</strong> tippen…
-      </>
+      <Trans k="chat.typingTwo" values={{ first: strong(names[0]), second: strong(names[1]) }} />
     ) : (
-      "Mehrere Personen tippen…"
+      t("chat.typingMany")
     )
 
   return (
@@ -100,6 +98,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
   const stickToBottomRef = useRef(true)
   const scrollHeightBeforeLoadRef = useRef<number | null>(null)
 
+  const { t } = useTranslation()
   const { client, isCryptoReady } = useMatrixClient()
   const roomInfo = useRoomInfo(client, roomId)
   const { messages, isLoading, hasMore, loadMore } = useRoomTimeline(client, roomId)
@@ -108,6 +107,9 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
 
   const ownUserId = client?.getUserId() ?? ""
   const roomName = roomInfo?.name || ""
+  const isDirect = roomInfo?.isDirect ?? false
+  // DMs are addressed to a person (@Alice), channels by name (#general).
+  const roomLabel = `${isDirect ? "@" : "#"}${roomName}`
   const isEncryptedRoom = roomInfo?.isEncrypted ?? false
   const canSend = Boolean(client && roomInfo?.exists && (!isEncryptedRoom || isCryptoReady))
   const latestSentEvent = messages.findLast((message) => message.status === "sent")?.event
@@ -174,7 +176,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
 
     // The local echo shows up immediately; failures stay in the timeline with a retry action.
     sendTextMessage(client, roomId, body, replyEvent).catch((error: unknown) => {
-      toast.error(describeMatrixError(error, "Nachricht konnte nicht gesendet werden."))
+      toast.error(describeMatrixError(error, t("chat.sendFailed")))
     })
   }
 
@@ -215,7 +217,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
 
     const tooLarge = files.find((file) => file.size > MAX_UPLOAD_BYTES)
     if (tooLarge) {
-      toast.error(`„${tooLarge.name}“ ist zu groß (max. 100 MB).`)
+      toast.error(t("chat.fileTooLarge", { name: tooLarge.name }))
       return
     }
 
@@ -228,7 +230,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
         await sendAttachment(client, roomId, file, isEncryptedRoom, replyEvent)
       }
     } catch (error) {
-      toast.error(describeMatrixError(error, "Datei konnte nicht hochgeladen werden."))
+      toast.error(describeMatrixError(error, t("chat.uploadFailed")))
     } finally {
       setIsUploading(false)
     }
@@ -258,7 +260,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
     setPendingDelete(null)
     if (!client || !target) return
     deleteMessage(client, target.roomId, target.id).catch((error: unknown) => {
-      toast.error(describeMatrixError(error, "Nachricht konnte nicht gelöscht werden."))
+      toast.error(describeMatrixError(error, t("chat.deleteFailed")))
     })
   }
 
@@ -287,10 +289,10 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
     Boolean(room && ownUserId && room.currentState.maySendRedactionForEvent(message.event, ownUserId))
 
   const composerPlaceholder = !roomInfo?.exists
-    ? "Raum wird geladen…"
+    ? t("chat.loadingRoom")
     : isEncryptedRoom && !isCryptoReady
-      ? "Verschlüsselung ist nicht verfügbar – Senden nicht möglich"
-      : `Nachricht an #${roomName}`
+      ? t("chat.cryptoUnavailable")
+      : t("chat.messageTo", { room: roomLabel })
 
   return (
     <div
@@ -308,7 +310,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
       {isDragging && (
         <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary bg-background/90 text-sm text-foreground">
           <Upload className="h-8 w-8 text-primary" />
-          Dateien hier ablegen, um sie an #{roomName} zu senden
+          {t("chat.dropFiles", { room: roomLabel })}
         </div>
       )}
 
@@ -327,12 +329,18 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
                   compact ? "h-12 w-12" : "h-[68px] w-[68px]",
                 )}
               >
-                <Hash className={cn("text-foreground", compact ? "h-6 w-6" : "h-10 w-10")} />
+                {isDirect ? (
+                  <AtSign className={cn("text-foreground", compact ? "h-6 w-6" : "h-10 w-10")} />
+                ) : (
+                  <Hash className={cn("text-foreground", compact ? "h-6 w-6" : "h-10 w-10")} />
+                )}
               </div>
               <h2 className={cn("mt-2 font-bold text-balance text-foreground", compact ? "text-xl" : "text-[32px] leading-10")}>
-                Willkommen bei #{roomName}!
+                {isDirect ? roomName : t("chat.welcome", { room: roomLabel })}
               </h2>
-              <p className="text-sm text-muted-foreground">Das ist der Anfang des Raums #{roomName}.</p>
+              <p className="text-sm text-muted-foreground">
+                {isDirect ? t("chat.dmStart", { name: roomName }) : t("chat.roomStart", { room: roomLabel })}
+              </p>
             </div>
           )}
 
@@ -367,12 +375,12 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
         {replyTo && (
           <div className="flex items-center justify-between gap-2 rounded-t-lg bg-secondary px-4 py-2 text-sm text-muted-foreground">
             <span className="truncate">
-              Antwort an <span className="font-semibold text-foreground">{replyTo.senderName}</span>
+              <Trans k="chat.replyingTo" values={{ name: <span className="font-semibold text-foreground">{replyTo.senderName}</span> }} />
             </span>
             <button
               onClick={() => setReplyTo(null)}
               className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
-              aria-label="Antwort abbrechen"
+              aria-label={t("chat.cancelReply")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -384,13 +392,13 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="flex h-11 w-11 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                aria-label="Datei anhängen"
+                aria-label={t("chat.attachFile")}
                 disabled={!canSend || isUploading}
               >
                 {isUploading ? <Spinner className="h-5 w-5" /> : <PlusCircle className="h-6 w-6" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent>{isEncryptedRoom ? "Datei verschlüsselt anhängen" : "Datei anhängen"}</TooltipContent>
+            <TooltipContent>{isEncryptedRoom ? t("chat.attachFileEncrypted") : t("chat.attachFile")}</TooltipContent>
           </Tooltip>
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelected} />
           <textarea
@@ -406,7 +414,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
             onPaste={handlePaste}
             onBlur={stopTyping}
             placeholder={composerPlaceholder}
-            aria-label="Nachricht"
+            aria-label={t("chat.message")}
             className="max-h-[200px] min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15px] leading-[22px] text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
             disabled={!canSend}
           />
@@ -414,7 +422,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
             <EmojiPicker onSelect={insertEmoji}>
               <button
                 className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                aria-label="Emoji einfügen"
+                aria-label={t("chat.insertEmoji")}
                 disabled={!canSend}
               >
                 <Smile className="h-6 w-6" />
@@ -425,7 +433,7 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
                 onClick={handleSend}
                 disabled={!canSend}
                 className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                aria-label="Senden"
+                aria-label={t("chat.send")}
               >
                 <SendHorizonal className="h-5 w-5" />
               </button>
@@ -440,15 +448,13 @@ export function RoomChat({ roomId, compact = false }: RoomChatProps) {
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Nachricht löschen?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Die Nachricht wird für alle entfernt. Das lässt sich nicht rückgängig machen.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("chat.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("chat.deleteDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-white hover:bg-destructive/90">
-              Löschen
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

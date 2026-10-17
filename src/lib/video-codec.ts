@@ -8,6 +8,8 @@
  * is available, so H.264 is never worse than VP8 there.
  */
 
+import { intlLocale } from '@/lib/i18n'
+
 export type PublishVideoCodec = "h264" | "vp8"
 
 export function preferredVideoCodec(): PublishVideoCodec {
@@ -149,7 +151,7 @@ export function createDecoderSampler(receiver: RTCRtpReceiver): () => Promise<De
 }
 
 export function formatMbit(bitsPerSecond: number): string {
-  return `${(bitsPerSecond / 1_000_000).toLocaleString("de-DE", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} Mbit/s`
+  return `${(bitsPerSecond / 1_000_000).toLocaleString(intlLocale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 })} Mbit/s`
 }
 
 /**

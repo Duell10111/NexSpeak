@@ -24,6 +24,8 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { getSecurityStatus, type SecurityStatus } from "@/lib/matrix/security"
 import { describeMatrixError } from "@/lib/matrix/errors"
+import { t as translate } from "@/lib/i18n"
+import { useTranslation } from "@/hooks/useTranslation"
 
 interface SecurityContextValue {
   status: SecurityStatus | null
@@ -41,6 +43,7 @@ interface VerificationView {
 }
 
 function VerificationDialog({ view, onClose }: { view: VerificationView; onClose: () => void }) {
+  const { t } = useTranslation()
   const { request, phase, sas, sasConfirmed } = view
   const isIncoming = !request.initiatedByMe
   const otherDevice = request.otherDeviceId ? ` (${request.otherDeviceId})` : ""
@@ -55,7 +58,7 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
   let body: ReactNode
   let footer: ReactNode = (
     <Button variant="outline" onClick={cancel}>
-      Abbrechen
+      {t("common.cancel")}
     </Button>
   )
 
@@ -63,25 +66,25 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
     body = (
       <div className="flex flex-col items-center gap-3 py-4 text-center">
         <CheckCircle2 className="h-12 w-12 text-nx-online" />
-        <p className="text-sm text-foreground">Verifizierung erfolgreich. Dieses Gerät ist jetzt vertrauenswürdig.</p>
+        <p className="text-sm text-foreground">{t("verify.done")}</p>
       </div>
     )
-    footer = <Button onClick={onClose}>Fertig</Button>
+    footer = <Button onClick={onClose}>{t("common.done")}</Button>
   } else if (phase === VerificationPhase.Cancelled) {
     body = (
       <div className="flex flex-col items-center gap-3 py-4 text-center">
         <ShieldAlert className="h-12 w-12 text-destructive" />
         <p className="text-sm text-foreground">
-          Die Verifizierung wurde abgebrochen{request.cancellationCode === "m.mismatched_sas" ? ", weil die Emojis nicht übereinstimmten" : ""}.
+          {request.cancellationCode === "m.mismatched_sas" ? t("verify.cancelledMismatch") : t("verify.cancelled")}
         </p>
       </div>
     )
-    footer = <Button onClick={onClose}>Schließen</Button>
+    footer = <Button onClick={onClose}>{t("common.close")}</Button>
   } else if (sas?.sas.emoji) {
     body = (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Vergleiche die Emojis mit denen auf dem anderen Gerät. Sie müssen in derselben Reihenfolge erscheinen.
+          {t("verify.compareEmojis")}
         </p>
         <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
           {sas.sas.emoji.map(([emoji, name], index) => (
@@ -93,7 +96,7 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
         </div>
         {sasConfirmed && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="h-4 w-4" /> Warte auf Bestätigung des anderen Geräts…
+            <Spinner className="h-4 w-4" /> {t("verify.waitingForOther")}
           </p>
         )}
       </div>
@@ -107,10 +110,10 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
           }}
           disabled={sasConfirmed}
         >
-          Stimmen nicht überein
+          {t("verify.noMatch")}
         </Button>
         <Button onClick={() => void sas.confirm()} disabled={sasConfirmed}>
-          Stimmen überein
+          {t("verify.match")}
         </Button>
       </>
     )
@@ -118,17 +121,17 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
     body = (
       <p className="text-sm text-muted-foreground">
         {request.isSelfVerification
-          ? `Eines deiner anderen Geräte${otherDevice} möchte sich verifizieren.`
-          : `${request.otherUserId} möchte dich verifizieren.`}
+          ? t("verify.incomingSelf", { device: otherDevice })
+          : t("verify.incomingUser", { user: request.otherUserId })}
       </p>
     )
     footer = (
       <>
         <Button variant="outline" onClick={cancel}>
-          Ablehnen
+          {t("common.decline")}
         </Button>
         <Button onClick={() => void request.accept().catch((error: unknown) => toast.error(describeMatrixError(error)))}>
-          Annehmen
+          {t("common.accept")}
         </Button>
       </>
     )
@@ -137,8 +140,8 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <Spinner className="h-4 w-4" />
         {phase === VerificationPhase.Requested
-          ? "Öffne Element oder NexSpeak auf einem anderen angemeldeten Gerät und nimm die Anfrage dort an…"
-          : "Verbindung zum anderen Gerät wird hergestellt…"}
+          ? t("verify.openOtherDevice")
+          : t("verify.connecting")}
       </p>
     )
   }
@@ -147,10 +150,8 @@ function VerificationDialog({ view, onClose }: { view: VerificationView; onClose
     <Dialog open onOpenChange={(open) => !open && cancel()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Gerät verifizieren</DialogTitle>
-          <DialogDescription>
-            Verifizierte Geräte können verschlüsselte Nachrichten gegenseitig lesen und sind vor Angreifern geschützt.
-          </DialogDescription>
+          <DialogTitle>{t("verify.title")}</DialogTitle>
+          <DialogDescription>{t("verify.description")}</DialogDescription>
         </DialogHeader>
         {body}
         <DialogFooter>{footer}</DialogFooter>
@@ -194,7 +195,7 @@ export function SecurityProvider({ client, children }: { client: MatrixClient; c
 
         if (request.phase === VerificationPhase.Ready && request.initiatedByMe && !request.verifier) {
           request.startVerification("m.sas.v1").then(update, (error: unknown) => {
-            toast.error(describeMatrixError(error, "Verifizierung konnte nicht gestartet werden."))
+            toast.error(describeMatrixError(error, translate("verify.startFailed")))
           })
         }
 
@@ -232,13 +233,13 @@ export function SecurityProvider({ client, children }: { client: MatrixClient; c
   const startSelfVerification = useCallback(async () => {
     const crypto = client.getCrypto()
     if (!crypto) {
-      toast.error("Die Verschlüsselung ist auf diesem Gerät nicht verfügbar.")
+      toast.error(translate("security.cryptoUnavailable"))
       return
     }
     try {
       track(await crypto.requestOwnUserVerification())
     } catch (error) {
-      toast.error(describeMatrixError(error, "Verifizierung konnte nicht gestartet werden."))
+      toast.error(describeMatrixError(error, translate("verify.startFailed")))
     }
   }, [client, track])
 

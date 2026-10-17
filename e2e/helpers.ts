@@ -57,6 +57,52 @@ export async function createRoom(
   return roomId
 }
 
+/** A space ("server") with channels; `inviteOnly` channels need an invite, the others are open to space members. */
+export async function createSpace(
+  owner: TestUser,
+  options: { name: string; channels: Array<{ name: string; inviteOnly?: boolean }> },
+): Promise<{ spaceId: string; channelIds: string[] }> {
+  const serverName = owner.userId.split(":").slice(1).join(":")
+  const { room_id: spaceId } = await api<{ room_id: string }>(owner.accessToken, "POST", "/createRoom", {
+    name: options.name,
+    preset: "private_chat",
+    creation_content: { type: "m.space" },
+  })
+  const channelIds: string[] = []
+  for (const channel of options.channels) {
+    const { room_id: roomId } = await api<{ room_id: string }>(owner.accessToken, "POST", "/createRoom", {
+      name: channel.name,
+      preset: "private_chat",
+      initial_state: channel.inviteOnly
+        ? []
+        : [
+            {
+              type: "m.room.join_rules",
+              state_key: "",
+              content: { join_rule: "restricted", allow: [{ type: "m.room_membership", room_id: spaceId }] },
+            },
+          ],
+    })
+    await api(owner.accessToken, "PUT", `/rooms/${encodeURIComponent(spaceId)}/state/m.space.child/${encodeURIComponent(roomId)}`, {
+      via: [serverName],
+    })
+    channelIds.push(roomId)
+  }
+  return { spaceId, channelIds }
+}
+
+export async function getDirectRooms(user: TestUser): Promise<Record<string, string[]>> {
+  try {
+    return await api<Record<string, string[]>>(
+      user.accessToken,
+      "GET",
+      `/user/${encodeURIComponent(user.userId)}/account_data/m.direct`,
+    )
+  } catch {
+    return {}
+  }
+}
+
 export async function getRoomMessages(user: TestUser, roomId: string) {
   const result = await api<{ chunk: Array<{ type: string; content: Record<string, unknown> }> }>(
     user.accessToken,
@@ -67,8 +113,8 @@ export async function getRoomMessages(user: TestUser, roomId: string) {
 }
 
 export async function newPage(browser: Browser, options: BrowserContextOptions = {}): Promise<Page> {
-  // Contexts created by hand don't inherit `use.permissions` from the config.
-  const context = await browser.newContext({ permissions: ["microphone", "camera"], ...options })
+  // Contexts created by hand don't inherit `use.permissions` and `use.locale` from the config.
+  const context = await browser.newContext({ permissions: ["microphone", "camera"], locale: "de-DE", ...options })
   const page = await context.newPage()
   page.on("pageerror", (error) => console.log(`[pageerror] ${error.message}`))
   if (process.env.E2E_CONSOLE) {

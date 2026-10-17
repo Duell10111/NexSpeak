@@ -5,6 +5,7 @@
 
 import { EventStatus, NotificationCountType, type MatrixEvent, type Room } from 'matrix-js-sdk'
 import { isEncryptedFile, type EncryptedFile } from '@/lib/matrix/attachments'
+import { t } from '@/lib/i18n'
 
 export interface MatrixRoom {
   id: string
@@ -107,7 +108,7 @@ export function roomToMatrixSpace(spaceRoom: Room, childRooms: Room[]): MatrixSp
 
   return {
     id: spaceRoom.roomId,
-    name: spaceRoom.name || spaceRoom.getCanonicalAlias() || 'Unbenannter Server',
+    name: spaceRoom.name || spaceRoom.getCanonicalAlias() || t('server.unnamed'),
     avatarMxc: spaceRoom.getMxcAvatarUrl() || undefined,
     unread,
     mentions,
@@ -125,7 +126,7 @@ export function roomToMatrixRoom(room: Room): MatrixRoom {
 
   return {
     id: room.roomId,
-    name: room.name || room.getCanonicalAlias() || 'Unbenannter Raum',
+    name: room.name || room.getCanonicalAlias() || t('room.unnamed'),
     avatarMxc,
     unread: room.getUnreadNotificationCount(NotificationCountType.Total),
     highlights: room.getUnreadNotificationCount(NotificationCountType.Highlight),
@@ -151,18 +152,18 @@ export function stripReplyFallback(body: string): string {
 }
 
 function summarizeEvent(event: MatrixEvent): string {
-  if (event.isRedacted()) return 'Nachricht gelöscht'
-  if (event.isDecryptionFailure()) return 'Verschlüsselte Nachricht'
+  if (event.isRedacted()) return t('message.redacted')
+  if (event.isDecryptionFailure()) return t('message.encrypted')
   const content = event.getContent()
   switch (content.msgtype) {
     case 'm.image':
-      return 'Bild'
+      return t('message.image')
     case 'm.video':
-      return 'Video'
+      return t('message.video')
     case 'm.audio':
-      return 'Audio'
+      return t('message.audio')
     case 'm.file':
-      return 'Datei'
+      return t('message.file')
     default:
       return typeof content.body === 'string' ? stripReplyFallback(content.body) : ''
   }
@@ -218,7 +219,7 @@ export function eventToMatrixMessage(
     id: eventId || event.getTxnId() || `${roomId}-${event.getTs()}-${senderId}`,
     roomId,
     senderId,
-    senderName: event.sender?.name || senderId || 'Unbekannt',
+    senderName: event.sender?.name || senderId || t('message.unknownSender'),
     senderAvatarMxc: event.sender?.getMxcAvatarUrl() || undefined,
     timestamp: event.getTs(),
     edited: Boolean(event.replacingEventId()),
@@ -228,22 +229,22 @@ export function eventToMatrixMessage(
       ? {
           eventId: replyEventId,
           senderName: repliedEvent ? repliedEvent.sender?.name || repliedEvent.getSender() || '' : '',
-          body: repliedEvent ? summarizeEvent(repliedEvent) : 'Ursprüngliche Nachricht nicht geladen',
+          body: repliedEvent ? summarizeEvent(repliedEvent) : t('message.replyNotLoaded'),
         }
       : undefined,
     event,
   }
 
   if (event.isRedacted()) {
-    return { ...base, kind: 'redacted', body: 'Nachricht gelöscht', edited: false, reactions: [], replyTo: undefined }
+    return { ...base, kind: 'redacted', body: t('message.redacted'), edited: false, reactions: [], replyTo: undefined }
   }
 
   if (event.isDecryptionFailure()) {
-    return { ...base, kind: 'undecryptable', body: 'Nachricht konnte nicht entschlüsselt werden' }
+    return { ...base, kind: 'undecryptable', body: t('message.undecryptable') }
   }
 
   if (isEncryptedPlaceholder) {
-    return { ...base, kind: 'decrypting', body: 'Wird entschlüsselt…' }
+    return { ...base, kind: 'decrypting', body: t('message.decrypting') }
   }
 
   const content = event.getContent()
@@ -266,7 +267,7 @@ export function eventToMatrixMessage(
       return {
         ...base,
         kind: content.msgtype.slice(2) as 'image' | 'video' | 'audio' | 'file',
-        body: (typeof content.filename === 'string' && content.filename) || body || 'Datei',
+        body: (typeof content.filename === 'string' && content.filename) || body || t('message.file'),
         media: {
           mxc: typeof content.url === 'string' ? content.url : undefined,
           file,

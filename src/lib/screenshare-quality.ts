@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n'
+
 export const SCREENSHARE_RESOLUTIONS = ["720", "1080", "1440", "source"] as const
 export const SCREENSHARE_FRAMERATES = [15, 30, 60] as const
 
@@ -25,7 +27,7 @@ const BASE_BITRATE: Record<ScreenShareResolution, number> = {
 const FPS_FACTOR: Record<ScreenShareFramerate, number> = { 15: 0.6, 30: 1, 60: 1.6 }
 
 export function resolutionLabel(resolution: ScreenShareResolution): string {
-  return resolution === "source" ? "Quelle" : `${resolution}p`
+  return resolution === "source" ? t("stream.source") : `${resolution}p`
 }
 
 /** Upper bitrate for the top layer; congestion control still adapts below it. */

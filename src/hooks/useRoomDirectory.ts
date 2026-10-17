@@ -10,13 +10,13 @@
 import { useEffect, useState } from 'react'
 import {
   ClientEvent,
-  EventType,
   RoomEvent,
   RoomStateEvent,
   type MatrixClient,
   type Room,
 } from 'matrix-js-sdk'
 import { getSpaceChildRoomIds, roomToMatrixRoom, roomToMatrixSpace } from '@/lib/matrix/types'
+import { getDirectRoomIds, isDirectRoom, looksLikeDirectRoom } from '@/lib/matrix/direct'
 import type { MatrixRoom, MatrixSpace } from '@/lib/matrix/types'
 
 const RECOMPUTE_DELAY_MS = 150
@@ -40,11 +40,6 @@ const EMPTY_DIRECTORY: RoomDirectory = {
 
 function byActivity(a: MatrixRoom, b: MatrixRoom): number {
   return b.lastActivityTs - a.lastActivityTs
-}
-
-function getDirectRoomIds(client: MatrixClient): Set<string> {
-  const content = client.getAccountData(EventType.Direct)?.getContent() ?? {}
-  return new Set(Object.values(content).flatMap((ids) => (Array.isArray(ids) ? ids : [])))
 }
 
 /** Rooms of a space, including rooms of nested sub-spaces, in the order the space defines. */
@@ -86,14 +81,12 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
     .filter((room) => room.isSpaceRoom())
     .sort((a, b) => a.name.localeCompare(b.name))
   const directIds = getDirectRoomIds(client)
-  const userId = client.getUserId()
-
-  const isDirect = (room: Room): boolean => directIds.has(room.roomId) || Boolean(room.getDMInviter())
+  const isListedDirect = (room: Room): boolean => isDirectRoom(client, room, directIds)
 
   const roomsBySpace: Record<string, MatrixRoom[]> = {}
   const roomIdsInSpaces = new Set<string>()
   const spaces = spaceRooms.map((spaceRoom) => {
-    const rooms = collectSpaceRooms(client, spaceRoom, new Set()).filter((room) => !isDirect(room))
+    const rooms = collectSpaceRooms(client, spaceRoom, new Set()).filter((room) => !isListedDirect(room))
     rooms.forEach((room) => roomIdsInSpaces.add(room.roomId))
     roomsBySpace[spaceRoom.roomId] = rooms.map(roomToMatrixRoom)
     return roomToMatrixSpace(spaceRoom, rooms)
@@ -105,21 +98,14 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
   joined.forEach((room) => {
     if (room.isSpaceRoom()) return
 
-    if (isDirect(room)) {
+    if (isListedDirect(room)) {
       directRooms.push(roomToMatrixRoom(room))
       return
     }
     if (roomIdsInSpaces.has(room.roomId)) return
 
-    // Fallback for when m.direct is missing: a 1:1 room outside any space is most likely a DM.
-    const joinedMembers = room.getJoinedMembers()
-    const looksDirect =
-      Boolean(userId) &&
-      joinedMembers.length === 2 &&
-      joinedMembers.some((member) => member.userId === userId) &&
-      !room.getCanonicalAlias()
-
-    if (looksDirect) {
+    // Outside any space, a 1:1 room without m.direct entry is most likely a DM too.
+    if (looksLikeDirectRoom(client, room)) {
       directRooms.push(roomToMatrixRoom(room))
     } else {
       otherRooms.push(roomToMatrixRoom(room))

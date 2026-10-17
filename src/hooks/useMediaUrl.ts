@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import type { MatrixClient } from 'matrix-js-sdk'
 import { getMediaUrl } from '@/lib/matrix/client'
 import { decryptAttachment, type EncryptedFile } from '@/lib/matrix/attachments'
+import { t } from '@/lib/i18n'
 
 const MAX_CACHE_ENTRIES = 300
 const cache = new Map<string, Promise<string | null>>()
@@ -18,7 +19,7 @@ async function fetchMedia(client: MatrixClient, httpUrl: string): Promise<ArrayB
   const response = await fetch(httpUrl, {
     headers: { Authorization: `Bearer ${client.getAccessToken() ?? ''}` },
   })
-  if (!response.ok) throw new Error(`Download fehlgeschlagen (${response.status})`)
+  if (!response.ok) throw new Error(t('error.downloadStatus', { status: response.status }))
   return response.arrayBuffer()
 }
 
@@ -31,13 +32,13 @@ export async function loadMediaBlob(
   if (source.file) {
     // Encrypted media has no server-side thumbnails; always fetch the original.
     const httpUrl = getMediaUrl(client, source.file.url)
-    if (!httpUrl) throw new Error('Ungültige Medien-URL')
+    if (!httpUrl) throw new Error(t('error.invalidMediaUrl'))
     const plaintext = await decryptAttachment(await fetchMedia(client, httpUrl), source.file)
     return new Blob([plaintext], { type: source.mimetype || 'application/octet-stream' })
   }
 
   const httpUrl = getMediaUrl(client, source.mxc, size)
-  if (!httpUrl) throw new Error('Ungültige Medien-URL')
+  if (!httpUrl) throw new Error(t('error.invalidMediaUrl'))
   return new Blob([await fetchMedia(client, httpUrl)], { type: source.mimetype || '' })
 }
 

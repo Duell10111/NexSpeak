@@ -3,31 +3,38 @@
  */
 
 import { AutoDiscovery, AutoDiscoveryAction, ConnectionError, MatrixError } from 'matrix-js-sdk'
+import { t } from '@/lib/i18n'
 
-export function describeMatrixError(error: unknown, fallback = 'Unbekannter Fehler'): string {
+export function describeMatrixError(error: unknown, fallback = t('error.unknown')): string {
   if (error instanceof MatrixError) {
     switch (error.errcode) {
       case 'M_FORBIDDEN':
-        return 'Benutzername oder Passwort ist falsch.'
+        return t('error.notAllowed')
       case 'M_USER_DEACTIVATED':
-        return 'Dieses Konto wurde deaktiviert.'
+        return t('error.userDeactivated')
       case 'M_LIMIT_EXCEEDED':
-        return 'Zu viele Anfragen. Bitte warte kurz und versuche es erneut.'
+        return t('error.rateLimited')
       case 'M_UNKNOWN_TOKEN':
-        return 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.'
+        return t('error.sessionExpired')
       case 'M_TOO_LARGE':
-        return 'Die Datei oder Nachricht ist zu groß.'
+        return t('error.tooLarge')
       default:
         return error.data?.error || error.message || fallback
     }
   }
 
   if (error instanceof ConnectionError || (error instanceof TypeError && /fetch/i.test(error.message))) {
-    return 'Der Homeserver ist nicht erreichbar. Prüfe die Adresse und deine Verbindung.'
+    return t('error.unreachable')
   }
 
   if (error instanceof Error && error.message) return error.message
   return fallback
+}
+
+/** Like describeMatrixError, but M_FORBIDDEN means wrong credentials when logging in. */
+export function describeLoginError(error: unknown): string {
+  if (error instanceof MatrixError && error.errcode === 'M_FORBIDDEN') return t('error.forbidden')
+  return describeMatrixError(error, t('login.failed'))
 }
 
 /**
@@ -36,14 +43,14 @@ export function describeMatrixError(error: unknown, fallback = 'Unbekannter Fehl
  */
 export async function resolveHomeserverUrl(input: string): Promise<string> {
   const trimmed = input.trim().replace(/\/+$/, '')
-  if (!trimmed) throw new Error('Bitte gib einen Homeserver an.')
+  if (!trimmed) throw new Error(t('error.homeserverMissing'))
 
   const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
   let url: URL
   try {
     url = new URL(withScheme)
   } catch {
-    throw new Error('Die Homeserver-Adresse ist ungültig.')
+    throw new Error(t('error.homeserverInvalid'))
   }
 
   try {

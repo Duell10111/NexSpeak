@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { MatrixError } from "matrix-js-sdk"
-import { describeMatrixError, resolveHomeserverUrl, serverNameFromUserId } from "./errors"
+import { describeLoginError, describeMatrixError, resolveHomeserverUrl, serverNameFromUserId } from "./errors"
 
 describe("serverNameFromUserId", () => {
   it("extracts the server name", () => {
@@ -15,7 +15,13 @@ describe("serverNameFromUserId", () => {
 
 describe("describeMatrixError", () => {
   it("translates well-known error codes", () => {
-    expect(describeMatrixError(new MatrixError({ errcode: "M_FORBIDDEN", error: "Invalid password" }, 403))).toBe(
+    expect(describeMatrixError(new MatrixError({ errcode: "M_FORBIDDEN", error: "Not allowed" }, 403))).toBe(
+      "Dafür fehlt dir die Berechtigung.",
+    )
+  })
+
+  it("reports wrong credentials when logging in", () => {
+    expect(describeLoginError(new MatrixError({ errcode: "M_FORBIDDEN", error: "Invalid password" }, 403))).toBe(
       "Benutzername oder Passwort ist falsch.",
     )
   })

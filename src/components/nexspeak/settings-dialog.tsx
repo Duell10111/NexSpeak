@@ -16,10 +16,12 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
-import { Headphones, LogOut, Mic } from "lucide-react"
+import { Headphones, Languages, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
+import { useTranslation } from "@/hooks/useTranslation"
+import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@/lib/i18n"
 import {
   getDefaultAudioSettings,
   loadAudioSettings,
@@ -81,6 +83,7 @@ function useAudioDevices(open: boolean) {
 }
 
 function MicrophoneTest({ deviceId }: { deviceId: string }) {
+  const { t } = useTranslation()
   const [level, setLevel] = useState<number | null>(null)
   const stopRef = useRef<(() => void) | null>(null)
 
@@ -121,16 +124,16 @@ function MicrophoneTest({ deviceId }: { deviceId: string }) {
       }
     } catch (error) {
       console.error("Failed to test microphone:", error)
-      toast.error("Mikrofon konnte nicht geöffnet werden. Bitte prüfe die Berechtigungen.")
+      toast.error(translate("settings.micOpenFailed"))
     }
   }
 
   return (
     <div className="space-y-2">
       <Button size="sm" variant="outline" onClick={() => void start()} disabled={level !== null} className="w-full">
-        {level !== null ? "Sprich jetzt…" : "Mikrofon testen"}
+        {level !== null ? t("settings.speakNow") : t("settings.testMic")}
       </Button>
-      {level !== null && <Progress value={level} aria-label="Mikrofonpegel" />}
+      {level !== null && <Progress value={level} aria-label={t("settings.micLevel")} />}
     </div>
   )
 }
@@ -155,6 +158,7 @@ function playTestTone(volume: number, outputDeviceId: string) {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+  const { t, locale, setLocale } = useTranslation()
   const { session, logout } = useMatrix()
   const { status: securityStatus } = useSecurity()
   const settings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
@@ -175,15 +179,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-full max-w-md">
         <DialogHeader>
-          <DialogTitle>Einstellungen</DialogTitle>
-          <DialogDescription>Audiogeräte und Konto verwalten</DialogDescription>
+          <DialogTitle>{t("settings.title")}</DialogTitle>
+          <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="audio" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="audio">Audio</TabsTrigger>
-            <TabsTrigger value="security">Sicherheit</TabsTrigger>
-            <TabsTrigger value="account">Konto</TabsTrigger>
+            <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>
+            <TabsTrigger value="security">{t("settings.security")}</TabsTrigger>
+            <TabsTrigger value="account">{t("settings.account")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="security">
@@ -193,7 +197,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <TabsContent value="audio" className="space-y-6">
             {permissionError && (
               <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                Kein Zugriff auf das Mikrofon. Erlaube den Zugriff in den Browser-Einstellungen, um Geräte auszuwählen.
+                {t("settings.noMicAccess")}
               </p>
             )}
 
@@ -201,7 +205,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex items-center gap-2">
                 <Mic className="h-4 w-4 text-muted-foreground" />
                 <Label htmlFor="input-device" className="font-semibold">
-                  Eingabegerät (Mikrofon)
+                  {t("settings.inputDevice")}
                 </Label>
               </div>
               <Select
@@ -212,10 +216,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={DEFAULT_DEVICE}>Systemstandard</SelectItem>
+                  <SelectItem value={DEFAULT_DEVICE}>{t("settings.systemDefault")}</SelectItem>
                   {inputs.map((device, index) => (
                     <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Mikrofon ${index + 1}`}
+                      {device.label || t("settings.micNumber", { number: index + 1 })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -227,7 +231,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex items-center gap-2">
                 <Headphones className="h-4 w-4 text-muted-foreground" />
                 <Label htmlFor="output-device" className="font-semibold">
-                  Ausgabegerät (Lautsprecher)
+                  {t("settings.outputDevice")}
                 </Label>
               </div>
               <Select
@@ -239,16 +243,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={DEFAULT_DEVICE}>Systemstandard</SelectItem>
+                  <SelectItem value={DEFAULT_DEVICE}>{t("settings.systemDefault")}</SelectItem>
                   {outputs.map((device, index) => (
                     <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Lautsprecher ${index + 1}`}
+                      {device.label || t("settings.speakerNumber", { number: index + 1 })}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {!supportsOutputSelection && (
-                <p className="text-xs text-muted-foreground">Dein Browser unterstützt keine Auswahl des Ausgabegeräts.</p>
+                <p className="text-xs text-muted-foreground">{t("settings.noOutputSelection")}</p>
               )}
               <Button
                 size="sm"
@@ -256,13 +260,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 onClick={() => playTestTone(settings.outputVolume / 100, settings.outputDeviceId)}
                 className="w-full"
               >
-                Testton abspielen
+                {t("settings.playTestTone")}
               </Button>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label htmlFor="output-volume">Lautstärke im Anruf</Label>
+                <Label htmlFor="output-volume">{t("settings.callVolume")}</Label>
                 <span className="text-sm font-medium text-muted-foreground">{settings.outputVolume}%</span>
               </div>
               <Slider
@@ -278,27 +282,45 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </TabsContent>
 
           <TabsContent value="account" className="space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Languages className="h-4 w-4 text-muted-foreground" />
+                <Label htmlFor="language" className="font-semibold">
+                  {t("settings.language")}
+                </Label>
+              </div>
+              <Select value={locale} onValueChange={(value) => setLocale(value as Locale)}>
+                <SelectTrigger id="language">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOCALES.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {LOCALE_NAMES[option]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1 rounded-lg bg-muted p-4 text-sm">
-              <p className="text-muted-foreground">Angemeldet als</p>
+              <p className="text-muted-foreground">{t("settings.signedInAs")}</p>
               <p className="break-all font-medium text-foreground">{session?.userId}</p>
-              <p className="pt-2 text-muted-foreground">Homeserver</p>
+              <p className="pt-2 text-muted-foreground">{t("login.homeserver")}</p>
               <p className="break-all font-medium text-foreground">{session?.homeserverUrl}</p>
-              <p className="pt-2 text-muted-foreground">Gerät</p>
+              <p className="pt-2 text-muted-foreground">{t("settings.device")}</p>
               <p className="break-all font-mono text-xs text-foreground">{session?.deviceId}</p>
             </div>
             <Button variant="destructive" className="w-full" onClick={() => void handleLogout()} disabled={isLoggingOut}>
               {isLoggingOut ? <Spinner className="mr-2 h-4 w-4" /> : <LogOut className="mr-2 h-4 w-4" />}
-              Abmelden
+              {t("account.logout")}
             </Button>
             {securityStatus?.backupVersion ? (
               <p className="text-xs text-muted-foreground">
-                Deine Nachrichtenschlüssel sind im Backup gesichert. Auf einem neuen Gerät stellst du sie mit deinem
-                Recovery-Schlüssel wieder her.
+                {t("settings.backupOk")}
               </p>
             ) : (
               <p className="rounded-md bg-destructive/10 p-3 text-xs text-destructive">
-                Achtung: Es ist kein Schlüssel-Backup aktiv. Nach dem Abmelden kannst du ältere verschlüsselte Nachrichten
-                nicht mehr lesen. Richte vorher unter „Sicherheit“ einen Recovery-Schlüssel ein.
+                {t("settings.backupMissing")}
               </p>
             )}
           </TabsContent>

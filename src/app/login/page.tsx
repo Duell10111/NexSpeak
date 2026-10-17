@@ -14,11 +14,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { useMatrix } from '@/components/matrix-provider'
 import { serverNameFromUserId } from '@/lib/matrix/errors'
+import { useTranslation } from '@/hooks/useTranslation'
+import { LOCALE_NAMES, LOCALES } from '@/lib/i18n'
 import { AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
   const { session, login, isLoggingIn, loginError } = useMatrix()
+  const { t, locale, setLocale } = useTranslation()
 
   const [homeserver, setHomeserver] = useState('matrix.org')
   const [username, setUsername] = useState('')
@@ -50,13 +53,13 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-4">
         <div className="mb-8 space-y-2 text-center">
           <h1 className="text-3xl font-bold">NexSpeak</h1>
-          <p className="text-muted-foreground">Chatten und sprechen über Matrix</p>
+          <p className="text-muted-foreground">{t('login.tagline')}</p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Anmelden</CardTitle>
-            <CardDescription>Melde dich mit deinem Matrix-Konto an</CardDescription>
+            <CardTitle>{t('login.title')}</CardTitle>
+            <CardDescription>{t('login.description')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
@@ -68,7 +71,7 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="homeserver">Homeserver</Label>
+                <Label htmlFor="homeserver">{t('login.homeserver')}</Label>
                 <Input
                   id="homeserver"
                   type="text"
@@ -82,11 +85,11 @@ export default function LoginPage() {
                   disabled={isLoggingIn}
                   required
                 />
-                <p className="text-xs text-muted-foreground">z. B. matrix.org oder https://matrix.example.com</p>
+                <p className="text-xs text-muted-foreground">{t('login.homeserverHint')}</p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">Benutzername</Label>
+                <Label htmlFor="username">{t('login.username')}</Label>
                 <Input
                   id="username"
                   type="text"
@@ -94,7 +97,7 @@ export default function LoginPage() {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  placeholder="alice oder @alice:matrix.org"
+                  placeholder={t('login.usernamePlaceholder')}
                   value={username}
                   onChange={(event) => handleUsernameChange(event.target.value)}
                   disabled={isLoggingIn}
@@ -103,7 +106,7 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Passwort</Label>
+                <Label htmlFor="password">{t('login.password')}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -119,24 +122,24 @@ export default function LoginPage() {
                 {isLoggingIn ? (
                   <>
                     <Spinner className="mr-2 h-4 w-4" />
-                    Anmeldung läuft…
+                    {t('login.submitting')}
                   </>
                 ) : (
-                  'Anmelden'
+                  t('login.submit')
                 )}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm text-muted-foreground">
               <p>
-                Noch kein Matrix-Konto?{' '}
+                {t('login.noAccount')}{' '}
                 <a
                   href="https://matrix.org/try-matrix/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
-                  Jetzt erstellen
+                  {t('login.createAccount')}
                 </a>
               </p>
             </div>
@@ -144,10 +147,24 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          Dein Passwort wird nur an deinen Homeserver gesendet.
+          {t('login.privacyPassword')}
           <br />
-          Das Zugriffstoken wird lokal in diesem Browser gespeichert.
+          {t('login.privacyToken')}
         </p>
+
+        <div className="flex justify-center gap-3 text-xs" role="group" aria-label={t('settings.language')}>
+          {LOCALES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setLocale(option)}
+              aria-pressed={locale === option}
+              className={locale === option ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground'}
+            >
+              {LOCALE_NAMES[option]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

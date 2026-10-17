@@ -23,6 +23,8 @@ export default defineConfig({
     trace: "retain-on-failure",
     connectOptions: browserServer ? { wsEndpoint: browserServer, exposeNetwork: "<loopback>" } : undefined,
     permissions: ["microphone", "camera"],
+    // The app follows the browser language; the tests use the German UI.
+    locale: "de-DE",
     launchOptions: {
       args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
     },

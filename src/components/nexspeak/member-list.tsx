@@ -9,10 +9,16 @@ import {
 } from "matrix-js-sdk"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
-import { Volume2 } from "lucide-react"
+import { useTranslation } from "@/hooks/useTranslation"
+import { MessageCircle, Volume2 } from "lucide-react"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useCallContext } from "@/components/nexspeak/call-context"
+import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
+import type { MessageKey } from "@/lib/i18n"
 
 interface MemberListProps {
   activeRoomId: string
@@ -36,11 +42,11 @@ const PRESENCE_COLORS: Record<Presence, string> = {
   unknown: "bg-nx-offline",
 }
 
-const PRESENCE_LABELS: Record<Presence, string> = {
-  online: "Online",
-  unavailable: "Abwesend",
-  offline: "Offline",
-  unknown: "",
+const PRESENCE_LABELS: Record<Presence, MessageKey | null> = {
+  online: "presence.online",
+  unavailable: "presence.away",
+  offline: "presence.offline",
+  unknown: null,
 }
 
 function readMembers(client: MatrixClient, roomId: string): UiMember[] {
@@ -116,41 +122,86 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
   return state && state.roomId === roomId ? state.members : []
 }
 
-function MemberItem({ member, voiceRoomName }: { member: UiMember; voiceRoomName?: string }) {
-  const isAway = member.presence === "offline"
+/** Discord's profile popout: who it is and a way to message them directly. */
+function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: boolean; onDone: () => void }) {
+  const { t } = useTranslation()
+  const openDirectMessage = useOpenDirectMessage()
+  const [isOpening, setIsOpening] = useState(false)
+  const presenceLabel = PRESENCE_LABELS[member.presence]
+
+  const message = async () => {
+    setIsOpening(true)
+    const opened = await openDirectMessage([member.userId])
+    setIsOpening(false)
+    if (opened) onDone()
+  }
 
   return (
-    <div
-      className={cn(
-        "group mx-2 flex h-[42px] items-center gap-3 rounded px-2 transition-colors hover:bg-nx-hover",
-        isAway && !voiceRoomName && "opacity-40 hover:opacity-100",
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <MatrixAvatar mxcUrl={member.avatarMxc} name={member.name} size={56} className="text-lg" />
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold text-foreground">{member.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{member.userId}</p>
+          {presenceLabel && <p className="text-xs text-muted-foreground">{t(presenceLabel)}</p>}
+        </div>
+      </div>
+      {!isSelf && (
+        <Button className="w-full" size="sm" onClick={() => void message()} disabled={isOpening}>
+          {isOpening ? <Spinner className="mr-2 h-4 w-4" /> : <MessageCircle className="mr-2 h-4 w-4" />}
+          {t("dm.sendMessage")}
+        </Button>
       )}
-      title={member.userId}
-    >
-      <div className="relative">
-        <MatrixAvatar mxcUrl={member.avatarMxc} name={member.name} size={32} />
-        {member.presence !== "unknown" && (
-          <span
-            className={cn(
-              "absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-secondary group-hover:border-nx-hover",
-              PRESENCE_COLORS[member.presence],
-            )}
-            aria-label={PRESENCE_LABELS[member.presence]}
-          />
-        )}
-      </div>
-      <div className="min-w-0 flex-1 text-left">
-        <p className="truncate text-[15px] leading-5 font-medium text-muted-foreground group-hover:text-foreground">
-          {member.name}
-        </p>
-        {voiceRoomName && (
-          <p className="flex items-center gap-1 truncate text-xs leading-4 text-muted-foreground">
-            <Volume2 className="h-3 w-3 shrink-0 text-nx-online" />
-            <span className="truncate">Im Sprachkanal {voiceRoomName}</span>
-          </p>
-        )}
-      </div>
     </div>
+  )
+}
+
+function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voiceRoomName?: string; isSelf: boolean }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const isAway = member.presence === "offline"
+  const presenceLabel = PRESENCE_LABELS[member.presence]
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "group mx-2 flex h-[42px] items-center gap-3 rounded px-2 text-left transition-colors hover:bg-nx-hover",
+            isAway && !voiceRoomName && "opacity-40 hover:opacity-100",
+            open && "bg-nx-hover opacity-100",
+          )}
+          title={member.userId}
+        >
+          <div className="relative">
+            <MatrixAvatar mxcUrl={member.avatarMxc} name={member.name} size={32} />
+            {member.presence !== "unknown" && (
+              <span
+                className={cn(
+                  "absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-secondary group-hover:border-nx-hover",
+                  PRESENCE_COLORS[member.presence],
+                )}
+                aria-label={presenceLabel ? t(presenceLabel) : undefined}
+              />
+            )}
+          </div>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="truncate text-[15px] leading-5 font-medium text-muted-foreground group-hover:text-foreground">
+              {member.name}
+            </p>
+            {voiceRoomName && (
+              <p className="flex items-center gap-1 truncate text-xs leading-4 text-muted-foreground">
+                <Volume2 className="h-3 w-3 shrink-0 text-nx-online" />
+                <span className="truncate">{t("members.inVoice", { name: voiceRoomName })}</span>
+              </p>
+            )}
+          </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="left" align="start" className="w-72">
+        <MemberProfile member={member} isSelf={isSelf} onDone={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -158,10 +209,12 @@ function MemberSection({
   title,
   members,
   voiceRoomByUser,
+  ownUserId,
 }: {
   title: string
   members: UiMember[]
   voiceRoomByUser: Map<string, string>
+  ownUserId: string
 }) {
   if (members.length === 0) return null
 
@@ -172,7 +225,12 @@ function MemberSection({
       </h4>
       <div className="flex flex-col gap-0.5">
         {members.map((member) => (
-          <MemberItem key={member.userId} member={member} voiceRoomName={voiceRoomByUser.get(member.userId)} />
+          <MemberItem
+            key={member.userId}
+            member={member}
+            voiceRoomName={voiceRoomByUser.get(member.userId)}
+            isSelf={member.userId === ownUserId}
+          />
         ))}
       </div>
     </div>
@@ -180,29 +238,31 @@ function MemberSection({
 }
 
 /** Discord groups members by their highest role; power levels are Matrix' roles. */
-function roleTitle(powerLevel: number): string | null {
-  if (powerLevel >= 100) return "Admin"
-  if (powerLevel >= 50) return "Moderator"
+function roleTitle(powerLevel: number): MessageKey | null {
+  if (powerLevel >= 100) return "members.admin"
+  if (powerLevel >= 50) return "members.moderator"
   return null
 }
 
-function groupMembers(members: UiMember[], presenceKnown: boolean): Array<{ title: string; members: UiMember[] }> {
-  const groups = new Map<string, UiMember[]>()
-  const add = (title: string, member: UiMember) => groups.set(title, [...(groups.get(title) ?? []), member])
+function groupMembers(members: UiMember[], presenceKnown: boolean): Array<{ title: MessageKey; members: UiMember[] }> {
+  const groups = new Map<MessageKey, UiMember[]>()
+  const add = (title: MessageKey, member: UiMember) => groups.set(title, [...(groups.get(title) ?? []), member])
 
   members.forEach((member) => {
     // Like Discord, offline members are listed together regardless of their role.
     if (presenceKnown && member.presence === "offline") return
-    add(roleTitle(member.powerLevel) ?? (presenceKnown ? "Online" : "Mitglieder"), member)
+    add(roleTitle(member.powerLevel) ?? (presenceKnown ? "presence.online" : "members.title"), member)
   })
-  if (presenceKnown) members.filter((member) => member.presence === "offline").forEach((member) => add("Offline", member))
+  if (presenceKnown) members.filter((member) => member.presence === "offline").forEach((member) => add("presence.offline", member))
 
   return Array.from(groups, ([title, grouped]) => ({ title, members: grouped }))
 }
 
 export function MemberList({ activeRoomId, className }: MemberListProps) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const { callInfoByRoom } = useCallContext()
+  const ownUserId = client?.getUserId() ?? ""
   const members = useJoinedMembers(client, activeRoomId)
   const presenceKnown = members.some((member) => member.presence !== "unknown")
 
@@ -213,10 +273,16 @@ export function MemberList({ activeRoomId, className }: MemberListProps) {
   })
 
   return (
-    <aside className={cn("flex h-full w-60 shrink-0 flex-col bg-secondary", className)} aria-label="Mitglieder">
+    <aside className={cn("flex h-full w-60 shrink-0 flex-col bg-secondary", className)} aria-label={t("members.title")}>
       <ScrollArea className="min-h-0 flex-1">
         {groupMembers(members, presenceKnown).map((group) => (
-          <MemberSection key={group.title} title={group.title} members={group.members} voiceRoomByUser={voiceRoomByUser} />
+          <MemberSection
+            key={group.title}
+            title={t(group.title)}
+            members={group.members}
+            voiceRoomByUser={voiceRoomByUser}
+            ownUserId={ownUserId}
+          />
         ))}
         <div className="h-4" />
       </ScrollArea>

@@ -12,6 +12,7 @@ import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { setupRecovery, verifyWithRecoveryKey } from "@/lib/matrix/security"
 import { describeMatrixError } from "@/lib/matrix/errors"
+import { useTranslation } from "@/hooks/useTranslation"
 
 function StatusRow({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -23,6 +24,7 @@ function StatusRow({ ok, label }: { ok: boolean; label: string }) {
 }
 
 function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: () => void }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [password, setPassword] = useState("")
   const [isBusy, setIsBusy] = useState(false)
@@ -39,7 +41,7 @@ function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: (
       setRecoveryKey(await setupRecovery(client, password))
       setPassword("")
     } catch (error) {
-      toast.error(describeMatrixError(error, "Einrichtung fehlgeschlagen."))
+      toast.error(describeMatrixError(error, t("security.setupFailed")))
     } finally {
       setIsBusy(false)
     }
@@ -49,8 +51,7 @@ function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: (
     return (
       <div className="space-y-3">
         <p className="text-sm text-foreground">
-          Das ist dein Recovery-Schlüssel. Bewahre ihn sicher auf (z. B. im Passwort-Manager). Ohne ihn kannst du auf
-          neuen Geräten ältere verschlüsselte Nachrichten nicht lesen.
+          {t("security.keyExplanation")}
         </p>
         <div className="flex items-start gap-2 rounded-md bg-muted p-3">
           <code className="flex-1 break-all font-mono text-sm text-foreground" data-testid="recovery-key">
@@ -59,9 +60,9 @@ function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: (
           <Button
             size="icon"
             variant="ghost"
-            aria-label="Kopieren"
+            aria-label={t("common.copy")}
             onClick={() => {
-              void navigator.clipboard.writeText(recoveryKey).then(() => toast.success("Kopiert"))
+              void navigator.clipboard.writeText(recoveryKey).then(() => toast.success(t("common.copied")))
             }}
           >
             <Copy className="h-4 w-4" />
@@ -69,10 +70,10 @@ function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: (
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={savedConfirmed} onChange={(event) => setSavedConfirmed(event.target.checked)} />
-          Ich habe den Schlüssel sicher gespeichert.
+          {t("security.keySaved")}
         </label>
         <Button className="w-full" disabled={!savedConfirmed} onClick={onDone}>
-          Fertig
+          {t("common.done")}
         </Button>
       </div>
     )
@@ -81,11 +82,10 @@ function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: (
   return (
     <form onSubmit={(event) => void handleSubmit(event)} className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Erstellt Schlüssel zur Verifizierung deiner Geräte und ein verschlüsseltes Backup deiner Nachrichtenschlüssel auf
-        dem Server. Zur Bestätigung wird dein Passwort benötigt.
+        {t("security.setupExplanation")}
       </p>
       <div className="space-y-1">
-        <Label htmlFor="setup-password">Passwort</Label>
+        <Label htmlFor="setup-password">{t("login.password")}</Label>
         <Input
           id="setup-password"
           type="password"
@@ -98,13 +98,14 @@ function SetupRecovery({ onStarted, onDone }: { onStarted: () => void; onDone: (
       </div>
       <Button type="submit" className="w-full" disabled={isBusy || !password}>
         {isBusy && <Spinner className="mr-2 h-4 w-4" />}
-        Recovery-Schlüssel erstellen
+        {t("security.createKey")}
       </Button>
     </form>
   )
 }
 
 function VerifyWithRecoveryKey({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [recoveryKey, setRecoveryKey] = useState("")
   const [isBusy, setIsBusy] = useState(false)
@@ -116,14 +117,12 @@ function VerifyWithRecoveryKey({ onDone }: { onDone: () => void }) {
     try {
       const restored = await verifyWithRecoveryKey(client, recoveryKey)
       toast.success(
-        restored > 0
-          ? `Gerät verifiziert, ${restored} Nachrichtenschlüssel wiederhergestellt.`
-          : "Gerät verifiziert.",
+        restored > 0 ? t("security.verifiedRestored", { count: restored }) : t("security.verified"),
       )
       setRecoveryKey("")
       onDone()
     } catch (error) {
-      toast.error(describeMatrixError(error, "Verifizierung fehlgeschlagen."))
+      toast.error(describeMatrixError(error, t("security.verifyFailed")))
     } finally {
       setIsBusy(false)
     }
@@ -131,7 +130,7 @@ function VerifyWithRecoveryKey({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)} className="space-y-2">
-      <Label htmlFor="recovery-key">Recovery-Schlüssel</Label>
+      <Label htmlFor="recovery-key">{t("security.recoveryKey")}</Label>
       <Input
         id="recovery-key"
         autoComplete="off"
@@ -144,19 +143,20 @@ function VerifyWithRecoveryKey({ onDone }: { onDone: () => void }) {
       />
       <Button type="submit" className="w-full" disabled={isBusy || !recoveryKey.trim()}>
         {isBusy ? <Spinner className="mr-2 h-4 w-4" /> : <KeyRound className="mr-2 h-4 w-4" />}
-        Mit Recovery-Schlüssel verifizieren
+        {t("security.verifyWithKey")}
       </Button>
     </form>
   )
 }
 
 export function SecurityPanel() {
+  const { t } = useTranslation()
   const { client, isCryptoReady } = useMatrixClient()
   const { status, refreshStatus, startSelfVerification } = useSecurity()
   const [mode, setMode] = useState<"idle" | "setup">("idle")
 
   if (!client || !isCryptoReady) {
-    return <p className="text-sm text-muted-foreground">Die Verschlüsselung ist auf diesem Gerät nicht verfügbar.</p>
+    return <p className="text-sm text-muted-foreground">{t("security.cryptoUnavailable")}</p>
   }
   if (!status) {
     return (
@@ -174,11 +174,11 @@ export function SecurityPanel() {
   return (
     <div className="space-y-5">
       <div className="space-y-1.5 rounded-lg bg-muted p-4">
-        <StatusRow ok={status.isDeviceVerified} label={status.isDeviceVerified ? "Dieses Gerät ist verifiziert" : "Dieses Gerät ist nicht verifiziert"} />
-        <StatusRow ok={status.hasRecovery} label={status.hasRecovery ? "Recovery-Schlüssel eingerichtet" : "Kein Recovery-Schlüssel eingerichtet"} />
+        <StatusRow ok={status.isDeviceVerified} label={status.isDeviceVerified ? t("security.deviceVerified") : t("security.deviceNotVerified")} />
+        <StatusRow ok={status.hasRecovery} label={status.hasRecovery ? t("security.recoverySet") : t("security.recoveryNotSet")} />
         <StatusRow
           ok={Boolean(status.backupVersion)}
-          label={status.backupVersion ? "Schlüssel-Backup aktiv" : "Kein Schlüssel-Backup auf diesem Gerät aktiv"}
+          label={status.backupVersion ? t("security.backupActive") : t("security.backupInactive")}
         />
       </div>
 
@@ -187,19 +187,18 @@ export function SecurityPanel() {
       ) : !status.isDeviceVerified ? (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Verifiziere dieses Gerät, um ältere verschlüsselte Nachrichten lesen zu können und anderen zu zeigen, dass du
-            es bist.
+            {t("security.verifyExplanation")}
           </p>
           <Button variant="outline" className="w-full" onClick={() => void startSelfVerification()}>
             <Smartphone className="mr-2 h-4 w-4" />
-            Mit einem anderen Gerät verifizieren
+            {t("security.verifyWithDevice")}
           </Button>
           {status.hasRecovery && <VerifyWithRecoveryKey onDone={done} />}
         </div>
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="h-4 w-4 text-nx-online" />
-          Alles eingerichtet. Neue Nachrichtenschlüssel werden automatisch gesichert.
+          {t("security.allSet")}
         </p>
       )}
     </div>
@@ -208,6 +207,7 @@ export function SecurityPanel() {
 
 /** Shown while this device is unverified on an account that uses cross-signing. */
 export function SecurityBanner() {
+  const { t } = useTranslation()
   const { status } = useSecurity()
   const [open, setOpen] = useState(false)
   const [dismissed, setDismissed] = useState(false)
@@ -218,19 +218,19 @@ export function SecurityBanner() {
     <>
       <div className="flex shrink-0 items-center justify-center gap-3 bg-nx-idle px-4 py-1 text-xs font-medium text-black" role="status">
         <ShieldAlert className="h-3.5 w-3.5" />
-        <span>Dieses Gerät ist nicht verifiziert – ältere verschlüsselte Nachrichten sind evtl. nicht lesbar.</span>
+        <span>{t("security.banner")}</span>
         <button onClick={() => setOpen(true)} className="font-semibold underline">
-          Jetzt verifizieren
+          {t("security.verifyNow")}
         </button>
-        <button onClick={() => setDismissed(true)} className="opacity-70 hover:opacity-100" aria-label="Ausblenden">
+        <button onClick={() => setDismissed(true)} className="opacity-70 hover:opacity-100" aria-label={t("common.dismiss")}>
           ×
         </button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Gerät verifizieren</DialogTitle>
-            <DialogDescription>Bestätige, dass dieses Gerät zu dir gehört.</DialogDescription>
+            <DialogTitle>{t("verify.title")}</DialogTitle>
+            <DialogDescription>{t("security.confirmDevice")}</DialogDescription>
           </DialogHeader>
           <SecurityPanel />
         </DialogContent>

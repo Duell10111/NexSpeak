@@ -7,6 +7,7 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 import { decodeRecoveryKey, type CryptoApi } from 'matrix-js-sdk/lib/crypto-api'
 import { forgetSecretStorageKey, withSecretStorageKey } from '@/lib/matrix/secret-storage'
+import { t } from '@/lib/i18n'
 
 export interface SecurityStatus {
   /** The account has cross-signing keys (set up here or in another client). */
@@ -21,7 +22,7 @@ export interface SecurityStatus {
 
 function requireCrypto(client: MatrixClient): CryptoApi {
   const crypto = client.getCrypto()
-  if (!crypto) throw new Error('Die Verschlüsselung ist auf diesem Gerät nicht verfügbar.')
+  if (!crypto) throw new Error(t('security.cryptoUnavailable'))
   return crypto
 }
 
@@ -78,7 +79,7 @@ export async function setupRecovery(client: MatrixClient, password: string): Pro
     forgetSecretStorageKey()
   }
 
-  if (!recoveryKey) throw new Error('Der Recovery-Schlüssel konnte nicht erstellt werden.')
+  if (!recoveryKey) throw new Error(t('security.error.createFailed'))
   return recoveryKey
 }
 
@@ -93,14 +94,14 @@ export async function verifyWithRecoveryKey(client: MatrixClient, input: string)
   try {
     key = decodeRecoveryKey(input.trim())
   } catch {
-    throw new Error('Das ist kein gültiger Recovery-Schlüssel.')
+    throw new Error(t('security.error.invalidKey'))
   }
 
   const keyId = await client.secretStorage.getDefaultKeyId()
   const keyInfo = keyId ? (await client.secretStorage.getKey(keyId))?.[1] : undefined
-  if (!keyId || !keyInfo) throw new Error('Für dieses Konto ist kein Recovery-Schlüssel eingerichtet.')
+  if (!keyId || !keyInfo) throw new Error(t('security.error.noRecovery'))
   if (!(await client.secretStorage.checkKey(key, keyInfo))) {
-    throw new Error('Der Recovery-Schlüssel ist falsch.')
+    throw new Error(t('security.error.wrongKey'))
   }
 
   await withSecretStorageKey(key, keyId, async () => {

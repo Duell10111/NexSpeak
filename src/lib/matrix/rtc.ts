@@ -5,6 +5,7 @@
 
 import { EventType, type MatrixClient, type Room } from 'matrix-js-sdk'
 import type { CallMembership, LivekitTransport, Transport } from 'matrix-js-sdk/lib/matrixrtc'
+import { t } from '@/lib/i18n'
 
 export interface SfuConfig {
   url: string
@@ -55,7 +56,7 @@ export async function discoverLivekitServiceUrl(client: MatrixClient): Promise<s
   const fallback = process.env.NEXT_PUBLIC_LIVEKIT_SERVICE_URL
   if (fallback) return fallback
 
-  throw new Error('Dein Homeserver bietet keine Sprachkanäle an (kein MatrixRTC/LiveKit-Dienst konfiguriert).')
+  throw new Error(t('call.error.noService'))
 }
 
 /**
@@ -90,11 +91,11 @@ export async function getSfuConfig(client: MatrixClient, serviceUrl: string, roo
   })
 
   if (!response.ok) {
-    throw new Error(`Der Sprachdienst hat die Anmeldung abgelehnt (${response.status}).`)
+    throw new Error(t('call.error.serviceRejected', { status: response.status }))
   }
 
   const config = (await response.json()) as Partial<SfuConfig>
-  if (!config.url || !config.jwt) throw new Error('Ungültige Antwort vom Sprachdienst.')
+  if (!config.url || !config.jwt) throw new Error(t('call.error.invalidServiceResponse'))
   return { url: config.url, jwt: config.jwt }
 }
 
@@ -112,8 +113,8 @@ export class CallPermissionError extends Error {
   constructor(readonly canEnable: boolean) {
     super(
       canEnable
-        ? 'Anrufe sind in diesem Raum noch nicht für alle Mitglieder freigegeben.'
-        : 'Du hast keine Berechtigung, in diesem Raum an Anrufen teilzunehmen. Bitte einen Admin, Anrufe zu erlauben.',
+        ? t('call.error.notEnabled')
+        : t('call.error.noPermission'),
     )
     this.name = 'CallPermissionError'
   }

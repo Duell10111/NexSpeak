@@ -5,6 +5,7 @@
 import { EventType, MsgType, RelationType, type MatrixClient, type MatrixEvent } from 'matrix-js-sdk'
 import type { RoomMessageEventContent } from 'matrix-js-sdk/lib/@types/events'
 import { encryptAttachment } from '@/lib/matrix/attachments'
+import { t } from '@/lib/i18n'
 
 function replyRelation(replyTo: MatrixEvent | undefined) {
   const eventId = replyTo?.getId()
@@ -34,7 +35,7 @@ export function sendTextMessage(
 
 export function editTextMessage(client: MatrixClient, roomId: string, original: MatrixEvent, body: string): Promise<unknown> {
   const eventId = original.getId()
-  if (!eventId) throw new Error('Die Nachricht wurde noch nicht gesendet.')
+  if (!eventId) throw new Error(t('error.messageNotSent'))
   const msgtype = original.getContent().msgtype === MsgType.Emote ? MsgType.Emote : MsgType.Text
 
   const content = {

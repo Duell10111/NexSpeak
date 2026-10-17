@@ -32,7 +32,8 @@ import {
   getMatrixClient,
   startMatrixClient,
 } from '@/lib/matrix/client'
-import { describeMatrixError, resolveHomeserverUrl, serverNameFromUserId } from '@/lib/matrix/errors'
+import { describeLoginError, resolveHomeserverUrl, serverNameFromUserId } from '@/lib/matrix/errors'
+import { t } from '@/lib/i18n'
 
 interface MatrixContextType {
   /** undefined until the session has been read from storage on the client. */
@@ -115,7 +116,7 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
     if (!client) return
 
     const onLoggedOut = () => {
-      toast.error('Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.')
+      toast.error(t('error.sessionExpired'))
       void teardownClient(client).finally(clearSession)
     }
 
@@ -142,7 +143,7 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
       })
 
       if (!response.access_token || !response.user_id || !response.device_id) {
-        throw new Error('Ungültige Antwort vom Homeserver.')
+        throw new Error(t('login.invalidResponse'))
       }
 
       // Drop any leftover client (and its crypto store) from a previous account.
@@ -155,7 +156,7 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
         deviceId: response.device_id,
       })
     } catch (error) {
-      const message = describeMatrixError(error, 'Anmeldung fehlgeschlagen.')
+      const message = describeLoginError(error)
       setLoginError(message)
       throw error
     } finally {
