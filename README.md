@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Duell10111/NexSpeak/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Duell10111/NexSpeak/ci.yml?branch=main&label=CI" alt="CI"></a>
   <a href="https://github.com/Duell10111/NexSpeak/releases/latest"><img src="https://img.shields.io/github/v/release/Duell10111/NexSpeak?include_prereleases&sort=semver" alt="Latest release"></a>
   <a href="https://github.com/Duell10111/NexSpeak/actions/workflows/release-please.yml"><img src="https://img.shields.io/github/actions/workflow/status/Duell10111/NexSpeak/release-please.yml?branch=main&label=release" alt="Release workflow"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Duell10111/NexSpeak" alt="License: AGPL-3.0-or-later"></a>
