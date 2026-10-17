@@ -166,3 +166,25 @@ export async function sendMessage(page: Page, text: string): Promise<void> {
 export function messageRow(page: Page, text: string) {
   return page.locator('[id^="msg-"]').filter({ has: page.getByTestId("message-body").filter({ hasText: text }) }).last()
 }
+
+/** Peak level of the remote audio on `page` over 1.5 s (0 = silence). */
+export async function remoteAudioLevel(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const audio = document.querySelector("audio")
+    const stream = audio?.srcObject as MediaStream | null
+    if (!stream) return 0
+    const context = new AudioContext()
+    const analyser = context.createAnalyser()
+    context.createMediaStreamSource(stream).connect(analyser)
+    // Chromium's fake microphone beeps in intervals: sample long enough to catch a beep.
+    const data = new Uint8Array(analyser.fftSize)
+    let level = 0
+    for (const end = performance.now() + 1_500; performance.now() < end; ) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      analyser.getByteTimeDomainData(data)
+      level = Math.max(level, Math.max(...data) - Math.min(...data))
+    }
+    await context.close()
+    return level
+  })
+}

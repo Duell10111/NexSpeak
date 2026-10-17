@@ -64,7 +64,8 @@ solution wins over a convenience feature. New features must cost practically not
     go through `window.nexspeak` (contract: `packages/core/src/desktop-bridge.ts`, in the web app
     via `desktopBridge()` from `@/lib/desktop`); the bridge is missing in the browser, so always
     check for it. The renderer stays sandboxed without Node; at runtime the preload script may
-    only import `electron`. Never disable hardware acceleration.
+    only import `electron`. Never disable hardware acceleration. Global input hooks (push to
+    talk) only run during a call that needs them – they see every key and mouse move.
   - `apps/mobile` – Expo app (planned).
   - `packages/core` (`@nexspeak/core/...`) – Matrix and call logic without UI; never imports from
     `apps/`. Direct browser APIs only where there is no alternative (yet).

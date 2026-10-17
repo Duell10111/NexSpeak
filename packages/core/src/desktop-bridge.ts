@@ -29,6 +29,13 @@ export interface VoiceState {
 
 export type TrayCommand = 'toggle-mute' | 'toggle-deafen' | 'leave-call'
 
+/**
+ * Whether the global push-to-talk key works while other apps (games) have the focus:
+ * 'permission-required' on macOS until the accessibility permission is granted,
+ * 'unsupported' where no global hook exists (Wayland).
+ */
+export type PushToTalkStatus = 'active' | 'permission-required' | 'unsupported'
+
 export interface DesktopBridge {
   platform: 'darwin' | 'win32' | 'linux'
   /**
@@ -41,4 +48,14 @@ export interface DesktopBridge {
   setVoiceState(state: VoiceState | null): void
   /** Tray menu actions for the web app. Returns an unsubscribe function. */
   onTrayCommand(handler: (command: TrayCommand) => void): () => void
+  /**
+   * Listens for the push-to-talk key system-wide (a KeyboardEvent.code such as "KeyV", or
+   * "Mouse3"–"Mouse5"); null stops listening. Only set while in a call: the hook sees every input.
+   */
+  setPushToTalkKey(key: string | null): Promise<PushToTalkStatus>
+  getPushToTalkStatus(): Promise<PushToTalkStatus>
+  /** macOS: asks for the accessibility permission that the global key needs. */
+  requestPushToTalkPermission(): Promise<PushToTalkStatus>
+  /** Key pressed (true) or released (false). Returns an unsubscribe function. */
+  onPushToTalk(handler: (pressed: boolean) => void): () => void
 }

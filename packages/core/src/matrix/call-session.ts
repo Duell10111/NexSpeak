@@ -14,7 +14,9 @@ import {
   RoomEvent as LivekitRoomEvent,
   setLogLevel,
   Track,
+  TrackEvent,
   VideoPresets,
+  type LocalTrackPublication,
   type LocalVideoTrack,
   type Participant,
   type RemoteTrack,
@@ -122,6 +124,8 @@ export interface CallAudioOptions {
   /** Join with the microphone off / sound off (the user's self-mute preference). */
   startMuted?: boolean
   startDeafened?: boolean
+  /** Push-to-talk mode: the microphone only transmits while setPushToTalkPressed(true). */
+  pushToTalk?: boolean
 }
 
 /** Feeds MatrixRTC media keys into LiveKit's per-participant frame encryption. */
@@ -158,6 +162,8 @@ export class CallSession {
   private isDeafened: boolean
   private outputVolume: number
   private readonly startMuted: boolean
+  private pushToTalk: boolean
+  private pushToTalkPressed = false
   /** Per-participant playback volume (0..1) and local mutes, by identity. */
   private readonly participantVolumes = new Map<string, number>()
   private readonly locallyMuted = new Set<string>()
@@ -194,6 +200,7 @@ export class CallSession {
     this.outputVolume = audio.outputVolume
     this.isDeafened = audio.startDeafened ?? false
     this.startMuted = audio.startMuted ?? false
+    this.pushToTalk = audio.pushToTalk ?? false
     this.audioContainer = document.createElement('div')
     this.audioContainer.hidden = true
     document.body.appendChild(this.audioContainer)
@@ -356,6 +363,16 @@ export class CallSession {
     ] as const
     simpleEvents.forEach((event) => room.on(event, changed))
 
+    // LiveKit enables the microphone track again on publish, unmute and restart (device change).
+    const gateMicrophone = () => this.applyTransmitGate()
+    const onLocalTrackPublished = (publication: LocalTrackPublication) => {
+      if (publication.source !== Track.Source.Microphone) return
+      publication.track?.on(TrackEvent.Restarted, gateMicrophone)
+      gateMicrophone()
+    }
+    room.on(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
+    room.on(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
+
     const onKey = (key: Uint8Array<ArrayBuffer>, index: number, _membership: unknown, rtcBackendIdentity: string) => {
       void this.keyProvider?.setMediaKey(key, index, rtcBackendIdentity).then((imported) => {
         if (imported && rtcBackendIdentity === this.ownIdentity) this.resolveOwnKey()
@@ -363,7 +380,7 @@ export class CallSession {
     }
     const onManagerError = (error: unknown) => {
       console.error('MatrixRTC membership error:', error)
-      void this.leave('Die Teilnahme am Anruf konnte nicht aufrechterhalten werden.')
+      void this.leave(t('call.error.membershipLost'))
     }
     this.rtcSession.on(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
     this.rtcSession.on(MatrixRTCSessionEvent.MembershipsChanged, changed)
@@ -375,6 +392,8 @@ export class CallSession {
       room.off(LivekitRoomEvent.ConnectionStateChanged, onConnectionStateChanged)
       room.off(LivekitRoomEvent.Disconnected, onDisconnected)
       simpleEvents.forEach((event) => room.off(event, changed))
+      room.off(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
+      room.off(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
       this.rtcSession.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipsChanged, changed)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
@@ -519,7 +538,29 @@ export class CallSession {
     if (enabled) await this.waitForOwnKey()
     if (this.isLeaving) return
     await this.livekitRoom.localParticipant.setMicrophoneEnabled(enabled)
+    this.applyTransmitGate()
     this.changed()
+  }
+
+  /** Push-to-talk mode on or off; off transmits whenever the microphone is unmuted. */
+  setPushToTalk(enabled: boolean): void {
+    this.pushToTalk = enabled
+    this.applyTransmitGate()
+  }
+
+  setPushToTalkPressed(pressed: boolean): void {
+    this.pushToTalkPressed = pressed
+    this.applyTransmitGate()
+  }
+
+  /**
+   * Push-to-talk gates the microphone track instead of muting it: others don't see us as muted,
+   * and with Opus DTX a disabled track sends practically nothing.
+   */
+  private applyTransmitGate(): void {
+    const track = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    if (!track || track.isMuted) return
+    track.mediaStreamTrack.enabled = !this.pushToTalk || this.pushToTalkPressed
   }
 
   async setCameraEnabled(enabled: boolean): Promise<void> {
@@ -647,6 +688,7 @@ export class CallSession {
     // Not exact: LiveKit would otherwise keep requiring this device, and every later unmute
     // fails with "Constraints could not be satisfied" once it is gone.
     await this.livekitRoom.switchActiveDevice(kind, target, false)
+    if (kind === 'audioinput') this.applyTransmitGate()
   }
 
   async startAudio(): Promise<void> {

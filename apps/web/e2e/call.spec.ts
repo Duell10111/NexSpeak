@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { createRoom, login, newPage, openRoom, registerUser } from "./helpers"
+import { createRoom, login, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
 
 async function joinVoice(page: Page) {
   await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
@@ -42,30 +42,7 @@ for (const encrypted of [false, true]) {
     }
 
     // With E2EE, frames must actually decrypt: wait for the remote mic to produce audio levels.
-    await expect
-      .poll(
-        () =>
-          bobPage.evaluate(async () => {
-            const audio = document.querySelector("audio")
-            const stream = audio?.srcObject as MediaStream | null
-            if (!stream) return 0
-            const context = new AudioContext()
-            const analyser = context.createAnalyser()
-            context.createMediaStreamSource(stream).connect(analyser)
-            // Chromium's fake microphone beeps in intervals: sample long enough to catch a beep.
-            const data = new Uint8Array(analyser.fftSize)
-            let level = 0
-            for (const end = performance.now() + 1_500; performance.now() < end; ) {
-              await new Promise((resolve) => setTimeout(resolve, 20))
-              analyser.getByteTimeDomainData(data)
-              level = Math.max(level, Math.max(...data) - Math.min(...data))
-            }
-            await context.close()
-            return level
-          }),
-        { timeout: 30_000 },
-      )
-      .toBeGreaterThan(5)
+    await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 30_000 }).toBeGreaterThan(5)
 
     // Mute shows up for the other participant.
     await alicePage.getByRole("button", { name: "Mikrofon stummschalten" }).last().click()

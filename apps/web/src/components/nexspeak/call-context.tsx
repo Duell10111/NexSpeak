@@ -28,6 +28,7 @@ import {
 import type { EncoderInfo } from "@nexspeak/core/video-codec"
 import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
+import { usePushToTalk } from "@/hooks/usePushToTalk"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@nexspeak/core/matrix/call-session"
@@ -123,6 +124,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const sessionRef = useRef<CallSession | null>(null)
   const callInfoByRoom = useRtcCallInfo(client)
   const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
+  usePushToTalk(session, audioSettings)
 
   const call = useSyncExternalStore(
     session ? session.subscribe : noopSubscribe,
@@ -162,6 +164,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           outputVolume: settings.outputVolume / 100,
           startMuted: voicePrefsRef.current.muted,
           startDeafened: voicePrefsRef.current.deafened,
+          pushToTalk: settings.inputMode === "push-to-talk",
         })
         next.onEnded = (reason) => {
           endSession(next)

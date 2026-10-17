@@ -1,10 +1,12 @@
+import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test"
-import { createRoom, login, openRoom, registerUser, sendMessage } from "../../web/e2e/helpers"
+import { _electron as electron, chromium, expect, test, type ElectronApplication, type Page } from "@playwright/test"
+import { createRoom, login, openRoom, registerUser, remoteAudioLevel, sendMessage } from "../../web/e2e/helpers"
 
 const APP_DIR = join(__dirname, "..")
+const WEB_PORT = 3101
 
 let app: ElectronApplication
 let page: Page
@@ -157,4 +159,51 @@ test("tray commands mute, deafen and leave the call", async () => {
   await trayCommand("leave-call")
   await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeHidden()
   await expect.poll(lastVoiceState).toMatchObject({ inCall: false })
+})
+
+test("the global push-to-talk key from the main process controls the microphone", async () => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Desktop PTT ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob] })
+
+  // Bob listens in a regular browser with the same web build, served on localhost.
+  const server = spawn(process.execPath, [join(__dirname, "..", "..", "web", "scripts", "serve.mjs")], {
+    env: { ...process.env, PORT: String(WEB_PORT) },
+    stdio: "ignore",
+  })
+  const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] })
+  try {
+    await expect.poll(() => fetch(`http://localhost:${WEB_PORT}/login`).then((r) => r.status).catch(() => 0)).toBe(200)
+    const bobPage = await (await browser.newContext({ locale: "de-DE" })).newPage()
+    await login(page, alice, "app://nexspeak/login")
+    await page.evaluate(() =>
+      localStorage.setItem(
+        "nexspeak_audio_settings",
+        JSON.stringify({ inputMode: "push-to-talk", pushToTalkKey: "KeyT", pushToTalkReleaseDelayMs: 0 }),
+      ),
+    )
+    await login(bobPage, bob, `http://localhost:${WEB_PORT}/login`)
+
+    for (const participant of [page, bobPage]) {
+      await openRoom(participant, roomName)
+      await participant.getByRole("button", { name: "Sprachkanal beitreten" }).click()
+      await expect(participant.getByRole("button", { name: "Anruf verlassen" })).toBeVisible({ timeout: 30_000 })
+    }
+    await expect.poll(() => bobPage.locator("audio").count(), { timeout: 30_000 }).toBeGreaterThan(0)
+
+    const pressKey = (pressed: boolean) =>
+      app.evaluate(({ BrowserWindow }, value) => {
+        BrowserWindow.getAllWindows()[0].webContents.send("nexspeak:ptt-pressed", value)
+      }, pressed)
+
+    expect(await remoteAudioLevel(bobPage)).toBeLessThanOrEqual(2)
+    await pressKey(true)
+    await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
+    await pressKey(false)
+    await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeLessThanOrEqual(2)
+  } finally {
+    await browser.close()
+    server.kill()
+  }
 })

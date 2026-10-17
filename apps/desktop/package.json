@@ -15,6 +15,9 @@
     "dist": "npm run -s build && electron-builder --publish never",
     "test:e2e": "npm run -s build && playwright test"
   },
+  "dependencies": {
+    "uiohook-napi": "1.5.5"
+  },
   "devDependencies": {
     "@nexspeak/core": "*",
     "@playwright/test": "^1.64.1",

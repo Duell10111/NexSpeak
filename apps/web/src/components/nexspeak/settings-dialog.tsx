@@ -20,6 +20,7 @@ import { Headphones, Languages, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
+import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
 import { useTranslation } from "@/hooks/useTranslation"
 import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
 import {
@@ -226,6 +227,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </Select>
               <MicrophoneTest deviceId={settings.inputDeviceId} />
             </div>
+
+            <PushToTalkSettings settings={settings} />
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">

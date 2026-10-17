@@ -6,6 +6,7 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 | File | Purpose |
 |---|---|
 | `src/main.ts` | Window, serving the web build under `app://nexspeak`, permissions, screen capture, hardware encoding flags |
+| `src/push-to-talk.ts` | Global push-to-talk key (uiohook), only running during a call with push to talk |
 | `src/tray.ts` | Tray icon and menu (open, mute, deafen, leave call, quit) |
 | `src/preload.ts` | `window.nexspeak` (contract: `packages/core/src/desktop-bridge.ts`) |
 | `electron-builder.yml` | Packages for macOS (dmg/zip), Windows (NSIS) and Linux (AppImage/deb) |
@@ -43,6 +44,18 @@ Closing the window only hides it; the app keeps running in the tray (e.g. in a c
 tray menu or Cmd+Q. Texts and voice state come from the web app over the bridge
 (`DesktopTrayLabels`, `DesktopTrayVoice`); the main process has no translations of its own.
 
+## Push to talk
+
+The web app owns the setting (key, release delay) and the microphone gate; the main process only
+reports key presses. While the user is in a call with push to talk, `src/push-to-talk.ts` runs a
+system-wide hook (uiohook-napi), so the key also works while a game has the focus.
+
+- The hook receives every input event, including mouse moves; it is started on joining and stopped
+  on leaving, never while idle. It copies events on its own thread and does not add input latency.
+- macOS needs the accessibility permission (the settings offer a button); until then, and on
+  Wayland (no global hooks), the key only works while NexSpeak has the focus.
+- Keys are stored as `KeyboardEvent.code` (physical key) or `Mouse3`–`Mouse5`.
+
 ## Screen sharing
 
 `getDisplayMedia` goes to `setDisplayMediaRequestHandler`:
@@ -54,5 +67,5 @@ tray menu or Cmd+Q. Texts and voice state come from the web app over the bridge
 
 ## Still open (milestone "Beta 0.2 – Desktop")
 
-Push-to-talk (#3), native notifications (#4), deep links (#5), auto-update (#6), autostart (#7),
+Native notifications (#4), deep links (#5), auto-update (#6), autostart (#7),
 app icon (#8), signing and notarization (#9).

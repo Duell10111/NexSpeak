@@ -17,6 +17,7 @@ import {
   type Session,
 } from "electron"
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
 import { createTray } from "./tray"
 
 // Same names as in preload.ts (a sandboxed preload cannot import other files).
@@ -61,6 +62,8 @@ app.on("before-quit", () => {
   isQuitting = true
 })
 
+app.on("will-quit", stopPushToTalk)
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit()
 })
@@ -77,6 +80,7 @@ function start() {
   handleDisplayMedia(session.defaultSession)
   mainWindow = createWindow()
   createTray({ webContents: () => mainWindow?.webContents, showWindow })
+  setupPushToTalk(() => mainWindow?.webContents)
 }
 
 function showWindow() {

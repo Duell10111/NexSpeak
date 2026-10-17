@@ -1,6 +1,8 @@
 /**
- * Audio device preferences, persisted per browser.
+ * Audio device and input mode preferences, persisted per browser.
  */
+
+export type InputMode = 'voice-activity' | 'push-to-talk'
 
 export interface AudioSettings {
   /** Empty string means the system default device. */
@@ -8,10 +10,23 @@ export interface AudioSettings {
   outputDeviceId: string
   /** 0-100 */
   outputVolume: number
+  inputMode: InputMode
+  /** KeyboardEvent.code or "Mouse3"–"Mouse5" (see lib/push-to-talk.ts); null until chosen. */
+  pushToTalkKey: string | null
+  /** Keeps transmitting this long after the key is released, so word endings aren't cut off. */
+  pushToTalkReleaseDelayMs: number
 }
 
 const STORAGE_KEY = 'nexspeak_audio_settings'
-const DEFAULT_SETTINGS: AudioSettings = { inputDeviceId: '', outputDeviceId: '', outputVolume: 100 }
+const DEFAULT_SETTINGS: AudioSettings = {
+  inputDeviceId: '',
+  outputDeviceId: '',
+  outputVolume: 100,
+  inputMode: 'voice-activity',
+  pushToTalkKey: null,
+  pushToTalkReleaseDelayMs: 100,
+}
+export const MAX_PUSH_TO_TALK_RELEASE_DELAY_MS = 1000
 const listeners = new Set<() => void>()
 
 let cachedRaw: string | null | undefined
@@ -29,6 +44,12 @@ export function loadAudioSettings(): AudioSettings {
       outputDeviceId: typeof parsed.outputDeviceId === 'string' ? parsed.outputDeviceId : '',
       outputVolume:
         typeof parsed.outputVolume === 'number' ? Math.min(100, Math.max(0, parsed.outputVolume)) : 100,
+      inputMode: parsed.inputMode === 'push-to-talk' ? 'push-to-talk' : 'voice-activity',
+      pushToTalkKey: typeof parsed.pushToTalkKey === 'string' ? parsed.pushToTalkKey : null,
+      pushToTalkReleaseDelayMs:
+        typeof parsed.pushToTalkReleaseDelayMs === 'number'
+          ? Math.min(MAX_PUSH_TO_TALK_RELEASE_DELAY_MS, Math.max(0, parsed.pushToTalkReleaseDelayMs))
+          : DEFAULT_SETTINGS.pushToTalkReleaseDelayMs,
     }
   } catch {
     cachedSettings = DEFAULT_SETTINGS

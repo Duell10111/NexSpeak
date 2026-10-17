@@ -10,6 +10,10 @@ const IPC_DISPLAY_SOURCE_CHOSEN = "nexspeak:display-source-chosen"
 const IPC_TRAY_LABELS = "nexspeak:tray-labels"
 const IPC_VOICE_STATE = "nexspeak:voice-state"
 const IPC_TRAY_COMMAND = "nexspeak:tray-command"
+const IPC_PTT_SET_KEY = "nexspeak:ptt-set-key"
+const IPC_PTT_STATUS = "nexspeak:ptt-status"
+const IPC_PTT_REQUEST_PERMISSION = "nexspeak:ptt-request-permission"
+const IPC_PTT_PRESSED = "nexspeak:ptt-pressed"
 
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
@@ -34,6 +38,22 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(IPC_TRAY_COMMAND, listener)
     return () => {
       ipcRenderer.off(IPC_TRAY_COMMAND, listener)
+    }
+  },
+  setPushToTalkKey(key) {
+    return ipcRenderer.invoke(IPC_PTT_SET_KEY, key)
+  },
+  getPushToTalkStatus() {
+    return ipcRenderer.invoke(IPC_PTT_STATUS)
+  },
+  requestPushToTalkPermission() {
+    return ipcRenderer.invoke(IPC_PTT_REQUEST_PERMISSION)
+  },
+  onPushToTalk(handler) {
+    const listener = (_event: IpcRendererEvent, pressed: boolean) => handler(pressed)
+    ipcRenderer.on(IPC_PTT_PRESSED, listener)
+    return () => {
+      ipcRenderer.off(IPC_PTT_PRESSED, listener)
     }
   },
 }
