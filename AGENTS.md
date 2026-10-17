@@ -70,3 +70,19 @@ müssen im Ruhezustand (Fenster im Hintergrund, kein Anruf) praktisch nichts kos
   folgt die Sprache dem Browser. Die E2E-Tests laufen mit `locale: "de-DE"` gegen die deutsche
   Oberfläche.
 - Änderungen an Anrufen mit den E2E-Tests in `e2e/call.spec.ts` prüfen (inklusive E2EE).
+
+## Server-Modell (Discord → Matrix)
+
+Wie Element, damit beide Clients dieselbe Struktur sehen (`src/lib/matrix/server.ts`):
+
+- Server = Space, Kategorie = Unter-Space, Kanal = Raum (Text und Sprache zugleich).
+- Reihenfolge = `order` in `m.space.child` (`src/lib/matrix/space-order.ts`). Verschieben
+  schreibt möglichst nur ein Event, denn echte Homeserver begrenzen Events pro Sekunde stark.
+- Offener Kanal = Join-Rule `restricted` auf den Server; privater Kanal = `invite`.
+  Server-Einladungen laden nie in private Kanäle ein.
+- Rollen = Power-Levels (Admin 100, Moderator 50, Mitglied 0), serverweit in allen Räumen
+  gesetzt. Icons = `m.room.avatar`, Beschreibung/Thema = `m.room.topic`.
+- Räume lassen sich in Matrix nicht löschen: „Löschen“ entfernt den Kanal aus dem Server,
+  wirft alle Mitglieder raus und verlässt ihn.
+- Neue Kanäle/Kategorien des offenen Servers werden automatisch beigetreten, aber nur wenn
+  sich die Struktur ändert (kein Polling).

@@ -20,7 +20,6 @@ import {
   Search,
   Settings,
   Signal,
-  UserPlus,
   Video,
   Volume2,
   X,
@@ -29,16 +28,25 @@ import { useCallContext, type RoomCallInfo } from "@/components/nexspeak/call-co
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@/lib/matrix/errors"
-import { inviteToSpace, joinSpaceChannels, rememberDirectRoom } from "@/lib/matrix/direct"
+import { joinSpaceChannels, rememberDirectRoom } from "@/lib/matrix/direct"
 import type { MatrixRoom } from "@/lib/matrix/types"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { SettingsDialog } from "@/components/nexspeak/settings-dialog"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
 import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
+import {
+  CategoryContextMenu,
+  ChannelContextMenu,
+  ServerHeaderMenu,
+  ServerManagementProvider,
+  useServerManagement,
+} from "@/components/nexspeak/server-management"
 
 export interface RoomSection {
   id: string
   title?: string
+  /** A server category (Matrix sub-space); the others are the server's own channels or DM lists. */
+  isCategory?: boolean
   rooms: MatrixRoom[]
 }
 
@@ -49,6 +57,8 @@ interface ChannelSidebarProps {
   isDirectMessages: boolean
   /** The space shown, if any (not on the DM home). */
   serverId?: string
+  /** Changes when the server's channels change; new ones are joined in the background. */
+  structureKey?: string
   activeChannelId: string
   onChannelSelect: (id: string) => void
 }
@@ -152,6 +162,8 @@ function RoomItem({
 }) {
   const { t } = useTranslation()
   const { call, joinCall, joiningRoomId } = useCallContext()
+  const management = useServerManagement()
+  const canEdit = !isDirectMessages && Boolean(management?.canEdit(room.id))
   const voiceMembers = useVoiceMembers(room.id, callInfo)
   const hasUnread = room.unread > 0 && !isActive
   const isOwnCall = call?.roomId === room.id
@@ -181,10 +193,19 @@ function RoomItem({
             <MatrixAvatar mxcUrl={room.avatarMxc} name={room.name} size={32} className="mr-1.5 text-xs" />
           ) : hasCall ? (
             <Volume2 className={cn("h-5 w-5 shrink-0", isOwnCall ? "text-nx-online" : "opacity-70")} />
+          ) : room.iconMxc ? (
+            <MatrixAvatar mxcUrl={room.iconMxc} name={room.name} size={20} className="rounded-md text-[10px]" />
           ) : (
             <Hash className="h-5 w-5 shrink-0 opacity-70" />
           )}
-          <span className={cn("min-w-0 flex-1 truncate text-[15px]", (hasUnread || isActive) && "font-medium")}>
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-[15px]",
+              (hasUnread || isActive) && "font-medium",
+              // Room for the hover buttons.
+              !isDirectMessages && (canEdit ? "group-hover:pr-12" : "group-hover:pr-6"),
+            )}
+          >
             {room.name}
           </span>
           {hasUnread && mentionCount > 0 && (
@@ -210,6 +231,24 @@ function RoomItem({
               </button>
             </TooltipTrigger>
             <TooltipContent>{t("call.joinVoice")}</TooltipContent>
+          </Tooltip>
+        )}
+
+        {canEdit && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => management?.editRoom(room.id)}
+                className={cn(
+                  "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
+                  isOwnCall ? "right-1" : "right-7",
+                )}
+                aria-label={t("manage.editChannelNamed", { name: room.name })}
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t("manage.editChannel")}</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -288,15 +327,17 @@ function SectionHeader({
   collapsed,
   onToggle,
   action,
+  dragProps,
 }: {
   title: string
   collapsed?: boolean
   onToggle?: () => void
-  /** Small button at the right, e.g. "+" for a new DM. */
+  /** Small button at the right, e.g. "+" for a new DM or channel. */
   action?: { label: string; onClick: () => void }
+  dragProps?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean }
 }) {
   return (
-    <div className="flex items-center pr-2">
+    <div className="group/section flex items-center pr-2" {...dragProps}>
       <button
         onClick={onToggle}
         disabled={!onToggle}
@@ -413,60 +454,6 @@ function VoiceConnectionPanel({ onOpenRoom }: { onOpenRoom: (roomId: string) => 
   )
 }
 
-/** Discord's "Invite people" for a server: invites to the space and, where needed, its channels. */
-function ServerInviteDialog({
-  serverId,
-  channelIds,
-  open,
-  onOpenChange,
-}: {
-  serverId: string
-  channelIds: string[]
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const { client } = useMatrixClient()
-  const space = client?.getRoom(serverId)
-  const memberIds = space?.getJoinedMembers().map((member) => member.userId) ?? []
-
-  const invite = async (users: Array<{ userId: string; displayName: string }>) => {
-    if (!client) return
-    const failed: Array<{ name: string; error: unknown }> = []
-    for (const user of users) {
-      try {
-        await inviteToSpace(client, serverId, channelIds, user.userId)
-      } catch (error) {
-        failed.push({ name: user.displayName, error })
-      }
-    }
-    const invitedCount = users.length - failed.length
-    if (invitedCount > 0) {
-      toast.success(
-        invitedCount === 1 && failed.length === 0
-          ? t("server.invitedOne", { name: users[0].displayName })
-          : t("server.invitedMany", { count: invitedCount }),
-      )
-    }
-    failed.forEach(({ name, error }) =>
-      toast.error(t("server.inviteFailedFor", { name, reason: describeMatrixError(error) })),
-    )
-    if (failed.length === 0) onOpenChange(false)
-  }
-
-  return (
-    <UserPickerDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t("server.inviteTitle", { name: space?.name || t("nav.server") })}
-      description={t("server.inviteDescription")}
-      submitLabel={t("server.inviteSubmit")}
-      excludeUserIds={memberIds}
-      onSubmit={invite}
-    />
-  )
-}
-
 /** A joined server whose channels we're not in yet (e.g. accepted in another client). */
 function JoinChannelsHint({ serverId }: { serverId: string }) {
   const { t } = useTranslation()
@@ -501,32 +488,213 @@ function JoinChannelsHint({ serverId }: { serverId: string }) {
   )
 }
 
+type DragItem = { kind: "channel" | "category"; id: string }
+type DropTarget = { sectionId: string; beforeId: string | null }
+
+function DropLine() {
+  return <div className="mx-2 h-0.5 rounded bg-primary" aria-hidden />
+}
+
+/**
+ * The sections with their channels. On servers, people who may manage channels can drag
+ * channels between positions and categories, and drag categories (native drag and drop, no
+ * library; menus offer the same for touch and keyboard).
+ */
+function ChannelList({
+  sections,
+  isDirectMessages,
+  activeChannelId,
+  onChannelSelect,
+  onNewDm,
+}: {
+  sections: RoomSection[]
+  isDirectMessages: boolean
+  activeChannelId: string
+  onChannelSelect: (id: string) => void
+  onNewDm: () => void
+}) {
+  const { t } = useTranslation()
+  const management = useServerManagement()
+  const { callInfoByRoom } = useCallContext()
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [drag, setDrag] = useState<DragItem | null>(null)
+  const [drop, setDrop] = useState<DropTarget | null>(null)
+  const canManage = !isDirectMessages && Boolean(management?.canManage)
+  const hasCategories = sections.some((section) => section.isCategory)
+  const categories = sections.filter((section) => section.isCategory)
+  const managedSections = sections.map((section) => ({ ...section, name: section.title, isCategory: Boolean(section.isCategory) }))
+
+  const updateDrop = (next: DropTarget) => {
+    if (drop?.sectionId !== next.sectionId || drop.beforeId !== next.beforeId) setDrop(next)
+  }
+
+  const endDrag = () => {
+    setDrag(null)
+    setDrop(null)
+  }
+
+  const commitDrop = () => {
+    if (drag && drop && management) {
+      if (drag.kind === "channel") {
+        const section = sections.find((entry) => entry.id === drop.sectionId)
+        const index = section?.rooms.findIndex((room) => room.id === drag.id) ?? -1
+        const nextId = index === -1 ? undefined : (section?.rooms[index + 1]?.id ?? null)
+        // Dropping right where it already is changes nothing.
+        if (drop.beforeId !== drag.id && !(index !== -1 && drop.beforeId === nextId)) {
+          management.moveChannel(drag.id, drop.sectionId, drop.beforeId)
+        }
+      } else if (drop.beforeId !== drag.id) {
+        const index = categories.findIndex((category) => category.id === drag.id)
+        if (drop.beforeId !== (categories[index + 1]?.id ?? null)) management.moveCategory(drag.id, drop.beforeId)
+      }
+    }
+    endDrag()
+  }
+
+  const dragStart = (item: DragItem) => (event: React.DragEvent) => {
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("text/plain", item.id)
+    setDrag(item)
+  }
+
+  const isLowerHalf = (event: React.DragEvent) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return event.clientY > rect.top + rect.height / 2
+  }
+
+  return (
+    <>
+      {sections.map((section) => {
+        // The DM list stays visible with its "+" even while empty, categories as drop targets.
+        const isDmSection = isDirectMessages && section.id === "direct"
+        const keepEmpty = isDmSection || section.isCategory || (canManage && hasCategories)
+        if (section.rooms.length === 0 && !keepEmpty) return null
+        const isCollapsed = collapsed[section.id] ?? false
+        // Collapsed categories keep the open channel and running calls visible, like Discord.
+        const rooms = isCollapsed
+          ? section.rooms.filter((room) => room.id === activeChannelId || callInfoByRoom[room.id])
+          : section.rooms
+        const categoryIndex = categories.findIndex((category) => category.id === section.id)
+
+        const headerDragProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean } = canManage
+          ? {
+              draggable: Boolean(section.isCategory),
+              onDragStart: section.isCategory ? dragStart({ kind: "category", id: section.id }) : undefined,
+              onDragEnd: endDrag,
+              onDragOver: (event) => {
+                if (drag?.kind === "channel") {
+                  event.preventDefault()
+                  updateDrop({ sectionId: section.id, beforeId: section.rooms[0]?.id ?? null })
+                } else if (drag?.kind === "category" && section.isCategory) {
+                  event.preventDefault()
+                  updateDrop({
+                    sectionId: "categories",
+                    beforeId: isLowerHalf(event) ? (categories[categoryIndex + 1]?.id ?? null) : section.id,
+                  })
+                }
+              },
+              onDrop: (event) => {
+                event.preventDefault()
+                commitDrop()
+              },
+            }
+          : {}
+
+        const header = (
+          <SectionHeader
+            title={section.title ?? t("channel.channels")}
+            collapsed={isCollapsed}
+            onToggle={() => setCollapsed((current) => ({ ...current, [section.id]: !isCollapsed }))}
+            action={
+              isDmSection
+                ? { label: t("dm.new"), onClick: onNewDm }
+                : canManage
+                  ? { label: t("manage.createChannelIn", { name: section.title ?? t("channel.channels") }), onClick: () => management?.createChannel(section.id) }
+                  : undefined
+            }
+            dragProps={headerDragProps}
+          />
+        )
+
+        return (
+          <div key={section.id}>
+            {drag?.kind === "category" && drop?.sectionId === "categories" && drop.beforeId === section.id && <DropLine />}
+            {section.isCategory ? <CategoryContextMenu categoryId={section.id}>{header}</CategoryContextMenu> : header}
+            <div className="flex flex-col gap-0.5">
+              {rooms.map((room, index) => {
+                const item = (
+                  <RoomItem
+                    room={room}
+                    isActive={activeChannelId === room.id}
+                    isDirectMessages={isDirectMessages}
+                    callInfo={callInfoByRoom[room.id]}
+                    onSelect={() => onChannelSelect(room.id)}
+                  />
+                )
+                if (isDirectMessages || !management) return <div key={room.id}>{item}</div>
+                return (
+                  <div
+                    key={room.id}
+                    draggable={canManage}
+                    onDragStart={canManage ? dragStart({ kind: "channel", id: room.id }) : undefined}
+                    onDragEnd={endDrag}
+                    onDragOver={(event) => {
+                      if (drag?.kind !== "channel") return
+                      event.preventDefault()
+                      updateDrop({
+                        sectionId: section.id,
+                        beforeId: isLowerHalf(event) ? (rooms[index + 1]?.id ?? null) : room.id,
+                      })
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      commitDrop()
+                    }}
+                    className={cn(drag?.id === room.id && "opacity-50")}
+                  >
+                    {drag?.kind === "channel" && drop?.sectionId === section.id && drop.beforeId === room.id && <DropLine />}
+                    <ChannelContextMenu room={room} sections={managedSections}>
+                      {item}
+                    </ChannelContextMenu>
+                  </div>
+                )
+              })}
+              {drag?.kind === "channel" && drop?.sectionId === section.id && drop.beforeId === null && <DropLine />}
+            </div>
+            {section.isCategory &&
+              categoryIndex === categories.length - 1 &&
+              drag?.kind === "category" &&
+              drop?.sectionId === "categories" &&
+              drop.beforeId === null && <DropLine />}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 export function ChannelSidebar({
   title,
   sections,
   invites,
   isDirectMessages,
   serverId,
+  structureKey = "",
   activeChannelId,
   onChannelSelect,
 }: ChannelSidebarProps) {
   const { t } = useTranslation()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [newDmOpen, setNewDmOpen] = useState(false)
-  const [inviteOpen, setInviteOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const { client } = useMatrixClient()
   const profile = useOwnProfile(client)
   const openDirectMessage = useOpenDirectMessage()
-  const { callInfoByRoom, isMicMuted, isDeafened, toggleMicrophone, toggleDeafen } = useCallContext()
+  const { isMicMuted, isDeafened, toggleMicrophone, toggleDeafen } = useCallContext()
 
-  const isEmpty = sections.every((section) => section.rooms.length === 0) && invites.length === 0
-  const canInvite = Boolean(serverId && client?.getRoom(serverId)?.canInvite(client.getUserId() ?? ""))
-  const channelIds = sections.flatMap((section) => section.rooms.map((room) => room.id))
-  const newDmAction = { label: t("dm.new"), onClick: () => setNewDmOpen(true) }
+  const isEmpty = sections.every((section) => section.rooms.length === 0 && !section.isCategory) && invites.length === 0
 
-  return (
-    <div className="flex h-full w-60 shrink-0 flex-col bg-secondary">
+  const content = (
+    <>
       <div className="flex h-12 shrink-0 items-center gap-1 px-4 shadow-[0_1px_0_rgba(4,4,5,0.2),0_1.5px_0_rgba(6,6,7,0.05),0_2px_0_rgba(4,4,5,0.05)]">
         {isDirectMessages ? (
           // Discord's "Find or start a conversation" box.
@@ -537,24 +705,10 @@ export function ChannelSidebar({
             <Search className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{t("dm.findOrStart")}</span>
           </button>
+        ) : serverId ? (
+          <ServerHeaderMenu title={title} />
         ) : (
-          <>
-            <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">{title}</h2>
-            {canInvite && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => setInviteOpen(true)}
-                    className="-mr-1 rounded p-1 text-muted-foreground hover:text-foreground"
-                    aria-label={t("server.invite")}
-                  >
-                    <UserPlus className="h-[18px] w-[18px]" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{t("server.invite")}</TooltipContent>
-              </Tooltip>
-            )}
-          </>
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">{title}</h2>
         )}
       </div>
 
@@ -570,39 +724,13 @@ export function ChannelSidebar({
           </div>
         )}
 
-        {sections.map((section) => {
-          // The DM list stays visible with its "+" even while empty.
-          const isDmSection = isDirectMessages && section.id === "direct"
-          if (section.rooms.length === 0 && !isDmSection) return null
-          const isCollapsed = collapsed[section.id] ?? false
-          // Collapsed categories keep the open channel and running calls visible, like Discord.
-          const rooms = isCollapsed
-            ? section.rooms.filter((room) => room.id === activeChannelId || callInfoByRoom[room.id])
-            : section.rooms
-
-          return (
-            <div key={section.id}>
-              <SectionHeader
-                title={section.title ?? t("channel.channels")}
-                collapsed={isCollapsed}
-                onToggle={() => setCollapsed((current) => ({ ...current, [section.id]: !isCollapsed }))}
-                action={isDmSection ? newDmAction : undefined}
-              />
-              <div className="flex flex-col gap-0.5">
-                {rooms.map((room) => (
-                  <RoomItem
-                    key={room.id}
-                    room={room}
-                    isActive={activeChannelId === room.id}
-                    isDirectMessages={isDirectMessages}
-                    callInfo={callInfoByRoom[room.id]}
-                    onSelect={() => onChannelSelect(room.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )
-        })}
+        <ChannelList
+          sections={sections}
+          isDirectMessages={isDirectMessages}
+          activeChannelId={activeChannelId}
+          onChannelSelect={onChannelSelect}
+          onNewDm={() => setNewDmOpen(true)}
+        />
 
         {isEmpty &&
           (isDirectMessages ? (
@@ -667,8 +795,21 @@ export function ChannelSidebar({
           if (await openDirectMessage(users.map((user) => user.userId))) setNewDmOpen(false)
         }}
       />
-      {serverId && (
-        <ServerInviteDialog serverId={serverId} channelIds={channelIds} open={inviteOpen} onOpenChange={setInviteOpen} />
+    </>
+  )
+
+  return (
+    <div className="flex h-full w-60 shrink-0 flex-col bg-secondary">
+      {serverId ? (
+        <ServerManagementProvider
+          serverId={serverId}
+          sections={sections.map((section) => ({ ...section, name: section.title, isCategory: Boolean(section.isCategory) }))}
+          structureKey={structureKey}
+        >
+          {content}
+        </ServerManagementProvider>
+      ) : (
+        content
       )}
     </div>
   )

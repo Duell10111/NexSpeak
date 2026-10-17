@@ -45,7 +45,7 @@ test("start a direct message with someone you share no room with", async ({ brow
   expect((await getDirectRooms(alice))[bob.userId]).toEqual([roomId])
 })
 
-test("invite someone to a server and its channels", async ({ browser }) => {
+test("invite someone to a server; private channels need their own invite", async ({ browser }) => {
   const alice = await registerUser("alice")
   const bob = await registerUser("bob")
   const serverName = `Gilde ${Date.now().toString(36)}`
@@ -57,7 +57,8 @@ test("invite someone to a server and its channels", async ({ browser }) => {
   const alicePage = await newPage(browser)
   await login(alicePage, alice)
   await alicePage.getByRole("navigation", { name: "Server-Liste" }).getByRole("button", { name: serverName }).click()
-  await alicePage.getByRole("button", { name: "Personen einladen" }).click()
+  await alicePage.getByRole("button", { name: "Servermenü" }).click()
+  await alicePage.getByRole("menuitem", { name: "Personen einladen" }).click()
   const dialog = await pickUser(alicePage, bob.userId)
   await dialog.getByRole("button", { name: "Einladen" }).click()
   await expect(alicePage.getByText(`${bob.username} wurde eingeladen.`)).toBeVisible()
@@ -67,11 +68,23 @@ test("invite someone to a server and its channels", async ({ browser }) => {
   const invite = bobPage.locator("div").filter({ hasText: serverName }).filter({ has: bobPage.getByRole("button", { name: "Einladung annehmen" }) }).last()
   await invite.getByRole("button", { name: "Einladung annehmen" }).click()
 
-  // Accepting the server joins its channels, also the invite-only one.
+  // Accepting the server joins its open channels; the private one stays hidden.
   await bobPage.getByRole("navigation", { name: "Server-Liste" }).getByRole("button", { name: serverName }).click()
   await expect(bobPage.getByRole("button", { name: "allgemein", exact: true })).toBeVisible()
+  await expect(bobPage.getByRole("button", { name: "geheim", exact: true })).toHaveCount(0)
+
+  // Alice adds Bob to the private channel from its context menu.
+  await alicePage.getByRole("button", { name: "geheim", exact: true }).click({ button: "right" })
+  await alicePage.getByRole("menuitem", { name: "Mitglieder hinzufügen" }).click()
+  const addDialog = alicePage.getByRole("dialog")
+  await addDialog.getByRole("option", { name: new RegExp(bob.username) }).click()
+  await addDialog.getByRole("button", { name: "Hinzufügen" }).click()
+  await expect(addDialog).toBeHidden()
+
+  await bobPage.getByRole("button", { name: "Direktnachrichten" }).click()
+  await bobPage.getByRole("button", { name: "Einladung annehmen" }).click()
+  await bobPage.getByRole("navigation", { name: "Server-Liste" }).getByRole("button", { name: serverName }).click()
   await expect(bobPage.getByRole("button", { name: "geheim", exact: true })).toBeVisible()
-  await expect(bobPage.getByRole("button", { name: "Einladung annehmen" })).toHaveCount(0)
 })
 
 test("switch the interface language", async ({ browser }) => {

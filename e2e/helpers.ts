@@ -91,6 +91,18 @@ export async function createSpace(
   return { spaceId, channelIds }
 }
 
+export async function getState<T = Record<string, unknown>>(user: TestUser, roomId: string, type: string, stateKey = ""): Promise<T | null> {
+  try {
+    return await api<T>(user.accessToken, "GET", `/rooms/${encodeURIComponent(roomId)}/state/${type}/${encodeURIComponent(stateKey)}`)
+  } catch {
+    return null
+  }
+}
+
+export async function getJoinedRoomIds(user: TestUser): Promise<string[]> {
+  return (await api<{ joined_rooms: string[] }>(user.accessToken, "GET", "/joined_rooms")).joined_rooms
+}
+
 export async function getDirectRooms(user: TestUser): Promise<Record<string, string[]>> {
   try {
     return await api<Record<string, string[]>>(

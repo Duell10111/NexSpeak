@@ -17,13 +17,27 @@ import {
 } from 'matrix-js-sdk'
 import { getSpaceChildRoomIds, roomToMatrixRoom, roomToMatrixSpace } from '@/lib/matrix/types'
 import { getDirectRoomIds, isDirectRoom, looksLikeDirectRoom } from '@/lib/matrix/direct'
+import { getOrderedChildIds } from '@/lib/matrix/server'
 import type { MatrixRoom, MatrixSpace } from '@/lib/matrix/types'
 
 const RECOMPUTE_DELAY_MS = 150
 
+/** A block of channels: the server's own channels (no name) or a category (sub-space). */
+export interface ServerSection {
+  id: string
+  /** Category name; undefined for the channels directly in the server. */
+  name?: string
+  isCategory: boolean
+  rooms: MatrixRoom[]
+}
+
 export interface RoomDirectory {
   spaces: MatrixSpace[]
+  /** All channels of a server in display order, categories flattened. */
   roomsBySpace: Record<string, MatrixRoom[]>
+  sectionsBySpace: Record<string, ServerSection[]>
+  /** Changes when channels or categories are added to or removed from a server. */
+  structureKeyBySpace: Record<string, string>
   directRooms: MatrixRoom[]
   /** Joined rooms that are neither DMs nor part of a joined space. */
   otherRooms: MatrixRoom[]
@@ -33,6 +47,8 @@ export interface RoomDirectory {
 const EMPTY_DIRECTORY: RoomDirectory = {
   spaces: [],
   roomsBySpace: {},
+  sectionsBySpace: {},
+  structureKeyBySpace: {},
   directRooms: [],
   otherRooms: [],
   invites: [],
@@ -42,31 +58,26 @@ function byActivity(a: MatrixRoom, b: MatrixRoom): number {
   return b.lastActivityTs - a.lastActivityTs
 }
 
-/** Rooms of a space, including rooms of nested sub-spaces, in the order the space defines. */
-function collectSpaceRooms(client: MatrixClient, space: Room, visited: Set<string>): Room[] {
-  if (visited.has(space.roomId)) return []
-  visited.add(space.roomId)
-
-  const orderOf = (roomId: string): string => {
-    const order = space.currentState.getStateEvents('m.space.child', roomId)?.getContent().order
-    return typeof order === 'string' ? order : '￿'
-  }
-
-  const result: Room[] = []
-  const children = getSpaceChildRoomIds(space)
+function joinedChildren(client: MatrixClient, space: Room): Room[] {
+  return getOrderedChildIds(space)
     .map((id) => client.getRoom(id))
     .filter((room): room is Room => Boolean(room && room.getMyMembership() === 'join'))
-    .sort((a, b) => orderOf(a.roomId).localeCompare(orderOf(b.roomId)) || a.name.localeCompare(b.name))
+}
 
-  children.forEach((child) => {
+/** Channels of a category, including those of deeper sub-spaces (Discord has one level). */
+function collectChannels(client: MatrixClient, space: Room, visited: Set<string>): Room[] {
+  if (visited.has(space.roomId)) return []
+  visited.add(space.roomId)
+  const channels: Room[] = []
+  joinedChildren(client, space).forEach((child) => {
     if (child.isSpaceRoom()) {
-      result.push(...collectSpaceRooms(client, child, visited))
-    } else {
-      result.push(child)
+      channels.push(...collectChannels(client, child, visited))
+    } else if (!visited.has(child.roomId)) {
+      visited.add(child.roomId)
+      channels.push(child)
     }
   })
-
-  return result
+  return channels
 }
 
 export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
@@ -77,21 +88,46 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
     .map(roomToMatrixRoom)
     .sort(byActivity)
 
-  const spaceRooms = joined
-    .filter((room) => room.isSpaceRoom())
+  const joinedSpaces = joined.filter((room) => room.isSpaceRoom())
+  // Sub-spaces are categories of their server, not servers of their own.
+  const nestedSpaceIds = new Set(joinedSpaces.flatMap((space) => getSpaceChildRoomIds(space)))
+  const serverRooms = joinedSpaces
+    .filter((space) => !nestedSpaceIds.has(space.roomId))
     .sort((a, b) => a.name.localeCompare(b.name))
   const directIds = getDirectRoomIds(client)
   const isListedDirect = (room: Room): boolean => isDirectRoom(client, room, directIds)
 
   const roomsBySpace: Record<string, MatrixRoom[]> = {}
+  const sectionsBySpace: Record<string, ServerSection[]> = {}
+  const structureKeyBySpace: Record<string, string> = {}
   const roomIdsInSpaces = new Set<string>()
-  const spaces = spaceRooms.map((spaceRoom) => {
-    const rooms = collectSpaceRooms(client, spaceRoom, new Set()).filter((room) => !isListedDirect(room))
-    rooms.forEach((room) => roomIdsInSpaces.add(room.roomId))
-    roomsBySpace[spaceRoom.roomId] = rooms.map(roomToMatrixRoom)
-    return roomToMatrixSpace(spaceRoom, rooms)
-  })
 
+  const spaces = serverRooms.map((server) => {
+    const visited = new Set<string>([server.roomId])
+    // Discord lists the channels without category first, then the categories.
+    const sections: ServerSection[] = [{ id: server.roomId, isCategory: false, rooms: [] }]
+    const structure: string[] = getSpaceChildRoomIds(server)
+    const serverChannels: Room[] = []
+
+    joinedChildren(client, server).forEach((child) => {
+      if (child.isSpaceRoom()) {
+        structure.push(...getSpaceChildRoomIds(child))
+        const channels = collectChannels(client, child, visited).filter((room) => !isListedDirect(room))
+        serverChannels.push(...channels)
+        sections.push({ id: child.roomId, name: child.name, isCategory: true, rooms: channels.map(roomToMatrixRoom) })
+      } else if (!visited.has(child.roomId) && !isListedDirect(child)) {
+        visited.add(child.roomId)
+        serverChannels.push(child)
+        sections[0].rooms.push(roomToMatrixRoom(child))
+      }
+    })
+
+    serverChannels.forEach((room) => roomIdsInSpaces.add(room.roomId))
+    roomsBySpace[server.roomId] = sections.flatMap((section) => section.rooms)
+    sectionsBySpace[server.roomId] = sections
+    structureKeyBySpace[server.roomId] = structure.join(',')
+    return roomToMatrixSpace(server, serverChannels)
+  })
   const directRooms: MatrixRoom[] = []
   const otherRooms: MatrixRoom[] = []
 
@@ -115,6 +151,8 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
   return {
     spaces,
     roomsBySpace,
+    sectionsBySpace,
+    structureKeyBySpace,
     directRooms: directRooms.sort(byActivity),
     otherRooms: otherRooms.sort(byActivity),
     invites,

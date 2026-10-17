@@ -47,13 +47,20 @@ function useUserSearch(term: string) {
   return { results: query && isCurrent ? state.results : [], isSearching: Boolean(query) && !isCurrent }
 }
 
+function matches(user: UserSearchResult, term: string): boolean {
+  const query = term.trim().toLowerCase()
+  return !query || user.displayName.toLowerCase().includes(query) || user.userId.toLowerCase().includes(query)
+}
+
 function PickerForm({
   submitLabel,
   excludeUserIds,
+  suggestions,
   onSubmit,
 }: {
   submitLabel: string
   excludeUserIds: string[]
+  suggestions: UserSearchResult[]
   onSubmit: (users: UserSearchResult[]) => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -61,7 +68,11 @@ function PickerForm({
   const [selected, setSelected] = useState<UserSearchResult[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { results, isSearching } = useUserSearch(term)
-  const visible = results.filter((user) => !excludeUserIds.includes(user.userId))
+  // Local suggestions (e.g. server members) first, then the directory search.
+  const local = suggestions.filter((user) => matches(user, term))
+  const visible = [...local, ...results.filter((user) => !local.some((entry) => entry.userId === user.userId))].filter(
+    (user) => !excludeUserIds.includes(user.userId),
+  )
 
   const toggle = (user: UserSearchResult) => {
     setSelected((current) =>
@@ -117,7 +128,7 @@ function PickerForm({
         disabled={isSubmitting}
       />
       <div className="max-h-64 min-h-16 overflow-y-auto" role="listbox" aria-label={t("userPicker.results")} aria-multiselectable>
-        {isSearching ? (
+        {isSearching && visible.length === 0 ? (
           <div className="flex justify-center py-4">
             <Spinner className="h-5 w-5 text-muted-foreground" />
           </div>
@@ -169,6 +180,7 @@ export function UserPickerDialog({
   description,
   submitLabel,
   excludeUserIds = [],
+  suggestions = [],
   onSubmit,
 }: {
   open: boolean
@@ -177,6 +189,8 @@ export function UserPickerDialog({
   description: string
   submitLabel: string
   excludeUserIds?: string[]
+  /** Shown before searching, e.g. the members of a server. */
+  suggestions?: UserSearchResult[]
   /** Close the dialog from here when done; errors should be reported here as well. */
   onSubmit: (users: UserSearchResult[]) => Promise<void>
 }) {
@@ -188,7 +202,9 @@ export function UserPickerDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {/* Remount per opening so every search starts empty. */}
-        {open && <PickerForm submitLabel={submitLabel} excludeUserIds={excludeUserIds} onSubmit={onSubmit} />}
+        {open && (
+          <PickerForm submitLabel={submitLabel} excludeUserIds={excludeUserIds} suggestions={suggestions} onSubmit={onSubmit} />
+        )}
       </DialogContent>
     </Dialog>
   )

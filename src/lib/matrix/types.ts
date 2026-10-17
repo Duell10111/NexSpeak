@@ -11,6 +11,8 @@ export interface MatrixRoom {
   id: string
   name: string
   avatarMxc?: string
+  /** The room's own avatar only (channel icon), without the fallback to a member's avatar. */
+  iconMxc?: string
   unread: number
   highlights: number
   memberCount: number
@@ -128,6 +130,7 @@ export function roomToMatrixRoom(room: Room): MatrixRoom {
     id: room.roomId,
     name: room.name || room.getCanonicalAlias() || t('room.unnamed'),
     avatarMxc,
+    iconMxc: room.getMxcAvatarUrl() || undefined,
     unread: room.getUnreadNotificationCount(NotificationCountType.Total),
     highlights: room.getUnreadNotificationCount(NotificationCountType.Highlight),
     memberCount: room.getJoinedMemberCount(),

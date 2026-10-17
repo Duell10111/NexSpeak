@@ -99,7 +99,12 @@ export default function NexSpeakApp() {
         { id: "direct", title: t("dm.title"), rooms: directory.directRooms },
         { id: "other", title: t("nav.rooms"), rooms: directory.otherRooms },
       ]
-    : [{ id: serverId, rooms: directory.roomsBySpace[serverId] ?? [] }]
+    : (directory.sectionsBySpace[serverId] ?? []).map((section) => ({
+        id: section.id,
+        title: section.name,
+        isCategory: section.isCategory,
+        rooms: section.rooms,
+      }))
   const serverRooms = sections.flatMap((section) => section.rooms)
   const channelId = serverRooms.some((room) => room.id === selection.channelId)
     ? selection.channelId
@@ -196,6 +201,7 @@ export default function NexSpeakApp() {
         invites={isDirectMessages ? directory.invites : []}
         isDirectMessages={isDirectMessages}
         serverId={isDirectMessages ? undefined : serverId}
+        structureKey={directory.structureKeyBySpace[serverId]}
         activeChannelId={channelId}
         onChannelSelect={openRoom}
       />

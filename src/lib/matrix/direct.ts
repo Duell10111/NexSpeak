@@ -146,61 +146,32 @@ export async function searchUsers(client: MatrixClient, term: string, signal?: A
   return results.filter((user) => user.userId !== ownId)
 }
 
-function allowsJoinVia(room: Room, spaceIds: Set<string>): boolean {
-  const joinRule: string = room.getJoinRule()
-  if (joinRule === JoinRule.Public) return true
-  if (joinRule !== JoinRule.Restricted && joinRule !== 'knock_restricted') return false
-  const allow = (room.currentState.getStateEvents(EventType.RoomJoinRules, '')?.getContent().allow ?? []) as Array<{
-    type?: string
-    room_id?: string
-  }>
-  return allow.some((entry) => entry.type === 'm.room_membership' && entry.room_id !== undefined && spaceIds.has(entry.room_id))
+/**
+ * Invite someone to a space ("server"). They join its open channels when accepting; private
+ * (invite-only) channels stay private and need their own invite, see inviteToChannel.
+ */
+export async function inviteToSpace(client: MatrixClient, spaceId: string, userId: string): Promise<void> {
+  await client.invite(spaceId, userId)
 }
 
-export interface SpaceInviteResult {
-  /** Channels the user was invited to as well, because joining them needs an invite. */
-  channelsInvited: number
-  channelsFailed: number
+/** Add someone to a single channel, and to its server if they aren't a member yet. */
+export async function inviteToChannel(client: MatrixClient, serverId: string, roomId: string, userId: string): Promise<void> {
+  const serverMembership = client.getRoom(serverId)?.getMember(userId)?.membership
+  if (serverMembership !== 'join' && serverMembership !== 'invite') await client.invite(serverId, userId)
+  await client.invite(roomId, userId)
 }
 
 /**
- * Invite someone to a space ("server"). Channels that space members may join anyway are
- * left alone (the invitee joins them when accepting); invite-only channels get an invite.
+ * Join the channels and categories (sub-spaces) of a space, like Discord shows all channels
+ * of a server. Uses the hierarchy API because our copy of the space state may not have synced
+ * yet. Returns the number of rooms joined; rooms we may not join are skipped.
+ * `skipLeft`: don't rejoin rooms we left or were removed from (for background syncing).
  */
-export async function inviteToSpace(
+export async function joinSpaceChannels(
   client: MatrixClient,
   spaceId: string,
-  channelIds: string[],
-  userId: string,
-): Promise<SpaceInviteResult> {
-  await client.invite(spaceId, userId)
-
-  const ownId = client.getUserId() ?? ''
-  const spaceIds = new Set([spaceId])
-  const result: SpaceInviteResult = { channelsInvited: 0, channelsFailed: 0 }
-
-  for (const roomId of channelIds) {
-    const room = client.getRoom(roomId)
-    if (!room || allowsJoinVia(room, spaceIds) || !room.canInvite(ownId)) continue
-    const membership = room.getMember(userId)?.membership
-    if (membership === 'join' || membership === 'invite') continue
-    try {
-      await client.invite(roomId, userId)
-      result.channelsInvited += 1
-    } catch (error) {
-      console.warn(`Failed to invite ${userId} to ${roomId}:`, error)
-      result.channelsFailed += 1
-    }
-  }
-  return result
-}
-
-/**
- * Join the channels of a space we just joined, like Discord shows all channels of a server.
- * Uses the hierarchy API because our copy of the space state may not have synced yet.
- * Returns the number of channels joined; channels we may not join are skipped.
- */
-export async function joinSpaceChannels(client: MatrixClient, spaceId: string): Promise<number> {
+  options: { skipLeft?: boolean } = {},
+): Promise<number> {
   let joined = 0
   let from: string | undefined
   const viaById = new Map<string, string[]>()
@@ -213,7 +184,7 @@ export async function joinSpaceChannels(client: MatrixClient, spaceId: string): 
         const via = (child.content as { via?: unknown }).via
         if (Array.isArray(via)) viaById.set(child.state_key, via.filter((server): server is string => typeof server === 'string'))
       })
-      if (entry.room_id === spaceId || entry.room_type === 'm.space') return
+      if (entry.room_id === spaceId) return
       candidates.push({ roomId: entry.room_id, joinRule: (entry as { join_rule?: string }).join_rule })
     })
     from = page.next_batch
@@ -222,6 +193,7 @@ export async function joinSpaceChannels(client: MatrixClient, spaceId: string): 
   for (const { roomId, joinRule } of candidates) {
     const membership = client.getRoom(roomId)?.getMyMembership()
     if (membership === 'join' || membership === 'ban') continue
+    if (options.skipLeft && membership === 'leave') continue
     // Invite-only channels nobody invited us to would just fail.
     if ((joinRule === JoinRule.Invite || joinRule === JoinRule.Knock) && membership !== 'invite') continue
     try {
