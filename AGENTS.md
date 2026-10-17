@@ -97,6 +97,31 @@ solution wins over a convenience feature. New features must cost practically not
   BSD, Apache-2.0, MPL-2.0, (A)GPL-3.0 – no proprietary or "non-commercial" licenses). External
   contributions need a signed CLA (`CLA.md`).
 
+## Issues, milestones and labels
+
+Work is planned on GitHub (`Duell10111/NexSpeak`) in milestones; `docs/beta-plan.md` mirrors them
+as checklists. List the milestones with
+`gh api 'repos/{owner}/{repo}/milestones?state=all' --jq '.[] | "\(.number) \(.state) \(.title): \(.description)"'`.
+
+- **Every issue belongs to exactly one milestone.** Pick the open milestone whose description
+  covers the scope (e.g. `Beta 0.2 – Desktop` for the Electron app, `0.3` for features after the
+  betas, `Mobile Alpha` for `apps/mobile`).
+- **Create a milestone only if no open one fits**, e.g. a new release or platform. Title: the
+  version, optionally with the focus (`Beta 0.3 – Calls`, `0.4`); description: one English sentence
+  listing the scope. Add it to `docs/beta-plan.md` (section 4 and the milestone list in section 5)
+  and mention the new milestone to the user.
+- **Before working on a feature or bug, look for its issue** (`gh issue list --search …`). If there
+  is none, create one with milestone and labels, e.g.
+  `gh issue create --milestone "Beta 0.2 – Desktop" --label type:feature,area:desktop`.
+- **Labels:** exactly one `type:` (`type:feature`, `type:bug`, `type:chore`), at least one `area:`
+  (`area:web`, `area:desktop`, `area:core`, `area:calls`, `area:mobile`, `area:repo`); add `perf`
+  for CPU/GPU/memory/idle cost and `needs-decision` when the maintainer has to decide something.
+  No new labels without asking.
+- **Reference issues** in commits and PRs (`Closes #7`, or `Refs #9` if the issue stays open) and
+  tick the matching checkbox in `docs/beta-plan.md` in the same commit.
+- Do not close or delete milestones and do not move issues between milestones on your own; that is
+  the maintainer's call.
+
 ## Server model (Discord → Matrix)
 
 Like Element, so both clients see the same structure (`packages/core/src/matrix/server.ts`):
