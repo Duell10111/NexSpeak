@@ -6,6 +6,9 @@
 // in sync with src/channel.ts.
 const nightly = process.env.NEXSPEAK_CHANNEL === "nightly"
 const productName = nightly ? "NexSpeak Nightly" : "NexSpeak"
+// Linux executable, icon and deb package name; the defaults would come from the package name
+// "@nexspeak/desktop", which is no valid file or package name. LINUX_NAME in src/channel.ts.
+const linuxName = nightly ? "nexspeak-nightly" : "nexspeak"
 
 /** @type {import("electron-builder").Configuration} */
 module.exports = {
@@ -32,6 +35,9 @@ module.exports = {
     { from: "../web/security-headers.json", to: "web/security-headers.json" },
   ],
   asar: true,
+  // uiohook-napi ships N-API prebuilds for every target (loaded by node-gyp-build), which work in
+  // Electron unchanged; rebuilding from source would need the X11 headers on Linux.
+  npmRebuild: false,
   // Deep links (Info.plist on macOS, .desktop file on Linux; Windows registers at runtime).
   protocols: [{ name: productName, schemes: [nightly ? "nexspeak-nightly" : "nexspeak"] }],
   publish: {
@@ -60,6 +66,11 @@ module.exports = {
   linux: {
     category: "Network;Chat;InstantMessaging",
     target: ["AppImage", "deb"],
-    ...(nightly && { executableName: "nexspeak-nightly" }),
+    executableName: linuxName,
+    maintainer: "Konstantin Späth",
+  },
+  deb: {
+    packageName: linuxName,
+    artifactName: `${linuxName}_\${version}_\${arch}.\${ext}`,
   },
 }

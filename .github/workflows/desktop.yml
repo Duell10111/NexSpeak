@@ -76,6 +76,11 @@ jobs:
         working-directory: apps/desktop
         run: |
           args="${{ matrix.args }}"
+          # Secrets that are not set arrive as empty strings; electron-builder would read an empty
+          # CSC_LINK as the project folder ("not a file").
+          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            [ -n "${!name}" ] || unset "$name"
+          done
           if [ "$RUNNER_OS" = macOS ] && [ -z "$CSC_LINK" ]; then
             # No Developer ID: ad-hoc signature. The hardened runtime only matters for notarization
             # and would need disable-library-validation with an ad-hoc signature.
