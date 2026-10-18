@@ -156,6 +156,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 ### Later (0.3+)
 
 - Message search, link previews (opt-in), custom emoji (`im.ponies`), polls
+- GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
 - Better noise suppression and voice activity detection
 - Sound cues for join, leave and screensharing, can be turned off (#22)
 - Soundboard like Discord: server sounds played on each client, can be turned off (#26)
