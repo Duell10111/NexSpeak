@@ -16,6 +16,13 @@ test("push to talk is set up in the settings", async ({ browser }) => {
   await dialog.getByRole("radio", { name: "Push-to-Talk" }).click()
   await expect(dialog.getByText("Keine Taste festgelegt")).toBeVisible()
   await expect(dialog.getByText("Im Browser funktioniert Push-to-Talk nur")).toBeVisible()
+  // The long "no key" warning wraps instead of widening the dialog.
+  expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0)
+  // The dialog keeps its size and position when switching tabs.
+  const audioBox = await dialog.boundingBox()
+  await dialog.getByRole("tab", { name: "Über" }).click()
+  expect(await dialog.boundingBox()).toEqual(audioBox)
+  await dialog.getByRole("tab", { name: "Audio" }).click()
 
   await dialog.getByRole("button", { name: "Taste festlegen" }).click()
   await expect(dialog.getByText("Drücke eine Taste oder Maustaste")).toBeVisible()

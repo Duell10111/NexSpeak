@@ -125,7 +125,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
             <div className="min-w-0">
               <p className="text-sm font-medium">{t("settings.pttKey")}</p>
               <p
-                className={cn("truncate text-sm", key ? "text-foreground" : "text-destructive")}
+                className={cn("text-sm", key ? "truncate text-foreground" : "text-destructive")}
                 aria-live="polite"
               >
                 {isCapturing ? t("settings.pttPressKey") : (keyLabel ?? t("settings.pttNoKey"))}
