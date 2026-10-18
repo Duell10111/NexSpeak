@@ -187,14 +187,16 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] w-full max-w-lg overflow-y-auto">
+      {/* Fixed height, so the dialog doesn't jump when the tabs differ in height. */}
+      <DialogContent className="h-[min(90dvh,42rem)] w-full max-w-lg content-start overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("settings.title")}</DialogTitle>
           <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
-        {/* Remounted per opening, so it starts at the requested tab. */}
-        <Tabs key={String(open)} defaultValue={initialTab} className="w-full">
+        {/* Remounted per opening, so it starts at the requested tab. min-w-0: unbreakable
+            content must not widen the dialog's grid column. */}
+        <Tabs key={String(open)} defaultValue={initialTab} className="w-full min-w-0">
           <TabsList className="grid h-auto w-full grid-cols-3">
             <TabsTrigger value="profile">{t("settings.profile")}</TabsTrigger>
             <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>
