@@ -121,6 +121,9 @@ jobs:
         if: inputs.tag
         run: |
           shopt -s nullglob
+          # The update files name the installers with dashes for spaces ("NexSpeak Nightly"); GitHub
+          # would store the spaces as dots, so electron-updater could not find them.
+          for file in release/*\ *; do mv "$file" "${file// /-}"; done
           gh release upload "${{ inputs.tag }}" --repo "${{ inputs.repository || github.repository }}" --clobber \
             release/*.{dmg,zip,exe,AppImage,deb,blockmap} release/latest*.yml
         working-directory: apps/desktop

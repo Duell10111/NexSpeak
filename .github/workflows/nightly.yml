@@ -66,10 +66,11 @@ jobs:
             exit 0
           fi
 
+          # A running CI has no conclusion yet; show its status instead.
           ci=$(gh run list --workflow ci.yml --branch main --commit "$sha" --limit 1 \
-            --json conclusion --jq '.[0].conclusion // empty')
+            --json status,conclusion --jq '.[0] | if . == null then "" elif .status == "completed" then .conclusion else .status end')
           if [ "$FORCE" != "true" ] && [ "$ci" != "success" ]; then
-            echo "CI for $sha is '${ci:-missing}', trying again next night."
+            echo "CI for $sha is '${ci:-not run}', trying again next night."
             echo "build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
