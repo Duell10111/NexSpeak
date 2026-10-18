@@ -1,6 +1,16 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type RefObject,
+} from "react"
 import { EventType } from "matrix-js-sdk"
 import { toast } from "sonner"
 import type { RemoteVideoTrack } from "livekit-client"
@@ -154,6 +164,102 @@ function VideoView({ feed }: { feed: CallVideoFeed }) {
   )
 }
 
+const STREAM_PREVIEW_KEY = "nexspeak:stream-preview"
+const streamPreviewListeners = new Set<() => void>()
+let streamPreview: boolean | null = null
+
+/** Whether the own stream shows a live preview; off by default to save GPU time next to a game. */
+function getStreamPreview(): boolean {
+  if (streamPreview === null) {
+    try {
+      streamPreview = localStorage.getItem(STREAM_PREVIEW_KEY) === "1"
+    } catch {
+      streamPreview = false
+    }
+  }
+  return streamPreview
+}
+
+function setStreamPreview(show: boolean): void {
+  streamPreview = show
+  try {
+    localStorage.setItem(STREAM_PREVIEW_KEY, show ? "1" : "0")
+  } catch {
+    // Remembering the choice is a convenience only.
+  }
+  streamPreviewListeners.forEach((listener) => listener())
+}
+
+function subscribeStreamPreview(listener: () => void): () => void {
+  streamPreviewListeners.add(listener)
+  return () => {
+    streamPreviewListeners.delete(listener)
+  }
+}
+
+function useStreamPreview(): boolean {
+  return useSyncExternalStore(subscribeStreamPreview, getStreamPreview, () => false)
+}
+
+/** The window is visible and focused; while the user is in a game it usually isn't. */
+function isWindowActive(): boolean {
+  return document.visibilityState === "visible" && document.hasFocus()
+}
+
+function subscribeWindowActive(listener: () => void): () => void {
+  document.addEventListener("visibilitychange", listener)
+  window.addEventListener("focus", listener)
+  window.addEventListener("blur", listener)
+  return () => {
+    document.removeEventListener("visibilitychange", listener)
+    window.removeEventListener("focus", listener)
+    window.removeEventListener("blur", listener)
+  }
+}
+
+/**
+ * Our own screenshare: Discord's paused preview. The capture keeps being encoded and sent;
+ * only the local <video> is detached, also while the window is hidden, minimized or not focused.
+ */
+function OwnStreamView({ feed, size }: { feed: CallVideoFeed; size: "stage" | "grid" | "strip" }) {
+  const { t } = useTranslation()
+  const showPreview = useStreamPreview()
+  const isActive = useSyncExternalStore(subscribeWindowActive, isWindowActive, () => true)
+
+  if (showPreview && isActive) {
+    return (
+      <>
+        <VideoView feed={feed} />
+        {size !== "strip" && (
+          <div className="absolute top-2 left-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <TileOverlayButton label={t("call.hidePreview")} onClick={() => setStreamPreview(false)}>
+              <EyeOff className="h-4 w-4" />
+            </TileOverlayButton>
+          </div>
+        )}
+      </>
+    )
+  }
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
+      {size !== "strip" && <p className="max-w-sm text-sm text-white/80">{t("call.previewPaused")}</p>}
+      <button
+        onClick={(event) => {
+          event.stopPropagation()
+          setStreamPreview(true)
+        }}
+        className={cn(
+          "flex items-center gap-1.5 rounded-md bg-white/10 font-medium text-white hover:bg-white/15",
+          size === "strip" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm",
+        )}
+      >
+        <Eye className="h-4 w-4" />
+        {t("call.showPreview")}
+      </button>
+    </div>
+  )
+}
+
 function TileMenu({
   tile,
   isFocused,
@@ -170,6 +276,7 @@ function TileMenu({
   const { t } = useTranslation()
   const { setParticipantVolume, setParticipantMuted } = useCallContext()
   const { participant } = tile
+  const showPreview = useStreamPreview()
 
   return (
     <ContextMenu>
@@ -179,6 +286,11 @@ function TileMenu({
         {tile.isScreenshare && !participant.isLocal && (
           <ContextMenuItem onSelect={() => onWatch(!participant.isWatchingScreenshare)}>
             {participant.isWatchingScreenshare ? t("call.stopWatching") : t("call.watchStream")}
+          </ContextMenuItem>
+        )}
+        {tile.isScreenshare && participant.isLocal && (
+          <ContextMenuItem onSelect={() => setStreamPreview(!showPreview)}>
+            {showPreview ? t("call.hidePreview") : t("call.showPreview")}
           </ContextMenuItem>
         )}
         {tile.feed && !tile.feed.isLocal && (
@@ -306,7 +418,9 @@ function CallTileView({
         )}
         style={{ ...style, "--tile-color": tileColor(participant.userId) } as React.CSSProperties}
       >
-        {feed ? (
+        {feed && isScreenshare && participant.isLocal ? (
+          <OwnStreamView feed={feed} size={size} />
+        ) : feed ? (
           <VideoView feed={feed} />
         ) : isRemoteStream ? (
           <StreamPlaceholder participant={participant} size={size} onWatch={() => onWatch(true)} />

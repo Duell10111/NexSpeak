@@ -165,6 +165,14 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   await dialog.getByRole("button", { name: "Live gehen" }).click()
   await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
 
+  // Alice's own preview is paused by default (no <video>), and can be shown on demand.
+  await expect(alicePage.getByText("Dein Stream läuft weiter!", { exact: false })).toBeVisible()
+  await expect(alicePage.locator("video")).toHaveCount(0)
+  await alicePage.getByRole("button", { name: "Vorschau anzeigen" }).click()
+  await expect(alicePage.locator("video")).toHaveCount(1)
+  await alicePage.getByRole("button", { name: "Vorschau ausblenden" }).click()
+  await expect(alicePage.locator("video")).toHaveCount(0)
+
   const screenSender = () =>
     alicePage.evaluate(() => {
       const pcs = (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs
