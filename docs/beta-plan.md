@@ -80,8 +80,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 4. **Electron** – base done (2026-10-17): window, `app://` scheme, sandboxing, encoding flags,
    screen source picker, packaging, E2E tests. Tray (#2), push to talk (#3), notifications (#4),
    deep links (#5), auto-update (#6), autostart (#7) and icon (#8) done. Open: signing (#9; also
-   needed for auto-update on macOS), push-to-talk hook performance (#10). Nightly builds (#11) done;
-   user documentation on Read the Docs (#16) in progress.
+   needed for auto-update on macOS), push-to-talk hook performance (#10). Nightly builds (#11) and the user
+   documentation on Read the Docs (#16) done.
 5. **Mobile:** placeholder and crypto spike only, no production code before the web/desktop beta.
 
 ## 3. License, open source, legal
@@ -147,8 +147,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [ ] Push-to-talk hook: filter mouse moves natively (#10)
 - [x] Nightly builds (#11): only on app changes, "NexSpeak Nightly" next to the stable app, releases in
       `Duell10111/NexSpeak-nightly`
-- [ ] User documentation on Read the Docs (#16): `docs/` with Sphinx; the Read the Docs project still
-      has to be imported
+- [x] User documentation on Read the Docs (#16): `docs/` with Sphinx, published at
+      https://nexspeak.readthedocs.io
 
 ### Later (0.3+)
 
