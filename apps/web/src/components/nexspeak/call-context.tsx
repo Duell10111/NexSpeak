@@ -63,6 +63,8 @@ interface CallContextValue {
   resumeAudio: () => Promise<void>
   setParticipantVolume: (identity: string, volume: number) => void
   setParticipantMuted: (identity: string, muted: boolean) => void
+  /** "Watch stream" / "Stop watching" for a remote screenshare. */
+  setScreenshareWatched: (identity: string, watched: boolean) => void
 }
 
 const CallContext = createContext<CallContextValue | undefined>(undefined)
@@ -312,6 +314,10 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     sessionRef.current?.setParticipantMuted(identity, muted)
   }, [])
 
+  const setScreenshareWatched = useCallback((identity: string, watched: boolean) => {
+    sessionRef.current?.setScreenshareWatched(identity, watched)
+  }, [])
+
   const resumeAudio = useCallback(async () => {
     try {
       await sessionRef.current?.startAudio()
@@ -372,6 +378,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       resumeAudio,
       setParticipantVolume,
       setParticipantMuted,
+      setScreenshareWatched,
     }),
     [
       voicePrefs,
@@ -393,6 +400,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       resumeAudio,
       setParticipantVolume,
       setParticipantMuted,
+      setScreenshareWatched,
     ],
   )
 

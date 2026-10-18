@@ -36,6 +36,13 @@ you**). This doesn't affect what others hear.
 While you stream, **Stream settings** changes the quality without stopping, and **Stop streaming**
 ends it.
 
+### Watching a stream
+
+Streams of others aren't downloaded until you choose to watch them: their tile shows **Live** and a
+**Watch stream** button, and a notice tells you when someone went live. Watching shows the stream
+large. **Stop watching** (on the tile, or right-click it) stops downloading it again, which saves
+bandwidth and graphics card time while you play.
+
 ### Performance
 
 NexSpeak encodes video with H.264 on the graphics card (macOS, Windows with NVIDIA, AMD or Intel,

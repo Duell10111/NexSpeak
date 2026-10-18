@@ -20,7 +20,9 @@ import {
   type LocalTrackPublication,
   type LocalVideoTrack,
   type Participant,
+  type RemoteParticipant,
   type RemoteTrack,
+  type RemoteTrackPublication,
   type VideoTrack,
 } from 'livekit-client'
 import { EventType, type MatrixClient } from 'matrix-js-sdk'
@@ -85,6 +87,8 @@ export interface CallParticipant {
   isSpeaking: boolean
   isMicMuted: boolean
   isScreensharing: boolean
+  /** We subscribed to this participant's screenshare ("Watch stream"); remote participants only. */
+  isWatchingScreenshare: boolean
   /** Local playback volume for this participant, 0..1. */
   volume: number
   /** Muted locally, only for us. */
@@ -100,6 +104,16 @@ export interface CallVideoFeed {
   track: VideoTrack
   isScreenshare: boolean
   isLocal: boolean
+}
+
+/** Stable id of a participant's camera or screenshare, also before the track arrives. */
+export function videoFeedId(identity: string, isScreenshare: boolean): string {
+  return `${identity}-${isScreenshare ? Track.Source.ScreenShare : Track.Source.Camera}`
+}
+
+/** Screenshares are only downloaded on request ("Watch stream"); everything else automatically. */
+function isScreenshareSource(source: Track.Source): boolean {
+  return source === Track.Source.ScreenShare || source === Track.Source.ScreenShareAudio
 }
 
 export type CallConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
@@ -297,8 +311,14 @@ export class CallSession {
       callIntent: 'audio',
     })
 
-    await this.livekitRoom.connect(sfu.url, sfu.jwt)
+    // Nothing is subscribed by default, so remote screenshares cost no bandwidth or decoding
+    // until someone watches them; camera and audio are subscribed in subscribeByDefault().
+    await this.livekitRoom.connect(sfu.url, sfu.jwt, { autoSubscribe: false })
     debug('connected to SFU')
+    // TrackPublished only fires for tracks published after we joined.
+    this.livekitRoom.remoteParticipants.forEach((participant) => {
+      participant.trackPublications.forEach((publication) => this.subscribeByDefault(publication, participant))
+    })
     this.connectionState = 'connected'
     this.changed()
 
@@ -327,9 +347,21 @@ export class CallSession {
     if (result === 'timeout') console.warn('Own call media key not available yet; publishing anyway.')
   }
 
+  private subscribeByDefault(publication: RemoteTrackPublication, participant: RemoteParticipant): void {
+    if (publication.isDesired) return
+    if (!isScreenshareSource(publication.source)) {
+      publication.setSubscribed(true)
+    } else if (publication.source === Track.Source.ScreenShareAudio) {
+      // The stream's audio may be published after the viewer pressed "Watch stream".
+      if (participant.getTrackPublication(Track.Source.ScreenShare)?.isDesired) publication.setSubscribed(true)
+    }
+  }
+
   private attachListeners(): void {
     const room = this.livekitRoom
     const changed = () => this.changed()
+    const onTrackPublished = (publication: RemoteTrackPublication, participant: RemoteParticipant) =>
+      this.subscribeByDefault(publication, participant)
 
     const onTrackSubscribed = (track: RemoteTrack) => {
       if (track.kind === Track.Kind.Audio) {
@@ -364,6 +396,7 @@ export class CallSession {
       void this.leave(message)
     }
 
+    room.on(LivekitRoomEvent.TrackPublished, onTrackPublished)
     room.on(LivekitRoomEvent.TrackSubscribed, onTrackSubscribed)
     room.on(LivekitRoomEvent.TrackUnsubscribed, onTrackUnsubscribed)
     room.on(LivekitRoomEvent.ConnectionStateChanged, onConnectionStateChanged)
@@ -413,6 +446,7 @@ export class CallSession {
     this.rtcSession.on(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
 
     this.cleanups.push(() => {
+      room.off(LivekitRoomEvent.TrackPublished, onTrackPublished)
       room.off(LivekitRoomEvent.TrackSubscribed, onTrackSubscribed)
       room.off(LivekitRoomEvent.TrackUnsubscribed, onTrackUnsubscribed)
       room.off(LivekitRoomEvent.ConnectionStateChanged, onConnectionStateChanged)
@@ -463,6 +497,9 @@ export class CallSession {
       isSpeaking: participant.isSpeaking,
       isMicMuted: !participant.isMicrophoneEnabled,
       isScreensharing: participant.isScreenShareEnabled,
+      isWatchingScreenshare:
+        !isLocal &&
+        ((participant as RemoteParticipant).getTrackPublication(Track.Source.ScreenShare)?.isDesired ?? false),
       volume: this.participantVolumes.get(participant.identity) ?? 1,
       isLocallyMuted: this.locallyMuted.has(participant.identity),
     }
@@ -491,6 +528,7 @@ export class CallSession {
         isSpeaking: false,
         isMicMuted: true,
         isScreensharing: false,
+        isWatchingScreenshare: false,
         volume: this.participantVolumes.get(identity) ?? 1,
         isLocallyMuted: this.locallyMuted.has(identity),
       })
@@ -505,8 +543,10 @@ export class CallSession {
         const publication = participant.getTrackPublication(source)
         const track = publication?.videoTrack
         if (!track || publication.isMuted) continue
+        // After "Stop watching" LiveKit keeps the track until the SFU removed it; it shows no more frames.
+        if (!isLocal && !(publication as RemoteTrackPublication).isDesired) continue
         videoFeeds.push({
-          id: `${participant.identity}-${source}`,
+          id: videoFeedId(participant.identity, source === Track.Source.ScreenShare),
           identity: participant.identity,
           userId,
           name,
@@ -552,6 +592,16 @@ export class CallSession {
   setParticipantVolume(identity: string, volume: number): void {
     this.participantVolumes.set(identity, Math.min(1, Math.max(0, volume)))
     this.applyRemoteVolume()
+    this.changed()
+  }
+
+  /** Discord's "Watch stream" / "Stop watching": subscribes to a remote screenshare and its audio, or stops. */
+  setScreenshareWatched(identity: string, watched: boolean): void {
+    const participant = this.livekitRoom.remoteParticipants.get(identity)
+    if (!participant) return
+    for (const source of [Track.Source.ScreenShare, Track.Source.ScreenShareAudio]) {
+      participant.getTrackPublication(source)?.setSubscribed(watched)
+    }
     this.changed()
   }
 

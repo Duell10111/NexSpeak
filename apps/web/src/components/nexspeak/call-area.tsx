@@ -5,6 +5,8 @@ import { EventType } from "matrix-js-sdk"
 import { toast } from "sonner"
 import type { RemoteVideoTrack } from "livekit-client"
 import {
+  Eye,
+  EyeOff,
   Headphones,
   HeadphoneOff,
   Lock,
@@ -55,6 +57,7 @@ import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useTranslation } from "@/hooks/useTranslation"
 import { usePolledStats } from "@/hooks/usePolledStats"
 import type { Translate } from "@nexspeak/i18n"
+import { videoFeedId } from "@nexspeak/core/matrix/call-session"
 import { enableCallsInRoom, membersCanJoinCalls } from "@nexspeak/core/matrix/rtc"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { fitGrid, TILE_ASPECT, TILE_GAP_PX } from "@nexspeak/core/call-layout"
@@ -88,6 +91,13 @@ function buildTiles(participants: CallParticipant[], feeds: CallVideoFeed[]): Ca
     .forEach((feed) => {
       const participant = participants.find((candidate) => candidate.identity === feed.identity)
       if (participant) tiles.push({ id: feed.id, participant, feed, isScreenshare: true })
+    })
+  // Remote screenshares that aren't watched (yet): a placeholder with "Watch stream".
+  participants
+    .filter((participant) => participant.isScreensharing && !participant.isLocal)
+    .forEach((participant) => {
+      const id = videoFeedId(participant.identity, true)
+      if (!tiles.some((tile) => tile.id === id)) tiles.push({ id, participant, isScreenshare: true })
     })
   return tiles
 }
@@ -148,11 +158,13 @@ function TileMenu({
   tile,
   isFocused,
   onToggleFocus,
+  onWatch,
   children,
 }: {
   tile: CallTile
   isFocused: boolean
   onToggleFocus: () => void
+  onWatch: (watched: boolean) => void
   children: ReactNode
 }) {
   const { t } = useTranslation()
@@ -164,6 +176,11 @@ function TileMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         <ContextMenuItem onSelect={onToggleFocus}>{isFocused ? t("call.unfocus") : t("call.focus")}</ContextMenuItem>
+        {tile.isScreenshare && !participant.isLocal && (
+          <ContextMenuItem onSelect={() => onWatch(!participant.isWatchingScreenshare)}>
+            {participant.isWatchingScreenshare ? t("call.stopWatching") : t("call.watchStream")}
+          </ContextMenuItem>
+        )}
         {tile.feed && !tile.feed.isLocal && (
           <>
             <ContextMenuSeparator />
@@ -203,11 +220,62 @@ function TileMenu({
   )
 }
 
+/** A remote screenshare that isn't downloaded: who is live, and Discord's "Watch stream". */
+function StreamPlaceholder({
+  participant,
+  size,
+  onWatch,
+}: {
+  participant: CallParticipant
+  size: "stage" | "grid" | "strip"
+  onWatch: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+      {size !== "strip" && <MatrixAvatar mxcUrl={participant.avatarMxc} name={participant.name} size={64} className="text-2xl" />}
+      {participant.isWatchingScreenshare ? (
+        <Spinner className="h-6 w-6 text-white" />
+      ) : (
+        <button
+          onClick={(event) => {
+            event.stopPropagation()
+            onWatch()
+          }}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md bg-white/90 font-medium text-black hover:bg-white",
+            size === "strip" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm",
+          )}
+        >
+          <Eye className="h-4 w-4" />
+          {t("call.watchStream")}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function TileOverlayButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      className="rounded-md bg-black/60 p-1.5 text-white"
+      aria-label={label}
+    >
+      {children}
+    </button>
+  )
+}
+
 function CallTileView({
   tile,
   isFocused,
   size,
   onToggleFocus,
+  onWatch,
   className,
   style,
 }: {
@@ -215,6 +283,7 @@ function CallTileView({
   isFocused: boolean
   size: "stage" | "grid" | "strip"
   onToggleFocus: () => void
+  onWatch: (watched: boolean) => void
   className?: string
   style?: React.CSSProperties
 }) {
@@ -222,9 +291,10 @@ function CallTileView({
   const { participant, feed, isScreenshare } = tile
   const isSpeaking = participant.isSpeaking && !participant.isMicMuted && !isScreenshare
   const avatarSize = size === "strip" ? 40 : size === "stage" ? 96 : 80
+  const isRemoteStream = isScreenshare && !participant.isLocal
 
   return (
-    <TileMenu tile={tile} isFocused={isFocused} onToggleFocus={onToggleFocus}>
+    <TileMenu tile={tile} isFocused={isFocused} onToggleFocus={onToggleFocus} onWatch={onWatch}>
       <div
         data-testid="call-tile"
         data-connecting={participant.isConnecting || undefined}
@@ -238,6 +308,8 @@ function CallTileView({
       >
         {feed ? (
           <VideoView feed={feed} />
+        ) : isRemoteStream ? (
+          <StreamPlaceholder participant={participant} size={size} onWatch={() => onWatch(true)} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className={cn("rounded-full", isSpeaking && "ring-[3px] ring-nx-online ring-offset-0")}>
@@ -277,23 +349,25 @@ function CallTileView({
         </div>
 
         {size !== "strip" && (
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onToggleFocus()
-            }}
-            className="absolute top-2 right-2 rounded-md bg-black/60 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label={isFocused ? t("call.unfocus") : t("call.focus")}
-          >
-            {isFocused ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
+          <div className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {isRemoteStream && participant.isWatchingScreenshare && (
+              <TileOverlayButton label={t("call.stopWatching")} onClick={() => onWatch(false)}>
+                <EyeOff className="h-4 w-4" />
+              </TileOverlayButton>
+            )}
+            <TileOverlayButton label={isFocused ? t("call.unfocus") : t("call.focus")} onClick={onToggleFocus}>
+              {isFocused ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </TileOverlayButton>
+          </div>
         )}
       </div>
     </TileMenu>
   )
 }
 
-function TileGrid({ tiles, onFocus }: { tiles: CallTile[]; onFocus: (id: string) => void }) {
+type WatchHandler = (tile: CallTile, watched: boolean) => void
+
+function TileGrid({ tiles, onFocus, onWatch }: { tiles: CallTile[]; onFocus: (id: string) => void; onWatch: WatchHandler }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { width, height } = useElementSize(containerRef)
   const { tileWidth } = fitGrid(tiles.length, width, height)
@@ -309,6 +383,7 @@ function TileGrid({ tiles, onFocus }: { tiles: CallTile[]; onFocus: (id: string)
               isFocused={false}
               size="grid"
               onToggleFocus={() => onFocus(tile.id)}
+              onWatch={(watched) => onWatch(tile, watched)}
               style={{ width: tileWidth, height: tileWidth / TILE_ASPECT }}
             />
           ))}
@@ -317,10 +392,27 @@ function TileGrid({ tiles, onFocus }: { tiles: CallTile[]; onFocus: (id: string)
   )
 }
 
-function FocusView({ focused, others, onFocus }: { focused: CallTile; others: CallTile[]; onFocus: (id: string | null) => void }) {
+function FocusView({
+  focused,
+  others,
+  onFocus,
+  onWatch,
+}: {
+  focused: CallTile
+  others: CallTile[]
+  onFocus: (id: string | null) => void
+  onWatch: WatchHandler
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <CallTileView tile={focused} isFocused size="stage" onToggleFocus={() => onFocus(null)} className="min-h-0 flex-1" />
+      <CallTileView
+        tile={focused}
+        isFocused
+        size="stage"
+        onToggleFocus={() => onFocus(null)}
+        onWatch={(watched) => onWatch(focused, watched)}
+        className="min-h-0 flex-1"
+      />
       {others.length > 0 && (
         <div className="flex shrink-0 justify-center gap-2 overflow-x-auto pb-1">
           {others.map((tile) => (
@@ -330,6 +422,7 @@ function FocusView({ focused, others, onFocus }: { focused: CallTile; others: Ca
               isFocused={false}
               size="strip"
               onToggleFocus={() => onFocus(tile.id)}
+              onWatch={(watched) => onWatch(tile, watched)}
               className="aspect-video h-24 shrink-0 sm:h-28"
             />
           ))}
@@ -604,21 +697,45 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
     toggleCamera,
     leaveCall,
     resumeAudio,
+    setScreenshareWatched,
   } = useCallContext()
   const { t } = useTranslation()
   const { client } = useMatrixClient()
   const rootRef = useRef<HTMLDivElement>(null)
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(rootRef)
   const [isChatOpen, setIsChatOpen] = useState(false)
-  // undefined: follow screenshares automatically; null: grid chosen by the user.
-  const [focusChoice, setFocusChoice] = useState<string | null | undefined>(undefined)
+  const [focusChoice, setFocusChoice] = useState<string | null>(null)
 
   const tiles = useMemo(() => (call ? buildTiles(call.participants, call.videoFeeds) : []), [call])
+  const focused = tiles.find((tile) => tile.id === focusChoice) ?? null
 
-  // Like Discord's "watch stream": a remote screenshare takes the stage until the user picks otherwise.
-  const autoFocusId = tiles.findLast((tile) => tile.isScreenshare && !tile.participant.isLocal)?.id ?? null
-  const chosen = focusChoice === undefined ? autoFocusId : focusChoice
-  const focused = tiles.find((tile) => tile.id === chosen) ?? null
+  // Like Discord: a stream is only downloaded once someone here wants to watch it.
+  const watchScreenshare = useCallback<WatchHandler>(
+    (tile, watched) => {
+      setScreenshareWatched(tile.participant.identity, watched)
+      if (watched) setFocusChoice(tile.id)
+      else setFocusChoice((current) => (current === tile.id ? null : current))
+    },
+    [setScreenshareWatched],
+  )
+
+  // The stage doesn't jump to new streams; a hint offers to watch instead.
+  const knownStreamsRef = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    if (!call) return
+    const streams = tiles.filter((tile) => tile.isScreenshare && !tile.participant.isLocal)
+    const known = knownStreamsRef.current
+    knownStreamsRef.current = new Set(streams.map((tile) => tile.id))
+    if (!known) return
+    streams
+      .filter((tile) => !known.has(tile.id) && !tile.participant.isWatchingScreenshare)
+      .forEach((tile) =>
+        toast(t("call.wentLive", { name: tile.participant.name }), {
+          id: `live-${tile.id}`,
+          action: { label: t("call.watchStream"), onClick: () => watchScreenshare(tile, true) },
+        }),
+      )
+  }, [call, tiles, t, watchScreenshare])
 
   useEffect(() => {
     if (!focused) return
@@ -689,9 +806,14 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
         {/* Stage */}
         <div className="flex min-h-0 flex-1 flex-col px-2 pt-2 sm:px-4">
           {focused ? (
-            <FocusView focused={focused} others={tiles.filter((tile) => tile !== focused)} onFocus={setFocusChoice} />
+            <FocusView
+              focused={focused}
+              others={tiles.filter((tile) => tile !== focused)}
+              onFocus={setFocusChoice}
+              onWatch={watchScreenshare}
+            />
           ) : (
-            <TileGrid tiles={tiles} onFocus={setFocusChoice} />
+            <TileGrid tiles={tiles} onFocus={setFocusChoice} onWatch={watchScreenshare} />
           )}
         </div>
 
