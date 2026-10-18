@@ -5,7 +5,7 @@ import { useCallContext } from "@/components/nexspeak/call-context"
 import { useTranslation } from "@/hooks/useTranslation"
 import { desktopBridge } from "@/lib/desktop"
 
-/** Desktop app only: sends the tray menu texts in the current language. */
+/** Desktop app only: sends the tray and app menu texts in the current language. */
 export function DesktopTrayLabels() {
   const { t } = useTranslation()
   useEffect(() => {
@@ -15,6 +15,10 @@ export function DesktopTrayLabels() {
       deafen: t("call.deafen"),
       leaveCall: t("call.leave"),
       restartToUpdate: t("desktop.trayRestartToUpdate"),
+      checkForUpdates: t("desktop.trayCheckForUpdates"),
+      updateUpToDate: t("desktop.notifyUpToDate"),
+      updateFound: t("desktop.notifyUpdateFound"),
+      updateFailed: t("desktop.notifyUpdateFailed"),
       quit: t("desktop.trayQuit"),
     })
   }, [t])

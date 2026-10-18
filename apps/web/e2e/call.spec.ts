@@ -165,6 +165,14 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   await dialog.getByRole("button", { name: "Live gehen" }).click()
   await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
 
+  // Alice's own preview is paused by default (no <video>), and can be shown on demand.
+  await expect(alicePage.getByText("Dein Stream läuft weiter!", { exact: false })).toBeVisible()
+  await expect(alicePage.locator("video")).toHaveCount(0)
+  await alicePage.getByRole("button", { name: "Vorschau anzeigen" }).click()
+  await expect(alicePage.locator("video")).toHaveCount(1)
+  await alicePage.getByRole("button", { name: "Vorschau ausblenden" }).click()
+  await expect(alicePage.locator("video")).toHaveCount(0)
+
   const screenSender = () =>
     alicePage.evaluate(() => {
       const pcs = (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs
@@ -190,8 +198,14 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   expect((await screenSender())!.height).toBeLessThanOrEqual(720)
   expect((await screenSender())!.fmtp).toContain("profile-level-id=4d00")
 
-  // Bob watches the stream: it takes the stage and frames decode (E2EE).
+  // Bob sees that Alice is live, but nothing is downloaded until he watches.
   await expect(tiles(bobPage)).toHaveCount(3, { timeout: 30_000 })
+  const watchButton = tiles(bobPage).getByRole("button", { name: "Stream ansehen" })
+  await expect(watchButton).toBeVisible()
+  await expect(bobPage.locator("video")).toHaveCount(0)
+
+  // Bob watches the stream: it takes the stage and frames decode (E2EE).
+  await watchButton.click()
   await expect
     .poll(
       () =>
@@ -209,7 +223,10 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   await tiles(bobPage).filter({ hasText: "Live" }).first().click({ button: "right" })
   await expect(bobPage.getByTestId("decoder-status")).toContainText(/\d+p · \d+ FPS · \d+,\d Mbit\/s/)
   await expect(bobPage.getByTestId("decoder-status")).toContainText("H264")
-  await bobPage.keyboard.press("Escape")
+  // Stop watching unsubscribes again and shows the placeholder right away, not a black tile.
+  await bobPage.getByRole("menuitem", { name: "Nicht mehr ansehen" }).click()
+  await expect(watchButton).toBeVisible({ timeout: 2_000 })
+  await expect(bobPage.locator("video")).toHaveCount(0)
 
   // Changing the quality while live needs no new picker.
   await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()

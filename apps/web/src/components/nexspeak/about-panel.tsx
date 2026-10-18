@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Bug, Code2, ShieldCheck } from "lucide-react"
+import { DesktopUpdateSection } from "@/components/nexspeak/desktop-update"
 import { Spinner } from "@/components/ui/spinner"
 import { useTranslation } from "@/hooks/useTranslation"
 import {
@@ -91,6 +92,8 @@ export function AboutPanel() {
           </p>
         </div>
       </div>
+
+      <DesktopUpdateSection />
 
       <div className="space-y-2">
         <p className="flex items-start gap-2 text-muted-foreground">

@@ -3,6 +3,7 @@
 import { join } from "node:path"
 import { app, ipcMain, Menu, nativeImage, Tray, type IpcMainEvent, type MenuItemConstructorOptions, type WebContents } from "electron"
 import type { TrayCommand, TrayLabels, VoiceState } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import { setAppMenu } from "./app-menu"
 import { PRODUCT_NAME } from "./channel"
 
 // Same names as in preload.ts.
@@ -17,6 +18,10 @@ const DEFAULT_LABELS: TrayLabels = {
   deafen: "Deafen",
   leaveCall: "Leave call",
   restartToUpdate: "Restart to update",
+  checkForUpdates: "Check for updates…",
+  updateUpToDate: "NexSpeak is up to date.",
+  updateFound: "Update to version {version} found. It installs the next time NexSpeak restarts.",
+  updateFailed: "Could not check for updates.",
   quit: "Quit NexSpeak",
 }
 
@@ -44,6 +49,12 @@ let tray: Tray | undefined
 /** Set once an update is downloaded (updater.ts); offered in the menu outside calls. */
 let installUpdate: (() => void) | null = null
 let refreshMenu: (() => void) | undefined
+let labels = DEFAULT_LABELS
+
+/** The texts the web app sent last (also used by the app menu and update notifications). */
+export function trayLabels(): TrayLabels {
+  return labels
+}
 
 export function setTrayUpdate(install: (() => void) | null): void {
   installUpdate = install
@@ -53,11 +64,13 @@ export function setTrayUpdate(install: (() => void) | null): void {
 export function createTray({
   webContents,
   showWindow,
+  checkForUpdates,
   onVoiceState,
 }: {
   /** The app window's contents, if it exists. */
   webContents: () => WebContents | undefined
   showWindow: () => void
+  checkForUpdates: () => void
   /** Every voice state the web app sends (null when logged out). */
   onVoiceState?: (state: VoiceState | null) => void
 }): Tray {
@@ -67,7 +80,6 @@ export function createTray({
   tray = new Tray(nativeImage.createFromPath(join(__dirname, "..", "assets", iconFile)))
   tray.setToolTip(PRODUCT_NAME)
 
-  let labels = DEFAULT_LABELS
   let voice: VoiceState | null = null
 
   const send = (command: TrayCommand) => webContents()?.send(IPC_TRAY_COMMAND, command)
@@ -85,6 +97,7 @@ export function createTray({
       items.push({ type: "separator" })
     }
     if (installUpdate && !voice?.inCall) items.push({ label: labels.restartToUpdate, click: installUpdate })
+    else items.push({ label: labels.checkForUpdates, click: checkForUpdates })
     items.push({ label: labels.quit, click: () => app.quit() })
     tray.setContextMenu(Menu.buildFromTemplate(items))
   }
@@ -93,6 +106,7 @@ export function createTray({
     if (!fromAppWindow(event) || !isTrayLabels(next)) return
     labels = next
     updateMenu()
+    setAppMenu(labels, checkForUpdates)
   })
   ipcMain.on(IPC_VOICE_STATE, (event, next: unknown) => {
     if (!fromAppWindow(event) || !isVoiceState(next)) return
@@ -106,5 +120,6 @@ export function createTray({
 
   refreshMenu = updateMenu
   updateMenu()
+  setAppMenu(labels, checkForUpdates)
   return tray
 }

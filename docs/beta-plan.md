@@ -139,7 +139,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Notifications and badge (#4)
 - [x] Deep links and SSO login (#5)
 - [x] Auto-update (#6; macOS only with signed builds, #9), autostart (#7)
-- [ ] "Check for updates" button in the settings and the tray menu (#28)
+- [x] "Check for updates" button in the settings and the tray menu (#28)
 - [x] App icon (#8)
 - [x] Release workflow: release-please and desktop builds attached to the release (unsigned, macOS
       ad-hoc signed)
@@ -150,8 +150,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
       `Duell10111/NexSpeak-nightly`
 - [x] User documentation on Read the Docs (#16): `docs/` with Sphinx, published at
       https://nexspeak.readthedocs.io
-- [ ] Opt-in "Watch stream" for remote screenshares, stop watching again (#19)
-- [ ] Pause the preview of your own stream to save resources (#20)
+- [x] Opt-in "Watch stream" for remote screenshares, stop watching again (#19)
+- [x] Pause the preview of your own stream to save resources (#20)
 - [ ] Friends list (#21): friendship marked in the DM (`io.nexspeak.friend`), requests with accept/decline like Discord
 
 ### Later (0.3+)

@@ -61,4 +61,5 @@ Recovery key, device verification and key backup, see [Encryption](encryption.md
 ## About
 
 Version, the source code of this version, how to report bugs and the open source licenses NexSpeak
-is built on.
+is built on. In the desktop app also the app version and channel, and **Check for updates**, see
+[Installing → Updates](install.md#updates).

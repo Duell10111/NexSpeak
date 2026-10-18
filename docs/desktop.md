@@ -6,8 +6,8 @@ described in [Installing](install.md).
 ## Tray
 
 Closing the window keeps NexSpeak running in the tray (menu bar on macOS), like Discord, so a call
-keeps going. The tray menu opens the window, mutes, deafens, leaves the call, restarts for an update
-and quits NexSpeak. Quit with the tray menu or Cmd+Q.
+keeps going. The tray menu opens the window, mutes, deafens, leaves the call, checks for updates,
+restarts for an update and quits NexSpeak. Quit with the tray menu or Cmd+Q.
 
 Notifications appear as system notifications; a click brings the window back. Unread mentions,
 direct messages and invites show as a badge on the dock icon (macOS), the taskbar (Windows) or the
@@ -32,6 +32,8 @@ person directly in NexSpeak. Nightly builds use `nexspeak-nightly://` ([Nightly 
 ## Updates
 
 The app updates itself and never during a call, see [Installing → Updates](install.md#updates).
+To check right away, use **Check for updates** in **Settings → About**, or **Check for updates…** in
+the tray menu or (macOS) the NexSpeak app menu.
 
 ## Resource use
 

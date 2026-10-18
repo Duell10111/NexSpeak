@@ -11,7 +11,10 @@ export interface DisplaySource {
   thumbnail: string
 }
 
-/** Tray menu texts; the main process has no translations, the web app sends them. */
+/**
+ * Texts of the tray menu, the macOS app menu and the update notifications; the main process has no
+ * translations, the web app sends them. "{version}" is replaced in the main process.
+ */
 export interface TrayLabels {
   show: string
   mute: string
@@ -19,6 +22,11 @@ export interface TrayLabels {
   leaveCall: string
   /** Shown once a downloaded update waits, outside calls. */
   restartToUpdate: string
+  checkForUpdates: string
+  /** Notifications after "Check for updates…" from a menu while no About tab can open (logged out). */
+  updateUpToDate: string
+  updateFound: string
+  updateFailed: string
   quit: string
 }
 
@@ -38,8 +46,28 @@ export type TrayCommand = 'toggle-mute' | 'toggle-deafen' | 'leave-call'
  */
 export type PushToTalkStatus = 'active' | 'permission-required' | 'unsupported'
 
+/**
+ * Why an update check or download failed: 'offline' (no network), 'unsigned' (macOS only accepts
+ * updates for builds with a Developer ID signature), 'unsupported' (dev run, or a Linux package
+ * without auto-update), 'failed' (anything else, `message` has the first line).
+ */
+export type UpdateError = 'offline' | 'unsigned' | 'unsupported' | 'failed'
+
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'up-to-date' }
+  /** Found during a call; downloads only start after it. */
+  | { state: 'waiting-for-call'; version: string }
+  | { state: 'downloading'; version: string; percent: number }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; error: UpdateError; message?: string }
+
 export interface DesktopBridge {
   platform: 'darwin' | 'win32' | 'linux'
+  /** Version of the desktop app (may differ from the web build's). */
+  appVersion: string
+  channel: 'stable' | 'nightly'
   /** Scheme of the app's deep links without ":": "nexspeak", or "nexspeak-nightly" in nightly builds. */
   deepLinkScheme: string
   /**
@@ -76,10 +104,18 @@ export interface DesktopBridge {
   /** Resolves with the new state, or null where autostart is not possible. */
   setAutostart(enabled: boolean): Promise<boolean | null>
   /**
-   * The version of an update that is downloaded and installs on the next restart; also called
-   * right away if one is already waiting. Returns an unsubscribe function.
+   * Update check and download progress; also called right away with the current status.
+   * Returns an unsubscribe function.
    */
-  onUpdateReady(handler: (version: string) => void): () => void
+  onUpdateStatus(handler: (status: UpdateStatus) => void): () => void
+  /** Checks right away (resets the automatic interval); the result arrives via onUpdateStatus. */
+  checkForUpdates(): void
+  /**
+   * "Check for updates…" in the tray or app menu: the handler shows the update status (Settings →
+   * About). Without a handler the main process shows a notification instead. Returns an
+   * unsubscribe function.
+   */
+  onShowUpdates(handler: () => void): () => void
   /** Restarts into the downloaded update; ignored during a call. */
   installUpdate(): void
 }

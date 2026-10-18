@@ -337,8 +337,22 @@ test("a downloaded update offers a restart", async () => {
   await login(page, alice, "app://nexspeak/login")
 
   await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].webContents.send("nexspeak:update-ready", "9.9.9")
+    BrowserWindow.getAllWindows()[0].webContents.send("nexspeak:update-status", { state: "ready", version: "9.9.9" })
   })
   await expect(page.getByText("Update auf Version 9.9.9 bereit")).toBeVisible()
   await expect(page.getByRole("button", { name: "Jetzt neu starten" })).toBeVisible()
+})
+
+test("check for updates from the menu opens Settings → About", async () => {
+  const alice = await registerUser("alice")
+  await login(page, alice, "app://nexspeak/login")
+
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("nexspeak:show-updates")
+  })
+  const section = page.getByTestId("desktop-update")
+  await expect(section).toBeVisible()
+  await section.getByRole("button", { name: "Nach Updates suchen" }).click()
+  // An unpackaged run cannot update itself.
+  await expect(section.getByRole("status")).toHaveText(/kann sich nicht selbst aktualisieren/)
 })

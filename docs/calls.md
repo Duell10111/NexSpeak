@@ -36,6 +36,19 @@ you**). This doesn't affect what others hear.
 While you stream, **Stream settings** changes the quality without stopping, and **Stop streaming**
 ends it.
 
+Your own stream tile doesn't show your screen by default ("Your stream is still running! We paused
+the preview to save your resources."), so the preview costs no graphics card time while you play.
+**Show preview** shows it, **Hide preview** (on the tile, or right-click it) pauses it again; the
+choice is remembered on this device. While NexSpeak isn't the focused window (for example while you
+play), or is minimized or hidden, the preview is always paused. Your viewers aren't affected.
+
+### Watching a stream
+
+Streams of others aren't downloaded until you choose to watch them: their tile shows **Live** and a
+**Watch stream** button, and a notice tells you when someone went live. Watching shows the stream
+large. **Stop watching** (on the tile, or right-click it) stops downloading it again, which saves
+bandwidth and graphics card time while you play.
+
 ### Performance
 
 NexSpeak encodes video with H.264 on the graphics card (macOS, Windows with NVIDIA, AMD or Intel,
