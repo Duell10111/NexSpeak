@@ -90,6 +90,11 @@ solution wins over a convenience feature. New features must cost practically not
   components and `t()` outside React. Without a saved choice the language follows the browser.
   The E2E tests run with `locale: "de-DE"` against the German UI.
 - Check changes to calls with the E2E tests in `apps/web/e2e/call.spec.ts` (including E2EE).
+- **User documentation** lives in `docs/` (Sphinx with MyST Markdown, the Furo theme, published on
+  Read the Docs via `.readthedocs.yaml`; `beta-plan.md` is excluded). When a change alters what users
+  see or do, update the matching page and use the English UI labels from `en.ts`. Check with
+  `python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt` and
+  `.venv/bin/sphinx-build -W docs docs/_build/html` (warnings fail the Read the Docs build).
 - **English everywhere except the UI:** code, comments, identifiers, log and error messages for
   developers, test names, commit messages, pull requests, issues, milestones, labels and all
   documentation (README, `docs/`, AGENTS.md). German exists only as a UI language (`de.ts`).
