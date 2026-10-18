@@ -60,3 +60,7 @@ playwright-report/
 # desktop app build output
 /apps/desktop/dist/
 /apps/desktop/release/
+
+# Documentation build (docs/, Sphinx)
+/docs/_build/
+/.venv/

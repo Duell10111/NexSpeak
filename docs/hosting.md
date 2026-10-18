@@ -11,7 +11,7 @@ npm start          # local check: apps/web/scripts/serve.mjs on http://localhost
 
 ## Requirements for the web server
 
-1. **Security headers** from [`apps/web/security-headers.json`](../apps/web/security-headers.json)
+1. **Security headers** from [`apps/web/security-headers.json`](https://github.com/Duell10111/NexSpeak/blob/main/apps/web/security-headers.json)
    on every response. The app holds an access token; without `X-Frame-Options` /
    `frame-ancestors` clickjacking would be possible. These headers cannot be set via `<meta>`.
 2. **Clean URLs:** `/login` → `login.html`.

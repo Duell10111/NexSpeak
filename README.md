@@ -18,6 +18,9 @@
 A Discord-like client for [Matrix](https://matrix.org): spaces are shown as servers, rooms as channels, plus
 direct messages, voice/video calls and screen sharing. Available as a web app and a desktop app (Electron).
 
+**User documentation:** [nexspeak.readthedocs.io](https://nexspeak.readthedocs.io) – getting started, installing,
+calls, settings, encryption and [nightly builds](https://nexspeak.readthedocs.io/en/latest/nightly.html).
+
 - **Chat:** replies, threads, reactions, editing, deletion, pinned messages, Markdown (Discord flavoured,
   sent as `formatted_body` and rendered sanitized), mentions with autocompletion (@person, #channel, @room),
   typing indicator, files (also via drag & drop/paste), read receipts, invites
@@ -50,7 +53,7 @@ direct messages, voice/video calls and screen sharing. Available as a web app an
 | `packages/core` | Matrix and call logic without UI |
 | `packages/i18n` | UI texts (German, English) |
 | `dev` | Local homeserver with calls (Docker) |
-| `docs` | Planning and documentation |
+| `docs` | User documentation (Sphinx, published on Read the Docs) and planning |
 
 All commands are run in the repository root.
 
