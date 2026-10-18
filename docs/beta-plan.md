@@ -143,8 +143,6 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] App icon (#8)
 - [x] Release workflow: release-please and desktop builds attached to the release (unsigned, macOS
       ad-hoc signed)
-- [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
-      a SmartScreen warning) – only secrets missing, see `.github/workflows/desktop.yml`
 - [ ] Push-to-talk hook: filter mouse moves natively (#10)
 - [x] Nightly builds (#11): only on app changes, "NexSpeak Nightly" next to the stable app, releases in
       `Duell10111/NexSpeak-nightly`
@@ -153,6 +151,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Opt-in "Watch stream" for remote screenshares, stop watching again (#19)
 - [x] Pause the preview of your own stream to save resources (#20)
 - [ ] Friends list (#21): friendship marked in the DM (`io.nexspeak.friend`), requests with accept/decline like Discord
+- [ ] Create a server from inside the app (#31): space with roles and a default channel, like Element
 
 ### Later (0.3+)
 
@@ -162,11 +161,21 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Sound cues for join, leave and screensharing, can be turned off (#22)
 - Soundboard like Discord: server sounds played on each client, can be turned off (#26)
 - Call duration next to active voice channels in the sidebar (#29)
+- Incoming-call prompt with join/decline for direct calls (#34)
+- Configurable global shortcuts for mute, deafen and disconnect (#35)
+- Share system audio with the screen on macOS (#36)
+- Custom, stackable roles (#32) and granular permissions with category/channel overrides (#33),
+  designed together on top of power levels
 - Milestone "Mobile Alpha" after a successful crypto spike
+
+### Milestone "1.0"
+
+- [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
+      a SmartScreen warning) – only secrets missing, see `.github/workflows/desktop.yml`
 
 ## 5. GitHub organization
 
-- **Milestones:** `Beta 0.1 – Web`, `Beta 0.2 – Desktop`, `0.3`, `Mobile Alpha`
+- **Milestones:** `Beta 0.1 – Web`, `Beta 0.2 – Desktop`, `0.3`, `1.0`, `Mobile Alpha`
 - **Labels:**
   - Area: `area:web`, `area:desktop`, `area:mobile`, `area:core`, `area:calls`, `area:repo`
   - Type: `type:bug`, `type:feature`, `type:chore`
