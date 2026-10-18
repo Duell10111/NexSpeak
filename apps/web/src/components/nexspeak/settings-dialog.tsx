@@ -194,9 +194,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
           <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
-        {/* Remounted per opening, so it starts at the requested tab. min-w-0: unbreakable
+        {/* Remounted per opening and requested tab (the menus' "Check for updates…" switches to About
+            while it is open), so it starts at the requested tab. min-w-0: unbreakable
             content must not widen the dialog's grid column. */}
-        <Tabs key={String(open)} defaultValue={initialTab} className="w-full min-w-0">
+        <Tabs key={`${open}:${initialTab}`} defaultValue={initialTab} className="w-full min-w-0">
           <TabsList className="grid h-auto w-full grid-cols-3">
             <TabsTrigger value="profile">{t("settings.profile")}</TabsTrigger>
             <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>

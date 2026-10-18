@@ -15,6 +15,7 @@ function readChannel(): unknown {
 
 const nightly = readChannel() === "nightly"
 
+export const CHANNEL = nightly ? "nightly" : "stable"
 /** appId in electron-builder.cjs; Windows needs it as AppUserModelID for notifications. */
 export const APP_ID = nightly ? "io.github.duell10111.nexspeak.nightly" : "io.github.duell10111.nexspeak"
 export const PRODUCT_NAME = nightly ? "NexSpeak Nightly" : "NexSpeak"

@@ -19,11 +19,11 @@ import {
 import type { DisplaySource } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
 import { setupAutostart, wasOpenedAtLogin } from "./autostart"
 import { setBadgeCount } from "./badge"
-import { APP_ID, DEEP_LINK_SCHEME, PRODUCT_NAME } from "./channel"
+import { APP_ID, CHANNEL, DEEP_LINK_SCHEME, PRODUCT_NAME } from "./channel"
 import { registerDeepLinks, setupDeepLinks } from "./deep-links"
 import { originOf } from "./origin"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
-import { createTray, setTrayUpdate } from "./tray"
+import { createTray, setTrayUpdate, trayLabels } from "./tray"
 import { setupUpdater, setUpdaterInCall } from "./updater"
 
 // Same names as in preload.ts (a sandboxed preload cannot import other files).
@@ -98,16 +98,23 @@ function start() {
   setupDeepLinks({ webContents: appContents, showWindow })
   startHidden = wasOpenedAtLogin()
   mainWindow = createWindow()
-  createTray({ webContents: appContents, showWindow, onVoiceState: (state) => setUpdaterInCall(state?.inCall ?? false) })
-  setupPushToTalk(appContents)
-  setupAutostart(appContents)
-  setupUpdater({
+  const updater = setupUpdater({
     webContents: appContents,
+    showWindow,
+    labels: trayLabels,
     prepareQuit: () => {
       isQuitting = true
     },
     onReady: setTrayUpdate,
   })
+  createTray({
+    webContents: appContents,
+    showWindow,
+    checkForUpdates: updater.checkFromMenu,
+    onVoiceState: (state) => setUpdaterInCall(state?.inCall ?? false),
+  })
+  setupPushToTalk(appContents)
+  setupAutostart(appContents)
   const fromAppWindow = (event: Electron.IpcMainEvent) => event.sender === mainWindow?.webContents
   ipcMain.on(IPC_SHOW_WINDOW, (event) => {
     if (fromAppWindow(event)) showWindow()
@@ -271,7 +278,11 @@ function createWindow() {
       // The spell checker downloads dictionaries from Google; off until it is a setting.
       spellcheck: false,
       // Read by preload.ts (a sandboxed preload has no other way to get it synchronously).
-      additionalArguments: [`--nexspeak-deep-link-scheme=${DEEP_LINK_SCHEME}`],
+      additionalArguments: [
+        `--nexspeak-deep-link-scheme=${DEEP_LINK_SCHEME}`,
+        `--nexspeak-app-version=${app.getVersion()}`,
+        `--nexspeak-channel=${CHANNEL}`,
+      ],
     },
   })
 

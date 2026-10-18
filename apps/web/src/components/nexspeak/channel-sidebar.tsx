@@ -39,6 +39,7 @@ import { joinSpaceChannels, rememberDirectRoom } from "@nexspeak/core/matrix/dir
 import type { MatrixRoom } from "@nexspeak/core/matrix/types"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { SettingsDialog, type SettingsTab } from "@/components/nexspeak/settings-dialog"
+import { useShowUpdates } from "@/components/nexspeak/desktop-update"
 import { PRESENCE_DOT, PRESENCE_LABEL, PresencePicker } from "@/components/nexspeak/profile-panel"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
@@ -774,6 +775,7 @@ export function ChannelSidebar({
     setSettingsTab(tab)
     setSettingsOpen(true)
   }
+  useShowUpdates(() => openSettings("about"))
 
   const isEmpty = sections.every((section) => section.rooms.length === 0 && !section.isCategory) && invites.length === 0
 

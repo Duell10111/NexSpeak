@@ -37,6 +37,13 @@ installs anything during a call. When an update is ready, NexSpeak shows **Resta
 it installs the next time you quit the app. On macOS, automatic updates only work with signed
 builds; until then, install new versions by hand.
 
+To check right away, open **Settings → About** and click **Check for updates**, or pick **Check for
+updates…** in the tray menu or (macOS) the NexSpeak app menu, which opens the same place. About shows
+the app version, the channel (Stable or Nightly) and the update status: checking, up to date,
+downloading, **Restart to update** once it is ready, or why the check failed (no network, an unsigned
+macOS build, or a Linux package that can't update itself). An update found during a call downloads
+after the call. When you are logged out, the menu shows the result as a system notification.
+
 ## Uninstalling
 
 - **macOS:** move NexSpeak from Applications to the Trash.
