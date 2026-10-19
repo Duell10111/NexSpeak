@@ -49,6 +49,7 @@ everyone in the channel.
 **Direct Messages** at the top of the server list shows your conversations. **Start a direct
 message** searches by name or takes a Matrix ID like `@alice:matrix.org`; choosing several people
 starts a group. People you don't share a room with can only be found by their full Matrix ID.
+Friends and friend requests are listed there as well, see [Friends](friends.md).
 
 ## Safety
 

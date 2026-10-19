@@ -18,6 +18,7 @@ import {
 import { getSpaceChildRoomIds, roomToMatrixRoom, roomToMatrixSpace } from '@nexspeak/core/matrix/types'
 import { getDirectRoomIds, isDirectRoom, looksLikeDirectRoom } from '@nexspeak/core/matrix/direct'
 import { getOrderedChildIds } from '@nexspeak/core/matrix/server'
+import { computeFriends, isFriendRequestInvite, type Friend } from '@nexspeak/core/matrix/friends'
 import type { MatrixRoom, MatrixSpace } from '@nexspeak/core/matrix/types'
 
 const RECOMPUTE_DELAY_MS = 150
@@ -41,7 +42,10 @@ export interface RoomDirectory {
   directRooms: MatrixRoom[]
   /** Joined rooms that are neither DMs nor part of a joined space. */
   otherRooms: MatrixRoom[]
+  /** Pending invites, except friend requests (those are in `friends`). */
   invites: MatrixRoom[]
+  /** Friends and pending friend requests. */
+  friends: Friend[]
 }
 
 const EMPTY_DIRECTORY: RoomDirectory = {
@@ -52,6 +56,15 @@ const EMPTY_DIRECTORY: RoomDirectory = {
   directRooms: [],
   otherRooms: [],
   invites: [],
+  friends: [],
+}
+
+/** A DM entry, with the other person for its presence dot if it is a 1:1 room. */
+function directRoom(client: MatrixClient, room: Room): MatrixRoom {
+  const entry = roomToMatrixRoom(room)
+  if (room.getJoinedMemberCount() + room.getInvitedMemberCount() !== 2) return entry
+  const userId = room.guessDMUserId()
+  return userId && userId !== client.getUserId() ? { ...entry, directUserId: userId } : entry
 }
 
 function byActivity(a: MatrixRoom, b: MatrixRoom): number {
@@ -84,7 +97,7 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
   const allRooms = client.getRooms()
   const joined = allRooms.filter((room) => room.getMyMembership() === 'join')
   const invites = allRooms
-    .filter((room) => room.getMyMembership() === 'invite')
+    .filter((room) => room.getMyMembership() === 'invite' && !isFriendRequestInvite(room))
     .map(roomToMatrixRoom)
     .sort(byActivity)
 
@@ -135,14 +148,14 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
     if (room.isSpaceRoom()) return
 
     if (isListedDirect(room)) {
-      directRooms.push(roomToMatrixRoom(room))
+      directRooms.push(directRoom(client, room))
       return
     }
     if (roomIdsInSpaces.has(room.roomId)) return
 
     // Outside any space, a 1:1 room without m.direct entry is most likely a DM too.
     if (looksLikeDirectRoom(client, room)) {
-      directRooms.push(roomToMatrixRoom(room))
+      directRooms.push(directRoom(client, room))
     } else {
       otherRooms.push(roomToMatrixRoom(room))
     }
@@ -156,6 +169,7 @@ export function computeRoomDirectory(client: MatrixClient): RoomDirectory {
     directRooms: directRooms.sort(byActivity),
     otherRooms: otherRooms.sort(byActivity),
     invites,
+    friends: computeFriends(client, allRooms),
   }
 }
 
@@ -212,13 +226,17 @@ export function useRoomDirectory(client: MatrixClient | null): RoomDirectory {
 }
 
 /**
- * The number on the app badge, like Discord: mentions everywhere, all unread direct messages and
- * invites.
+ * The number on the app badge, like Discord: mentions everywhere, all unread direct messages,
+ * invites and friend requests.
  */
 export function attentionCount(directory: RoomDirectory): number {
   const spaceRooms = new Map<string, MatrixRoom>()
   Object.values(directory.roomsBySpace).forEach((rooms) => rooms.forEach((room) => spaceRooms.set(room.id, room)))
   const highlights = [...spaceRooms.values(), ...directory.otherRooms].reduce((sum, room) => sum + room.highlights, 0)
   const directUnread = directory.directRooms.reduce((sum, room) => sum + room.unread, 0)
-  return highlights + directUnread + directory.invites.length
+  return highlights + directUnread + directory.invites.length + incomingFriendRequests(directory)
+}
+
+export function incomingFriendRequests(directory: RoomDirectory): number {
+  return directory.friends.filter((friend) => friend.status === 'incoming').length
 }

@@ -22,6 +22,7 @@ getting-started
 install
 servers-and-channels
 chat
+friends
 calls
 settings
 encryption

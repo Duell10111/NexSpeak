@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useTranslation } from "@/hooks/useTranslation"
-import { EyeOff, MessageCircle, Volume2 } from "lucide-react"
+import { Check, EyeOff, MessageCircle, UserMinus, UserPlus, Volume2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/nexspeak/server-dialogs"
 import { useIsIgnored } from "@/hooks/useIgnoredUsers"
@@ -23,6 +23,9 @@ import { setIgnored } from "@nexspeak/core/matrix/safety"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
+import { useFriendActions, useFriendOf } from "@/components/nexspeak/friends-context"
+import { PresenceAvatar, USER_PRESENCE_LABELS } from "@/components/nexspeak/presence-avatar"
+import { getUserPresence, type UserPresence } from "@nexspeak/core/matrix/presence"
 import type { MessageKey } from "@nexspeak/i18n"
 
 interface MemberListProps {
@@ -30,28 +33,12 @@ interface MemberListProps {
   className?: string
 }
 
-type Presence = "online" | "unavailable" | "offline" | "unknown"
-
 interface UiMember {
   userId: string
   name: string
   avatarMxc?: string
-  presence: Presence
+  presence: UserPresence
   powerLevel: number
-}
-
-const PRESENCE_COLORS: Record<Presence, string> = {
-  online: "bg-nx-online",
-  unavailable: "bg-nx-idle",
-  offline: "bg-nx-offline",
-  unknown: "bg-nx-offline",
-}
-
-const PRESENCE_LABELS: Record<Presence, MessageKey | null> = {
-  online: "presence.online",
-  unavailable: "presence.away",
-  offline: "presence.offline",
-  unknown: null,
 }
 
 function readMembers(client: MatrixClient, roomId: string): UiMember[] {
@@ -60,26 +47,13 @@ function readMembers(client: MatrixClient, roomId: string): UiMember[] {
 
   return room
     .getJoinedMembers()
-    .map((member) => {
-      const user = client.getUser(member.userId)
-      // Servers with presence disabled never send any; don't show everybody as offline then.
-      const hasPresence = Boolean(user && (user.lastPresenceTs > 0 || user.currentlyActive))
-      const presence: Presence = !hasPresence
-        ? "unknown"
-        : user?.presence === "online" || user?.currentlyActive
-          ? "online"
-          : user?.presence === "unavailable"
-            ? "unavailable"
-            : "offline"
-
-      return {
-        userId: member.userId,
-        name: member.name || member.userId,
-        avatarMxc: member.getMxcAvatarUrl() || undefined,
-        presence,
-        powerLevel: member.powerLevel,
-      }
-    })
+    .map((member) => ({
+      userId: member.userId,
+      name: member.name || member.userId,
+      avatarMxc: member.getMxcAvatarUrl() || undefined,
+      presence: getUserPresence(client, member.userId),
+      powerLevel: member.powerLevel,
+    }))
     .sort((a, b) => b.powerLevel - a.powerLevel || a.name.localeCompare(b.name))
 }
 
@@ -168,12 +142,69 @@ export function IgnoreButton({ userId, name, onDone }: { userId: string; name: s
   )
 }
 
+/** Add a friend, accept their request or remove them, depending on the friendship. */
+function FriendButton({ userId, name }: { userId: string; name: string }) {
+  const { t } = useTranslation()
+  const friend = useFriendOf(userId)
+  const actions = useFriendActions()
+  const [isBusy, setIsBusy] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+
+  const run = async (action: () => Promise<unknown>) => {
+    setIsBusy(true)
+    await action()
+    setIsBusy(false)
+  }
+
+  const icon = isBusy ? <Spinner className="mr-2 h-4 w-4" /> : null
+  if (friend?.status === "friend") {
+    return (
+      <>
+        <Button className="w-full" size="sm" variant="outline" disabled={isBusy} onClick={() => setConfirmingRemove(true)}>
+          {icon ?? <UserMinus className="mr-2 h-4 w-4" />}
+          {t("friends.remove")}
+        </Button>
+        <ConfirmDialog
+          open={confirmingRemove}
+          onOpenChange={setConfirmingRemove}
+          title={t("friends.removeConfirmTitle", { name })}
+          description={t("friends.removeConfirmDescription")}
+          confirmLabel={t("friends.remove")}
+          onConfirm={() => void run(() => actions.remove(friend))}
+        />
+      </>
+    )
+  }
+  if (friend?.status === "outgoing") {
+    return (
+      <Button className="w-full" size="sm" variant="outline" disabled>
+        <Check className="mr-2 h-4 w-4" />
+        {t("friends.requestPending")}
+      </Button>
+    )
+  }
+  if (friend?.status === "incoming") {
+    return (
+      <Button className="w-full" size="sm" variant="outline" disabled={isBusy} onClick={() => void run(() => actions.accept(friend))}>
+        {icon ?? <UserPlus className="mr-2 h-4 w-4" />}
+        {t("friends.acceptRequest")}
+      </Button>
+    )
+  }
+  return (
+    <Button className="w-full" size="sm" variant="outline" disabled={isBusy} onClick={() => void run(() => actions.request([userId]))}>
+      {icon ?? <UserPlus className="mr-2 h-4 w-4" />}
+      {t("friends.add")}
+    </Button>
+  )
+}
+
 /** Discord's profile popout: who it is and a way to message them directly. */
 function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: boolean; onDone: () => void }) {
   const { t } = useTranslation()
   const openDirectMessage = useOpenDirectMessage()
   const [isOpening, setIsOpening] = useState(false)
-  const presenceLabel = PRESENCE_LABELS[member.presence]
+  const presenceLabel = USER_PRESENCE_LABELS[member.presence]
 
   const message = async () => {
     setIsOpening(true)
@@ -198,6 +229,7 @@ function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: b
             {isOpening ? <Spinner className="mr-2 h-4 w-4" /> : <MessageCircle className="mr-2 h-4 w-4" />}
             {t("dm.sendMessage")}
           </Button>
+          <FriendButton userId={member.userId} name={member.name} />
           <IgnoreButton userId={member.userId} name={member.name} onDone={onDone} />
         </div>
       )}
@@ -209,7 +241,6 @@ function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voice
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const isAway = member.presence === "offline"
-  const presenceLabel = PRESENCE_LABELS[member.presence]
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -222,18 +253,12 @@ function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voice
           )}
           title={member.userId}
         >
-          <div className="relative">
-            <MatrixAvatar mxcUrl={member.avatarMxc} name={member.name} size={32} />
-            {member.presence !== "unknown" && (
-              <span
-                className={cn(
-                  "absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-secondary group-hover:border-nx-hover",
-                  PRESENCE_COLORS[member.presence],
-                )}
-                aria-label={presenceLabel ? t(presenceLabel) : undefined}
-              />
-            )}
-          </div>
+          <PresenceAvatar
+            mxcUrl={member.avatarMxc}
+            name={member.name}
+            presence={member.presence}
+            dotClassName="border-secondary group-hover:border-nx-hover"
+          />
           <div className="min-w-0 flex-1 text-left">
             <p className="truncate text-[15px] leading-5 font-medium text-muted-foreground group-hover:text-foreground">
               {member.name}
