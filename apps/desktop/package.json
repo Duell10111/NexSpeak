@@ -1,6 +1,6 @@
 {
   "name": "@nexspeak/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "NexSpeak desktop app: Electron shell around the static web build.",
