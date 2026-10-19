@@ -129,6 +129,53 @@ test("mute and deafen work before joining and apply to the call", async ({ brows
   await expect(tiles(page).getByLabel("Stummgeschaltet")).toHaveCount(0, { timeout: 15_000 })
 })
 
+test("sound cues for joining, leaving and streams, not for those already there", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Töne ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob] })
+
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  for (const page of [alicePage, bobPage]) {
+    await page.addInitScript(() => {
+      const cues: string[] = []
+      ;(window as unknown as { __cues: string[] }).__cues = cues
+      const play = HTMLMediaElement.prototype.play
+      HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+        if (this.dataset.cue) cues.push(this.dataset.cue)
+        return play.call(this)
+      }
+    })
+  }
+  const cues = (page: Page) => page.evaluate(() => (window as unknown as { __cues: string[] }).__cues)
+
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, roomName)
+
+  await joinVoice(alicePage)
+  await expect.poll(() => cues(alicePage)).toEqual(["self-join"])
+  await joinVoice(bobPage)
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+  // Alice was already there: Bob hears only his own join.
+  await expect.poll(() => cues(bobPage)).toEqual(["self-join"])
+  await expect.poll(() => cues(alicePage), { timeout: 30_000 }).toEqual(["self-join", "participant-join"])
+
+  await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+  await alicePage.getByRole("dialog", { name: "Bildschirm teilen" }).getByRole("button", { name: "Live gehen" }).click()
+  await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => cues(alicePage)).toEqual(["self-join", "participant-join", "screenshare-start"])
+  await expect.poll(() => cues(bobPage), { timeout: 30_000 }).toEqual(["self-join", "screenshare-start"])
+
+  // Leaving while live is just a leave for the others, not also a stopped stream.
+  await alicePage.getByRole("button", { name: "Anruf verlassen" }).click()
+  await expect.poll(() => cues(alicePage)).toEqual(["self-join", "participant-join", "screenshare-start", "self-leave"])
+  await expect(tiles(bobPage)).toHaveCount(1, { timeout: 30_000 })
+  await expect.poll(() => cues(bobPage)).toEqual(["self-join", "screenshare-start", "participant-leave"])
+})
+
 test("screenshare with chosen resolution and frame rate, adjustable while live", async ({ browser }) => {
   const alice = await registerUser("alice")
   const bob = await registerUser("bob")
