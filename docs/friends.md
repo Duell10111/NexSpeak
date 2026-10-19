@@ -21,7 +21,8 @@ request is listed as an outgoing friend request on your side, where you can canc
 ## The friends list
 
 - **Online** shows friends who are online or away, **All** shows every friend, **Pending** shows
-  incoming and outgoing requests. **Online** is missing if your homeserver doesn't share presence.
+  incoming and outgoing requests. If your homeserver doesn't share presence, **Online** is missing and **All** says
+  "Your homeserver doesn't share online status, so you can't see who is online."
 - Each friend has buttons to send a **message** or start a **call**; both open your direct
   message with them.
 - **More** offers **Remove friend** and **Ignore**. Removing ends the friendship for both of you;

@@ -289,6 +289,9 @@ export function FriendsView({ onOpenNavigation }: { onOpenNavigation: () => void
         <h4 className="px-6 pt-4 pb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t(TAB_COUNTS[tab], { count: shown.length })}
         </h4>
+        {tab === "all" && accepted.length > 0 && !presenceKnown && (
+          <p className="px-6 pb-2 text-xs text-muted-foreground">{t("friends.presenceUnavailable")}</p>
+        )}
         {shown.length > 0 ? (
           <div className="flex flex-col px-2" role="list">
             {shown.map((friend) => (

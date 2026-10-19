@@ -92,6 +92,7 @@ export const en: Record<MessageKey, string> = {
   'friends.emptyOnline': 'None of your friends are online right now.',
   'friends.emptyAll': 'You have no friends yet. Add someone by their Matrix ID.',
   'friends.emptyPending': 'There are no pending friend requests.',
+  'friends.presenceUnavailable': "Your homeserver doesn't share online status, so you can't see who is online.",
   'friends.add': 'Add friend',
   'friends.addDescription': 'Search by name or enter a Matrix ID like @alice:matrix.org. They get a friend request they can accept or decline.',
   'friends.sendRequest': 'Send friend request',

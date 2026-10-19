@@ -93,6 +93,7 @@ export const de = {
   'friends.emptyOnline': 'Gerade ist niemand von deinen Freunden online.',
   'friends.emptyAll': 'Du hast noch keine Freunde. Füge jemanden über die Matrix-ID hinzu.',
   'friends.emptyPending': 'Keine offenen Freundschaftsanfragen.',
+  'friends.presenceUnavailable': 'Dein Homeserver teilt keinen Online-Status, daher siehst du nicht, wer gerade online ist.',
   'friends.add': 'Freund hinzufügen',
   'friends.addDescription': 'Suche nach Namen oder gib eine Matrix-ID wie @alice:matrix.org ein. Die Person bekommt eine Freundschaftsanfrage, die sie annehmen oder ablehnen kann.',
   'friends.sendRequest': 'Freundschaftsanfrage senden',
