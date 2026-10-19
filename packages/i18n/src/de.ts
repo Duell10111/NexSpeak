@@ -103,6 +103,12 @@ export const de = {
   'server.joinChannelsFailed': 'Kanälen konnte nicht beigetreten werden.',
   'server.noJoinableChannels': 'Es gibt keine Kanäle, denen du ohne Einladung beitreten kannst.',
 
+  'createServer.add': 'Server hinzufügen',
+  'createServer.title': 'Server erstellen',
+  'createServer.description': 'Wähle einen Namen und optional ein Icon und eine Beschreibung. Dein Server startet mit dem Text- und Sprachkanal general. Lade anschließend andere ein.',
+  'createServer.created': '{name} wurde erstellt',
+  'createServer.failed': 'Der Server konnte nicht erstellt werden.',
+
   'join.title': 'Server oder Raum beitreten',
   'join.description': 'Gib die Adresse eines Matrix-Space oder -Raums ein.',
   'join.address': 'Adresse',

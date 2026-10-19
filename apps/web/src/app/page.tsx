@@ -202,6 +202,7 @@ export default function NexSpeakApp() {
         homeUnread={homeUnread}
         onServerSelect={handleServerSelect}
         onRoomJoined={handleRoomJoined}
+        onServerCreated={(serverId, channelId) => openRoom(channelId, serverId)}
       />
       <ChannelSidebar
         title={title}

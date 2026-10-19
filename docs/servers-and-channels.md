@@ -9,11 +9,22 @@ NexSpeak shows Matrix the way Discord is organized, and Element sees the same st
 | Channel (text and voice at once) | Room |
 | Admin, Moderator, Member | Power levels 100, 50, 0 |
 
+## Creating a server
+
+1. Choose **Add a server** (the plus button in the server list), then **Create a server**.
+2. Enter a **Name**. Optionally add a **Description** and an **Icon** (PNG, JPEG, GIF or WebP,
+   up to 10 MB).
+3. Choose **Create a server**. NexSpeak selects the new server and opens its **general** channel.
+
+You are the admin. The server is invite-only; its general channel supports text and voice and is
+open to server members. Use **Invite people** in the server menu to bring others in. The server is
+a Matrix space, so it and its channel also appear in Element.
+
 ## Joining
 
 - **Invites** appear in the channel list under **Invites**. Accepting a server invite joins all
   open channels of the server; private channels need their own invite.
-- **Join a server** in the server list joins a public space or room by its address, e.g.
+- **Add a server → Join a server** in the server list joins a public space or room by its address, e.g.
   `#community:matrix.org` or a room ID.
 - Links to rooms and people ([matrix.to](https://matrix.to) links) open directly in NexSpeak.
 - New channels of a server you joined are joined automatically.

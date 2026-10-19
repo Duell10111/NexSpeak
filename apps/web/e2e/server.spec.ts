@@ -36,6 +36,118 @@ async function setupServer(): Promise<{ alice: TestUser; bob: TestUser; serverNa
   return { alice, bob, serverName, spaceId }
 }
 
+for (const withDetails of [false, true]) {
+  test(`create and open a server ${withDetails ? 'with an icon and description' : 'with only a name'}`, async ({ browser }) => {
+    const { alice } = await setupServer()
+    const page = await newPage(browser)
+    await login(page, alice)
+    if (!withDetails) {
+      // Also exercise older homeservers: v11 assigns creator 100; v12+ forbids
+      // putting the creator in power_levels.users and assigns their role implicitly.
+      await page.route('**/_matrix/client/v3/createRoom', async (route) => {
+        await route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), room_version: '11' }) })
+      })
+    }
+    await page.getByRole('button', { name: 'Server hinzufügen' }).click()
+    await page.getByRole('menuitem', { name: 'Server erstellen' }).click()
+    const dialog = page.getByRole('dialog')
+    const submit = dialog.getByRole('button', { name: 'Server erstellen' })
+    await expect(submit).toBeDisabled()
+    await dialog.getByLabel('Name', { exact: true }).fill('   ')
+    await expect(submit).toBeDisabled()
+
+    // Cancelled drafts must be discarded.
+    await dialog.getByLabel('Name', { exact: true }).fill('Discarded draft')
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click()
+    await page.getByRole('button', { name: 'Server hinzufügen' }).click()
+    await page.getByRole('menuitem', { name: 'Server erstellen' }).click()
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('')
+
+    const name = `Created ${Date.now().toString(36)}`
+    await dialog.getByLabel('Name', { exact: true }).fill(`  ${name}  `)
+    if (withDetails) {
+      await dialog.getByLabel('Beschreibung').fill('  A place for games  ')
+      await dialog.getByLabel('Icon', { exact: true }).setInputFiles({ name: 'icon.png', mimeType: 'image/png', buffer: PNG })
+      await expect(dialog.getByRole('img', { name: 'Icon' })).toBeVisible()
+    }
+    await submit.click()
+    await expect(dialog).toBeHidden()
+    const serverButton = page.getByRole('navigation', { name: 'Server-Liste' }).getByRole('button', { name, exact: true })
+    await expect(serverButton).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('heading', { level: 3, name: 'general', exact: true })).toBeVisible()
+
+    const selection = await page.evaluate(() => JSON.parse(localStorage.getItem('nexspeak_selection')!))
+    const serverId = selection.serverId as string
+    const channelId = selection.channelId as string
+    expect(await getState(alice, serverId, 'm.room.create')).toMatchObject({ type: 'm.space' })
+    expect(await getState(alice, serverId, 'm.room.name')).toEqual({ name })
+    expect(await getState(alice, serverId, 'm.room.join_rules')).toMatchObject({ join_rule: 'invite' })
+    expect(await getState(alice, serverId, 'm.space.child', channelId)).toMatchObject({ via: ['synapse'] })
+    expect(await getState(alice, channelId, 'm.space.parent', serverId)).toMatchObject({ via: ['synapse'], canonical: true })
+    expect(await getState(alice, channelId, 'm.room.join_rules')).toEqual({
+      join_rule: 'restricted', allow: [{ type: 'm.room_membership', room_id: serverId }],
+    })
+    for (const roomId of [serverId, channelId]) {
+      expect(await getState(alice, roomId, 'm.room.power_levels')).toMatchObject({
+        users_default: 0, state_default: 50,
+        events: { 'org.matrix.msc3401.call.member': 0, 'm.room.tombstone': 100, 'm.room.server_acl': 100 },
+      })
+      const creation = await getState<{ room_version: string }>(alice, roomId, 'm.room.create')
+      const levels = await getState<{ users: Record<string, number> }>(alice, roomId, 'm.room.power_levels')
+      expect(levels?.users[alice.userId]).toBe(creation?.room_version === '11' ? 100 : undefined)
+    }
+    if (withDetails) {
+      expect(await getState(alice, serverId, 'm.room.topic')).toMatchObject({ topic: 'A place for games' })
+      expect(await getState(alice, serverId, 'm.room.avatar')).toMatchObject({ url: expect.stringMatching(/^mxc:\/\//) })
+      await expect(serverButton.locator('img')).toBeVisible()
+    }
+
+    await page.reload()
+    await expect(serverButton).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('heading', { level: 3, name: 'general', exact: true })).toBeVisible()
+    // Joining existing servers is still available from the same plus button.
+    await page.getByRole('button', { name: 'Server hinzufügen' }).click()
+    await page.getByRole('menuitem', { name: 'Server beitreten' }).click()
+    await expect(dialog.getByLabel('Adresse')).toBeVisible()
+  })
+}
+
+test('server creation failure preserves the draft and allows retry', async ({ browser }) => {
+  const alice = await registerUser('creator')
+  const page = await newPage(browser)
+  await login(page, alice)
+  await page.getByRole('button', { name: 'Server hinzufügen' }).click()
+  await page.getByRole('menuitem', { name: 'Server erstellen' }).click()
+  const dialog = page.getByRole('dialog')
+  const name = `Retry ${Date.now().toString(36)}`
+  await dialog.getByLabel('Name', { exact: true }).fill(name)
+  await page.route('**/_matrix/client/v3/createRoom', (route) => route.fulfill({
+    status: 400, contentType: 'application/json', body: JSON.stringify({ errcode: 'M_UNKNOWN', error: 'Creation failed' }),
+  }))
+  await dialog.getByRole('button', { name: 'Server erstellen' }).click()
+  await expect(page.getByText('Creation failed', { exact: true })).toBeVisible()
+  await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue(name)
+  await page.unroute('**/_matrix/client/v3/createRoom')
+  await dialog.getByRole('button', { name: 'Server erstellen' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('heading', { level: 3, name: 'general', exact: true })).toBeVisible()
+})
+
+test('create a server on mobile and close navigation to show its first channel', async ({ browser }) => {
+  const alice = await registerUser('mobile-creator')
+  const page = await newPage(browser, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  await login(page, alice)
+  await page.getByRole('button', { name: 'Navigation öffnen' }).first().click()
+  await page.getByRole('button', { name: 'Server hinzufügen' }).click()
+  await page.getByRole('menuitem', { name: 'Server erstellen' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Server erstellen', exact: true })
+  await dialog.getByLabel('Name', { exact: true }).fill('Mobile server')
+  await dialog.getByRole('button', { name: 'Server erstellen' }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(page.getByRole('heading', { level: 3, name: 'general', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+})
+
 test("create, edit, move and delete channels and categories", async ({ browser }) => {
   const { alice, bob, serverName, spaceId } = await setupServer()
 

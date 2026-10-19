@@ -4,9 +4,11 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Plus, Volume2 } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { JoinRoomDialog } from "@/components/nexspeak/join-room-dialog"
+import { CreateServerDialog } from "@/components/nexspeak/create-server-dialog"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useMediaUrl } from "@/hooks/useMediaUrl"
 import { useTranslation } from "@/hooks/useTranslation"
@@ -19,6 +21,7 @@ interface ServerSidebarProps {
   homeUnread: number
   onServerSelect: (id: string) => void
   onRoomJoined: (roomId: string) => void
+  onServerCreated: (serverId: string, channelId: string) => void
 }
 
 const SPACE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
@@ -166,9 +169,13 @@ export function ServerSidebar({
   homeUnread,
   onServerSelect,
   onRoomJoined,
+  onServerCreated,
 }: ServerSidebarProps) {
   const { t } = useTranslation()
   const [joinOpen, setJoinOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [addTooltipOpen, setAddTooltipOpen] = useState(false)
   const { call } = useCallContext()
   const isHomeActive = activeServerId === DIRECT_MESSAGES_ID
   const callServerId = call
@@ -229,22 +236,31 @@ export function ServerSidebar({
         </div>
       )}
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setJoinOpen(true)}
-            className="mx-3 mt-2 flex h-12 w-12 items-center justify-center rounded-[24px] bg-nx-guild-bar text-nx-online transition-all hover:rounded-[16px] hover:bg-nx-online hover:text-primary-foreground"
-            aria-label={t("join.server")}
-          >
-            <Plus className="h-5 w-5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right" className="font-semibold">
-          {t("join.server")}
-        </TooltipContent>
-      </Tooltip>
+      <DropdownMenu open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+        {/* The tooltip would otherwise stay on top of the open menu. */}
+        <Tooltip open={addTooltipOpen && !addMenuOpen} onOpenChange={setAddTooltipOpen}>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="mx-3 mt-2 flex h-12 w-12 items-center justify-center rounded-[24px] bg-nx-guild-bar text-nx-online transition-all hover:rounded-[16px] hover:bg-nx-online hover:text-primary-foreground"
+                aria-label={t("createServer.add")}
+              >
+                <Plus className="h-5 w-5" />
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="font-semibold">
+            {t("createServer.add")}
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent side="right" align="end">
+          <DropdownMenuItem onSelect={() => setCreateOpen(true)}>{t("createServer.title")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setJoinOpen(true)}>{t("join.server")}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <JoinRoomDialog open={joinOpen} onOpenChange={setJoinOpen} onJoined={onRoomJoined} />
+      {createOpen && <CreateServerDialog onOpenChange={setCreateOpen} onCreated={onServerCreated} />}
     </nav>
   )
 }

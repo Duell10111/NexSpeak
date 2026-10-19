@@ -34,7 +34,9 @@ with the new login.
 - **Set up encryption:** open **Settings → Security** and create a recovery key, or verify this
   device with another one. Without it you can't read older encrypted messages on new devices. See
   [Encryption](encryption.md).
-- **Join a server:** choose **Join a server** in the server list and enter an address
+- **Create a server:** choose **Add a server → Create a server** in the server list. Enter a name;
+  NexSpeak creates a server with a **general** channel for text and voice.
+- **Join a server:** choose **Add a server → Join a server** in the server list and enter an address
   like `#community:matrix.org`, or accept an invite under **Invites**.
 - **Write to someone:** open **Direct Messages** at the top of the server list and choose **Start a
   direct message**.
