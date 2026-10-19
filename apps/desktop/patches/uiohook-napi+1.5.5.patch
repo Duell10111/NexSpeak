@@ -1,0 +1,83 @@
+--- a/src/lib/addon.c
++++ b/src/lib/addon.c
+@@ -8,7 +8,25 @@
+ static napi_threadsafe_function threadsafe_fn = NULL;
+ static bool is_worker_running = false;
+ 
++// Written before starting the hook thread and unchanged until it has joined.
++static uint32_t ptt_keycode = 0;
++static uint32_t ptt_button = 0;
++
+ void dispatch_proc(uiohook_event* const event) {
++  // Reject unrelated input before allocating or waking the JavaScript thread.
++  switch (event->type) {
++  case EVENT_KEY_PRESSED:
++  case EVENT_KEY_RELEASED:
++    if (ptt_keycode == 0 || event->data.keyboard.keycode != ptt_keycode) return;
++    break;
++  case EVENT_MOUSE_PRESSED:
++  case EVENT_MOUSE_RELEASED:
++    if (ptt_button == 0 || event->data.mouse.button != ptt_button) return;
++    break;
++  default:
++    return;
++  }
++
+   if (threadsafe_fn == NULL) return;
+ 
+   uiohook_event* copied_event = malloc(sizeof(uiohook_event));
+@@ -183,10 +201,28 @@
+ 
+   napi_status status;
+ 
+-  size_t info_argc = 1;
+-  napi_value info_argv[1];
++  size_t info_argc = 3;
++  napi_value info_argv[3];
+   status = napi_get_cb_info(env, info, &info_argc, info_argv, NULL, NULL);
+   NAPI_THROW_IF_FAILED(env, status, NULL);
++
++  if (info_argc != 3) {
++    napi_throw_type_error(env, NULL, "Expected callback, keycode and mouse button.");
++    return NULL;
++  }
++
++  uint32_t keycode, button;
++  status = napi_get_value_uint32(env, info_argv[1], &keycode);
++  NAPI_THROW_IF_FAILED(env, status, NULL);
++  status = napi_get_value_uint32(env, info_argv[2], &button);
++  NAPI_THROW_IF_FAILED(env, status, NULL);
++  if (!((keycode > 0 && keycode <= UINT16_MAX && button == 0) ||
++        (keycode == 0 && button >= 3 && button <= 5))) {
++    napi_throw_range_error(env, NULL, "Expected one push-to-talk key or Mouse3-Mouse5.");
++    return NULL;
++  }
++  ptt_keycode = keycode;
++  ptt_button = button;
+ 
+   napi_value cb = info_argv[0];
+ 
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -178,8 +178,8 @@
+                 break;
+         }
+     }
+-    start() {
+-        lib.start(this.handler.bind(this));
++    start(keycode, button) {
++        lib.start(this.handler.bind(this), keycode, button);
+     }
+     stop() {
+         lib.stop();
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -185,7 +185,7 @@
+ }
+ declare class UiohookNapi extends EventEmitter {
+     private handler;
+-    start(): void;
++    start(keycode: number, button: number): void;
+     stop(): void;
+     keyTap(key: number, modifiers?: number[]): void;
+     keyToggle(key: number, toggle: 'down' | 'up'): void;

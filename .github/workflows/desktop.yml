@@ -65,7 +65,15 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Install input hook build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libxrandr-dev libxt-dev
+
       - run: npm ci
+
+      - name: Build the other macOS input hook architecture
+        if: runner.os == 'macOS'
+        run: npm run build:input-hook -w @nexspeak/desktop -- ${{ runner.arch == 'ARM64' && 'x64' || 'arm64' }}
 
       - name: Build web app
         run: npm run build

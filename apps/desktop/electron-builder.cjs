@@ -35,8 +35,9 @@ module.exports = {
     { from: "../web/security-headers.json", to: "web/security-headers.json" },
   ],
   asar: true,
-  // uiohook-napi ships N-API prebuilds for every target (loaded by node-gyp-build), which work in
-  // Electron unchanged; rebuilding from source would need the X11 headers on Linux.
+  // postinstall replaces upstream's unfiltered prebuilds with our patched N-API binary. The
+  // Desktop workflow also builds macOS x64 before packaging both architectures. N-API works in
+  // Electron unchanged; do not let electron-builder replace the filtered binaries.
   npmRebuild: false,
   // Deep links (Info.plist on macOS, .desktop file on Linux; Windows registers at runtime).
   protocols: [{ name: productName, schemes: [nightly ? "nexspeak-nightly" : "nexspeak"] }],

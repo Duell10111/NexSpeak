@@ -60,6 +60,7 @@ playwright-report/
 # desktop app build output
 /apps/desktop/dist/
 /apps/desktop/release/
+/apps/desktop/native-test/build/
 
 # Documentation build (docs/, Sphinx)
 /docs/_build/

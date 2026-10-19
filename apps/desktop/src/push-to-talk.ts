@@ -1,7 +1,6 @@
 // Global push-to-talk: a system-wide keyboard/mouse hook (uiohook) that also sees keys while a game
 // has the focus. It runs only while the web app has set a key, i.e. during a call with
-// push-to-talk; the hook receives every input event (including mouse moves), so it must not run
-// longer than needed.
+// push-to-talk. The patched native addon forwards only the bound key/button's down/up events.
 import { ipcMain, systemPreferences, type IpcMainInvokeEvent, type WebContents } from "electron"
 import { uIOhook, UiohookKey, type UiohookKeyboardEvent, type UiohookMouseEvent } from "uiohook-napi"
 import type { PushToTalkStatus } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
@@ -44,6 +43,7 @@ export function pushToTalkStatus(): PushToTalkStatus {
 export function setupPushToTalk(webContents: () => WebContents | undefined): void {
   let binding: Binding | null = null
   let isHookRunning = false
+  let runningBinding: Binding | null = null
   let isPressed = false
 
   const setPressed = (pressed: boolean) => {
@@ -68,13 +68,20 @@ export function setupPushToTalk(webContents: () => WebContents | undefined): voi
   const update = (): PushToTalkStatus => {
     const status = pushToTalkStatus()
     const shouldRun = binding !== null && status === "active"
-    if (shouldRun && !isHookRunning) {
-      uIOhook.start()
-      isHookRunning = true
-    } else if (!shouldRun && isHookRunning) {
+    const sameBinding = binding?.kind === "key"
+      ? runningBinding?.kind === "key" && runningBinding.keycode === binding.keycode
+      : binding?.kind === "mouse" && runningBinding?.kind === "mouse" && runningBinding.button === binding.button
+    // The native filter is immutable while its thread runs. Rebind only after stop has joined it.
+    if (isHookRunning && (!shouldRun || !sameBinding)) {
       uIOhook.stop()
       isHookRunning = false
+      runningBinding = null
       setPressed(false)
+    }
+    if (shouldRun && !isHookRunning && binding) {
+      uIOhook.start(binding.kind === "key" ? binding.keycode : 0, binding.kind === "mouse" ? binding.button : 0)
+      isHookRunning = true
+      runningBinding = binding
     }
     return status
   }

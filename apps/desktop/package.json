@@ -8,6 +8,8 @@
   "homepage": "https://github.com/Duell10111/NexSpeak",
   "main": "dist/main.js",
   "scripts": {
+    "build:input-hook": "node scripts/build-input-hook.mjs",
+    "test:input-hook": "node scripts/test-input-hook.mjs",
     "build": "tsc -p .",
     "typecheck": "tsc -p . --noEmit",
     "dev": "npm run -s build && NEXSPEAK_DEV_URL=http://localhost:3000 electron .",
