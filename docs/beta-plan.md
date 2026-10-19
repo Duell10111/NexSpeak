@@ -171,6 +171,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Call duration next to active voice channels in the sidebar (#29)
 - Incoming-call prompt with join/decline for direct calls (#34)
 - Configurable global shortcuts for mute, deafen and disconnect (#35)
+- Push-to-talk hook subscribes only to the events its binding needs, at the OS level (#74)
 - Share system audio with the screen on macOS (#36)
 - Custom, stackable roles (#32) and granular permissions with category/channel overrides (#33),
   designed together on top of power levels
