@@ -23,6 +23,7 @@ import {
   SignalHigh,
   SignalLow,
   SignalZero,
+  Users,
   Video,
   Volume2,
   X,
@@ -36,7 +37,7 @@ import { PING_HISTORY_LENGTH } from "@nexspeak/core/connection-stats"
 import type { CallConnectionQuality } from "@nexspeak/core/matrix/call-session"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { joinSpaceChannels, rememberDirectRoom } from "@nexspeak/core/matrix/direct"
-import type { MatrixRoom } from "@nexspeak/core/matrix/types"
+import { FRIENDS_VIEW_ID, type MatrixRoom } from "@nexspeak/core/matrix/types"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { SettingsDialog, type SettingsTab } from "@/components/nexspeak/settings-dialog"
 import { useShowUpdates } from "@/components/nexspeak/desktop-update"
@@ -44,6 +45,10 @@ import { PRESENCE_DOT, PRESENCE_LABEL, PresencePicker } from "@/components/nexsp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
 import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
+import { useFriends } from "@/components/nexspeak/friends-context"
+import { PresenceAvatar } from "@/components/nexspeak/presence-avatar"
+import { usePresence } from "@/hooks/usePresence"
+import type { UserPresence } from "@nexspeak/core/matrix/presence"
 import {
   CategoryContextMenu,
   ChannelContextMenu,
@@ -131,12 +136,15 @@ function RoomItem({
   room,
   isActive,
   isDirectMessages,
+  presence,
   callInfo,
   onSelect,
 }: {
   room: MatrixRoom
   isActive: boolean
   isDirectMessages: boolean
+  /** For 1:1 DMs: the other person's presence. */
+  presence?: UserPresence
   callInfo?: RoomCallInfo
   onSelect: () => void
 }) {
@@ -170,7 +178,13 @@ function RoomItem({
           title={isDirectMessages ? undefined : t("channel.doubleClickToJoin")}
         >
           {isDirectMessages ? (
-            <MatrixAvatar mxcUrl={room.avatarMxc} name={room.name} size={32} className="mr-1.5 text-xs" />
+            <PresenceAvatar
+              mxcUrl={room.avatarMxc}
+              name={room.name}
+              presence={presence}
+              className="mr-1.5"
+              dotClassName={isActive ? "border-nx-active" : "border-secondary group-hover:border-nx-hover"}
+            />
           ) : hasCall ? (
             <Volume2 className={cn("h-5 w-5 shrink-0", isOwnCall ? "text-nx-online" : "opacity-70")} />
           ) : room.iconMxc ? (
@@ -240,6 +254,34 @@ function RoomItem({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Discord's "Friends" entry at the top of Home, with the number of incoming requests. */
+function FriendsEntry({ isActive, incomingRequests, onSelect }: { isActive: boolean; incomingRequests: number; onSelect: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="mx-2 mt-2">
+      <button
+        onClick={onSelect}
+        className={cn(
+          "flex h-[42px] w-full items-center gap-3 rounded px-2 text-left text-[15px] font-medium transition-colors",
+          isActive ? "bg-nx-active text-foreground" : "text-muted-foreground hover:bg-nx-hover hover:text-nx-hover-foreground",
+        )}
+        aria-current={isActive ? "page" : undefined}
+      >
+        <Users className="mx-1 h-6 w-6 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{t("friends.title")}</span>
+        {incomingRequests > 0 && (
+          <span
+            className="flex h-4 min-w-4 items-center justify-center rounded-full bg-nx-dnd px-1 text-[11px] font-bold text-white"
+            aria-label={t("friends.countPending", { count: incomingRequests })}
+          >
+            {incomingRequests > 99 ? "99+" : incomingRequests}
+          </span>
+        )}
+      </button>
     </div>
   )
 }
@@ -575,12 +617,14 @@ function ChannelList({
   sections,
   isDirectMessages,
   activeChannelId,
+  presenceByUser,
   onChannelSelect,
   onNewDm,
 }: {
   sections: RoomSection[]
   isDirectMessages: boolean
   activeChannelId: string
+  presenceByUser: Record<string, UserPresence>
   onChannelSelect: (id: string) => void
   onNewDm: () => void
 }) {
@@ -698,6 +742,7 @@ function ChannelList({
                     room={room}
                     isActive={activeChannelId === room.id}
                     isDirectMessages={isDirectMessages}
+                    presence={room.directUserId ? presenceByUser[room.directUserId] : undefined}
                     callInfo={callInfoByRoom[room.id]}
                     onSelect={() => onChannelSelect(room.id)}
                   />
@@ -770,6 +815,12 @@ export function ChannelSidebar({
   const profile = useOwnProfile(client)
   const openDirectMessage = useOpenDirectMessage()
   const { isMicMuted, isDeafened, toggleMicrophone, toggleDeafen } = useCallContext()
+  const incomingRequests = useFriends().filter((friend) => friend.status === "incoming").length
+  // Presence only for the DM list on Home; servers show it in the member list.
+  const presenceByUser = usePresence(
+    client,
+    isDirectMessages ? sections.flatMap((section) => section.rooms.flatMap((room) => (room.directUserId ? [room.directUserId] : []))) : [],
+  )
 
   const openSettings = (tab: SettingsTab) => {
     setSettingsTab(tab)
@@ -799,6 +850,13 @@ export function ChannelSidebar({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
+        {isDirectMessages && (
+          <FriendsEntry
+            isActive={activeChannelId === FRIENDS_VIEW_ID}
+            incomingRequests={incomingRequests}
+            onSelect={() => onChannelSelect(FRIENDS_VIEW_ID)}
+          />
+        )}
         {invites.length > 0 && (
           <div>
             <SectionHeader title={t("invite.section", { count: invites.length })} />
@@ -814,6 +872,7 @@ export function ChannelSidebar({
           sections={sections}
           isDirectMessages={isDirectMessages}
           activeChannelId={activeChannelId}
+          presenceByUser={presenceByUser}
           onChannelSelect={onChannelSelect}
           onNewDm={() => setNewDmOpen(true)}
         />

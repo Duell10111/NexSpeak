@@ -21,6 +21,8 @@ export interface MatrixRoom {
   membership: string
   /** For invites: who invited us. */
   inviter?: string
+  /** For 1:1 direct messages: the other person. */
+  directUserId?: string
 }
 
 export type MessageKind =
@@ -102,6 +104,8 @@ export interface MatrixSpace {
 }
 
 export const DIRECT_MESSAGES_ID = '__dm__'
+/** The friends view on Home, selected like a room. */
+export const FRIENDS_VIEW_ID = '__friends__'
 
 export function isSpaceRoom(room: Room): boolean {
   return room.isSpaceRoom()

@@ -16,14 +16,16 @@ import { useAttentionBadge, useMessageNotifications } from "@/hooks/useMessageNo
 import { SecurityProvider } from "@/components/nexspeak/security-context"
 import { SecurityBanner } from "@/components/nexspeak/security-panel"
 import { NavigationProvider } from "@/components/nexspeak/navigation-context"
+import { FriendsProvider } from "@/components/nexspeak/friends-context"
+import { FriendsView } from "@/components/nexspeak/friends-view"
 import { useMatrix } from "@/components/matrix-provider"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
-import { attentionCount, useRoomDirectory, type RoomDirectory } from "@/hooks/useRoomDirectory"
+import { attentionCount, incomingFriendRequests, useRoomDirectory, type RoomDirectory } from "@/hooks/useRoomDirectory"
 import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
-import { DIRECT_MESSAGES_ID } from "@nexspeak/core/matrix/types"
+import { DIRECT_MESSAGES_ID, FRIENDS_VIEW_ID } from "@nexspeak/core/matrix/types"
 
 const SELECTION_KEY = "nexspeak_selection"
 // Matches Tailwind's lg breakpoint, where the member list fits next to the chat.
@@ -46,6 +48,7 @@ function loadSelection(): Selection {
 
 function findServerFor(directory: RoomDirectory, roomId: string): string | null {
   if (!roomId) return null
+  if (roomId === FRIENDS_VIEW_ID) return DIRECT_MESSAGES_ID
   if (directory.spaces.some((space) => space.id === roomId)) return roomId
   const space = directory.spaces.find((candidate) =>
     directory.roomsBySpace[candidate.id]?.some((room) => room.id === roomId),
@@ -110,17 +113,25 @@ export default function NexSpeakApp() {
         rooms: section.rooms,
       }))
   const serverRooms = sections.flatMap((section) => section.rooms)
-  const channelId = serverRooms.some((room) => room.id === selection.channelId)
+  const isSelectable = (id: string | undefined): id is string =>
+    Boolean(id) && ((isDirectMessages && id === FRIENDS_VIEW_ID) || serverRooms.some((room) => room.id === id))
+  // Home opens on the friends view, like Discord.
+  const channelId = isSelectable(selection.channelId)
     ? selection.channelId
-    : lastChannelByServer[serverId] && serverRooms.some((room) => room.id === lastChannelByServer[serverId])
+    : isSelectable(lastChannelByServer[serverId])
       ? lastChannelByServer[serverId]
-      : serverRooms[0]?.id || ""
+      : isDirectMessages
+        ? FRIENDS_VIEW_ID
+        : serverRooms[0]?.id || ""
+  const isFriendsView = channelId === FRIENDS_VIEW_ID
 
   const title = isDirectMessages
     ? t("nav.home")
     : directory.spaces.find((space) => space.id === serverId)?.name || t("nav.server")
   const homeUnread =
-    directory.directRooms.reduce((sum, room) => sum + room.unread, 0) + directory.invites.length
+    directory.directRooms.reduce((sum, room) => sum + room.unread, 0) +
+    directory.invites.length +
+    incomingFriendRequests(directory)
 
   const handleServerSelect = (nextServerId: string) => {
     setSelection({ serverId: nextServerId, channelId: lastChannelByServer[nextServerId] || "" })
@@ -220,49 +231,55 @@ export default function NexSpeakApp() {
   return (
     <SecurityProvider client={client}>
       <NavigationProvider openRoom={openRoom}>
-        <CallProvider client={client} activeChannelId={channelId}>
-          <DesktopTrayVoice />
-          <DesktopUpdateNotice />
-          <MatrixLinkHandler openRoom={openRoom} selectServer={handleServerSelect} onRoomJoined={handleRoomJoined} />
-          <div className="flex h-dvh w-screen flex-col overflow-hidden">
-            <SecurityBanner />
-            {isConnectionLost && (
-              <div
-                className="flex shrink-0 items-center justify-center gap-2 bg-destructive px-4 py-1 text-xs font-medium text-destructive-foreground"
-                role="status"
-              >
-                <WifiOff className="h-3.5 w-3.5" />
-                {t("app.connectionLost")}
-              </div>
-            )}
-            <main className="flex min-h-0 flex-1">
-              <div className="hidden md:flex">{navigation}</div>
-              <ChatArea
-                key={channelId}
-                activeChannelId={channelId}
-                showMembers={showMembers}
-                onToggleMembers={handleToggleMembers}
-                onOpenNavigation={() => setIsNavigationOpen(true)}
-              />
-            </main>
+        <FriendsProvider friends={directory.friends}>
+          <CallProvider client={client} activeChannelId={channelId}>
+            <DesktopTrayVoice />
+            <DesktopUpdateNotice />
+            <MatrixLinkHandler openRoom={openRoom} selectServer={handleServerSelect} onRoomJoined={handleRoomJoined} />
+            <div className="flex h-dvh w-screen flex-col overflow-hidden">
+              <SecurityBanner />
+              {isConnectionLost && (
+                <div
+                  className="flex shrink-0 items-center justify-center gap-2 bg-destructive px-4 py-1 text-xs font-medium text-destructive-foreground"
+                  role="status"
+                >
+                  <WifiOff className="h-3.5 w-3.5" />
+                  {t("app.connectionLost")}
+                </div>
+              )}
+              <main className="flex min-h-0 flex-1">
+                <div className="hidden md:flex">{navigation}</div>
+                {isFriendsView ? (
+                  <FriendsView onOpenNavigation={() => setIsNavigationOpen(true)} />
+                ) : (
+                  <ChatArea
+                    key={channelId}
+                    activeChannelId={channelId}
+                    showMembers={showMembers}
+                    onToggleMembers={handleToggleMembers}
+                    onOpenNavigation={() => setIsNavigationOpen(true)}
+                  />
+                )}
+              </main>
 
-            {/* Mobile: navigation and member list as slide-in panels, closed by tapping outside (their X would cover the headers). */}
-            <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
-              <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none [&>button:last-child]:hidden">
-                <SheetTitle className="sr-only">{t("nav.navigation")}</SheetTitle>
-                <SheetDescription className="sr-only">{t("nav.navigationDescription")}</SheetDescription>
-                <div className="flex h-full">{navigation}</div>
-              </SheetContent>
-            </Sheet>
-            <Sheet open={isMemberSheetOpen} onOpenChange={setIsMemberSheetOpen}>
-              <SheetContent side="right" className="w-auto gap-0 p-0 [&>button:last-child]:hidden">
-                <SheetTitle className="sr-only">{t("members.title")}</SheetTitle>
-                <SheetDescription className="sr-only">{t("members.description")}</SheetDescription>
-                {channelId && <MemberList activeRoomId={channelId} />}
-              </SheetContent>
-            </Sheet>
-          </div>
-        </CallProvider>
+              {/* Mobile: navigation and member list as slide-in panels, closed by tapping outside (their X would cover the headers). */}
+              <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
+                <SheetContent side="left" className="w-auto max-w-none gap-0 p-0 sm:max-w-none [&>button:last-child]:hidden">
+                  <SheetTitle className="sr-only">{t("nav.navigation")}</SheetTitle>
+                  <SheetDescription className="sr-only">{t("nav.navigationDescription")}</SheetDescription>
+                  <div className="flex h-full">{navigation}</div>
+                </SheetContent>
+              </Sheet>
+              <Sheet open={isMemberSheetOpen} onOpenChange={setIsMemberSheetOpen}>
+                <SheetContent side="right" className="w-auto gap-0 p-0 [&>button:last-child]:hidden">
+                  <SheetTitle className="sr-only">{t("members.title")}</SheetTitle>
+                  <SheetDescription className="sr-only">{t("members.description")}</SheetDescription>
+                  {channelId && !isFriendsView && <MemberList activeRoomId={channelId} />}
+                </SheetContent>
+              </Sheet>
+            </div>
+          </CallProvider>
+        </FriendsProvider>
       </NavigationProvider>
     </SecurityProvider>
   )

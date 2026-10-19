@@ -144,8 +144,8 @@ export async function login(page: Page, user: TestUser, loginUrl = "/login"): Pr
   await page.getByLabel("Benutzername").fill(user.username)
   await page.getByLabel("Passwort").fill(user.password)
   await page.getByRole("button", { name: "Anmelden" }).click()
-  // The main layout is shown once the initial sync completed (desktop and mobile).
-  await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus."))).toBeVisible({ timeout: 60_000 })
+  // The main layout is shown once the initial sync completed (desktop and mobile); Home opens on the friends view.
+  await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus.")).or(page.getByRole("heading", { level: 3, name: "Freunde" }))).toBeVisible({ timeout: 60_000 })
 }
 
 export async function openRoom(page: Page, name: string): Promise<void> {

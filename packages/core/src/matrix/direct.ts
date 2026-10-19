@@ -85,27 +85,42 @@ async function canEncryptTo(client: MatrixClient, userIds: string[]): Promise<bo
   }
 }
 
-/**
- * Open the DM with these users: reuses an existing 1:1 DM, otherwise creates a new room
- * (encrypted when possible) and records it in m.direct.
- */
-export async function startDirectMessage(client: MatrixClient, userIds: string[]): Promise<string> {
-  if (userIds.length === 1) {
-    const existing = findDirectRoom(client, userIds[0])
-    if (existing) return existing.roomId
-  }
+export interface DirectRoomExtras {
+  /** Additional state events for the new room. */
+  initialState?: Array<{ type: string; state_key: string; content: Record<string, unknown> }>
+  /** Extra `m.room.create` content; homeservers show it to invitees before they join. */
+  creationContent?: Record<string, unknown>
+}
 
+/**
+ * Creates a new DM room with these users (encrypted when possible) and records it in m.direct.
+ * Trusted private chat: the invitees get the same power level, so both sides may send state.
+ */
+export async function createDirectRoom(client: MatrixClient, userIds: string[], extras: DirectRoomExtras = {}): Promise<string> {
   const encrypted = await canEncryptTo(client, userIds)
   const { room_id: roomId } = await client.createRoom({
     preset: Preset.TrustedPrivateChat,
     is_direct: true,
     invite: userIds,
-    initial_state: encrypted
-      ? [{ type: EventType.RoomEncryption, state_key: '', content: { algorithm: 'm.megolm.v1.aes-sha2' } }]
-      : [],
+    creation_content: extras.creationContent,
+    initial_state: [
+      ...(encrypted
+        ? [{ type: EventType.RoomEncryption, state_key: '', content: { algorithm: 'm.megolm.v1.aes-sha2' } }]
+        : []),
+      ...(extras.initialState ?? []),
+    ],
   })
   await addDirectRoom(client, userIds, roomId)
   return roomId
+}
+
+/** Open the DM with these users: reuses an existing 1:1 DM, otherwise creates a new room. */
+export async function startDirectMessage(client: MatrixClient, userIds: string[]): Promise<string> {
+  if (userIds.length === 1) {
+    const existing = findDirectRoom(client, userIds[0])
+    if (existing) return existing.roomId
+  }
+  return createDirectRoom(client, userIds)
 }
 
 /** After accepting an invite that was sent as a DM, remember it as one. */

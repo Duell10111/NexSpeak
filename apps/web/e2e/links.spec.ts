@@ -25,7 +25,7 @@ test("returning from SSO with a login token logs in", async ({ browser }) => {
   )
 
   await page.goto(`/login?loginToken=${encodeURIComponent(token)}`)
-  await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus."))).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus.")).or(page.getByRole("heading", { level: 3, name: "Freunde" }))).toBeVisible({ timeout: 60_000 })
   expect(new URL(page.url()).search).toBe("")
 })
 
