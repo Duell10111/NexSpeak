@@ -749,7 +749,12 @@ function ChannelList({
                 )
                 if (isDirectMessages || !management) {
                   return (
-                    <ChannelContextMenu key={room.id} room={room} sections={[]}>
+                    <ChannelContextMenu
+                      key={room.id}
+                      room={room}
+                      sections={[]}
+                      leavable={isDirectMessages ? (isDmSection ? "direct" : "room") : undefined}
+                    >
                       {item}
                     </ChannelContextMenu>
                   )

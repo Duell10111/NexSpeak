@@ -230,7 +230,7 @@ export default function NexSpeakApp() {
 
   return (
     <SecurityProvider client={client}>
-      <NavigationProvider openRoom={openRoom}>
+      <NavigationProvider openRoom={openRoom} activeRoomId={channelId}>
         <FriendsProvider friends={directory.friends}>
           <CallProvider client={client} activeChannelId={channelId}>
             <DesktopTrayVoice />
@@ -258,6 +258,13 @@ export default function NexSpeakApp() {
                     showMembers={showMembers}
                     onToggleMembers={handleToggleMembers}
                     onOpenNavigation={() => setIsNavigationOpen(true)}
+                    leavable={
+                      isDirectMessages
+                        ? directory.directRooms.some((room) => room.id === channelId)
+                          ? "direct"
+                          : "room"
+                        : undefined
+                    }
                   />
                 )}
               </main>

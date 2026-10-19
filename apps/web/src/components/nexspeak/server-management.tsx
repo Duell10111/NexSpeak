@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/context-menu"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
 import { ReportDialog } from "@/components/nexspeak/report-dialog"
+import { LeaveRoomDialog } from "@/components/nexspeak/leave-room"
 import {
   NotificationModeContextItems,
   NotificationModeDropdownItems,
@@ -395,20 +396,24 @@ export function ServerHeaderMenu({ title }: { title: string }) {
 
 /**
  * Right-click menu of a channel or DM (long press on touch screens): notifications and reporting
- * for everyone, managing for those who may.
+ * for everyone, managing for those who may, leaving for DMs and rooms under Home.
  */
 export function ChannelContextMenu({
   room,
   sections,
+  leavable,
   children,
 }: {
   room: MatrixRoom
   sections: ManagedSection[]
+  /** A DM or a room outside any server, which can be left on its own. */
+  leavable?: "direct" | "room"
   children: ReactNode
 }) {
   const { t } = useTranslation()
   const management = useServerManagement()
   const [reporting, setReporting] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const canEdit = Boolean(management?.canEdit(room.id))
   const canInvite = Boolean(management?.canInviteTo(room.id))
   const canManage = Boolean(management?.canManage)
@@ -470,6 +475,12 @@ export function ChannelContextMenu({
             </>
           )}
           <ContextMenuSeparator />
+          {leavable && (
+            <ContextMenuItem variant="destructive" onSelect={() => setLeaving(true)}>
+              <LogOut className="h-4 w-4" />
+              {t("leave.confirm")}
+            </ContextMenuItem>
+          )}
           <ContextMenuItem variant="destructive" onSelect={() => setReporting(true)}>
             <Flag className="h-4 w-4" />
             {t("report.room")}
@@ -486,6 +497,13 @@ export function ChannelContextMenu({
         target={reporting ? { kind: "room", roomId: room.id, roomName: room.name } : null}
         onOpenChange={setReporting}
       />
+      {leavable && (
+        <LeaveRoomDialog
+          room={{ id: room.id, name: room.name, isDirect: leavable === "direct" }}
+          open={leaving}
+          onOpenChange={setLeaving}
+        />
+      )}
     </>
   )
 }

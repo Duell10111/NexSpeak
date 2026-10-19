@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
 import { useState } from "react"
-import { AtSign, Hash, Lock, Menu, MessagesSquare, Users, Volume2 } from "lucide-react"
+import { AtSign, Hash, Lock, LogOut, Menu, MessagesSquare, Users, Volume2 } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomInfo } from "@/hooks/useRoomInfo"
@@ -12,6 +12,7 @@ import { useTranslation } from "@/hooks/useTranslation"
 import { CallArea } from "@/components/nexspeak/call-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { RoomChat } from "@/components/nexspeak/room-chat"
+import { LeaveRoomDialog } from "@/components/nexspeak/leave-room"
 import { PinnedMessagesButton } from "@/components/nexspeak/pinned-messages"
 import { ThreadPanel, type ThreadPanelView } from "@/components/nexspeak/thread-panel"
 import { NotificationModeIcon, NotificationModeDropdownItems } from "@/components/nexspeak/notification-mode-menu"
@@ -30,6 +31,8 @@ interface ChatAreaProps {
   onToggleMembers: () => void
   /** Mobile only: open the server/channel navigation. */
   onOpenNavigation: () => void
+  /** A DM or a room outside any server, which can be left from the header. */
+  leavable?: "direct" | "room"
 }
 
 export function HeaderButton({
@@ -95,7 +98,7 @@ function NotificationModeButton({ roomId }: { roomId: string }) {
   )
 }
 
-export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpenNavigation }: ChatAreaProps) {
+export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpenNavigation, leavable }: ChatAreaProps) {
   const { t } = useTranslation()
   const { isInCallInActiveChannel, joinCall, joiningRoomId } = useCallContext()
   const { client } = useMatrixClient()
@@ -103,6 +106,7 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
   const roomName = roomInfo?.name || ""
   // ChatArea is keyed by channel, so this resets when switching channels.
   const [threadView, setThreadView] = useState<ThreadPanelView | null>(null)
+  const [isLeaving, setIsLeaving] = useState(false)
 
   if (!activeChannelId) {
     return (
@@ -180,8 +184,20 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
           <HeaderButton label={t("members.list")} active={showMembers} onClick={onToggleMembers}>
             <Users className="h-6 w-6" />
           </HeaderButton>
+          {leavable && roomInfo?.exists && (
+            <HeaderButton label={t("leave.confirm")} onClick={() => setIsLeaving(true)}>
+              <LogOut className="h-5 w-5" />
+            </HeaderButton>
+          )}
         </div>
       </header>
+      {leavable && (
+        <LeaveRoomDialog
+          room={{ id: activeChannelId, name: roomName, isDirect: leavable === "direct" }}
+          open={isLeaving}
+          onOpenChange={setIsLeaving}
+        />
+      )}
 
       <div className="relative flex min-h-0 flex-1">
         <RoomChat

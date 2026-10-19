@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { createSpace, getDirectRooms, login, messageRow, newPage, registerUser, sendMessage } from "./helpers"
+import { createRoom, createSpace, getDirectRooms, getJoinedRoomIds, login, matrixApi, messageRow, newPage, registerUser, sendMessage } from "./helpers"
 
 async function pickUser(page: Page, userId: string) {
   const dialog = page.getByRole("dialog")
@@ -43,6 +43,39 @@ test("start a direct message with someone you share no room with", async ({ brow
   await alicePage.getByRole("button", { name: "Nachricht senden" }).click()
   await expect(alicePage.getByRole("heading", { level: 3, name: bob.username })).toBeVisible()
   expect((await getDirectRooms(alice))[bob.userId]).toEqual([roomId])
+})
+
+test("leave a direct message and a room outside a server", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const carol = await registerUser("carol")
+  const groupId = await createRoom(bob, { name: "Lerngruppe", members: [alice, carol] })
+
+  const alicePage = await newPage(browser)
+  await login(alicePage, alice)
+  await alicePage.getByRole("button", { name: "Unterhaltung finden oder starten" }).click()
+  const dialog = await pickUser(alicePage, bob.userId)
+  await dialog.getByRole("button", { name: "Nachricht schreiben" }).click()
+  await expect(alicePage.getByRole("heading", { level: 3, name: bob.username })).toBeVisible()
+  const dmId = (await getDirectRooms(alice))[bob.userId][0]
+  await matrixApi(bob, "POST", `/join/${encodeURIComponent(dmId)}`, {})
+
+  // From the chat header: back to Home, the DM is gone from the list and from m.direct.
+  await alicePage.getByRole("button", { name: "Verlassen" }).click()
+  const confirm = alicePage.getByRole("alertdialog")
+  await expect(confirm.getByRole("heading", { name: `„${bob.username}“ verlassen?` })).toBeVisible()
+  await confirm.getByRole("button", { name: "Verlassen" }).click()
+  await expect(alicePage.getByRole("heading", { level: 3, name: "Freunde" })).toBeVisible()
+  await expect(alicePage.getByRole("button", { name: new RegExp(bob.username) })).toHaveCount(0)
+  await expect.poll(async () => (await getJoinedRoomIds(alice)).includes(dmId)).toBe(false)
+  await expect.poll(async () => (await getDirectRooms(alice))[bob.userId]).toBeUndefined()
+
+  // From the context menu of a room under Home.
+  await alicePage.getByRole("button", { name: /Lerngruppe/ }).click({ button: "right" })
+  await alicePage.getByRole("menuitem", { name: "Verlassen" }).click()
+  await alicePage.getByRole("alertdialog").getByRole("button", { name: "Verlassen" }).click()
+  await expect(alicePage.getByRole("button", { name: /Lerngruppe/ })).toHaveCount(0)
+  await expect.poll(async () => (await getJoinedRoomIds(alice)).includes(groupId)).toBe(false)
 })
 
 test("friends: send a request, accept it, message and remove the friend", async ({ browser }) => {

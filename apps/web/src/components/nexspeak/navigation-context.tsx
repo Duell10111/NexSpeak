@@ -11,15 +11,18 @@ import { DIRECT_MESSAGES_ID } from "@nexspeak/core/matrix/types"
 interface NavigationContextValue {
   /** Show a room; `serverId` helps while a brand-new room is not in the room list yet. */
   openRoom: (roomId: string, serverId?: string) => void
+  /** The room (or view) shown right now. */
+  activeRoomId: string
 }
 
 const NavigationContext = createContext<NavigationContextValue | undefined>(undefined)
 
 export function NavigationProvider({
   openRoom,
+  activeRoomId,
   children,
 }: NavigationContextValue & { children: ReactNode }) {
-  return <NavigationContext.Provider value={{ openRoom }}>{children}</NavigationContext.Provider>
+  return <NavigationContext.Provider value={{ openRoom, activeRoomId }}>{children}</NavigationContext.Provider>
 }
 
 export function useNavigation(): NavigationContextValue {
