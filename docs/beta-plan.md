@@ -155,9 +155,15 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ### Later (0.3+)
 
-- Message search, link previews (opt-in), custom emoji (`im.ponies`), polls
+- Message search with filters (#37), link previews (opt-in, #40), custom emoji (`im.ponies`, #39),
+  polls (#38)
 - GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
-- Better noise suppression and voice activity detection
+- Play audio and video attachments inline, loaded only on play (#42)
+- Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)
+- Custom status text and "Do not disturb" (#45)
+- Better noise suppression and voice activity detection (#41)
+- Camera selection and camera preview (#43)
+- Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33
 - Sound cues for join, leave and screensharing, can be turned off (#22)
 - Soundboard like Discord: server sounds played on each client, can be turned off (#26)
 - Call duration next to active voice channels in the sidebar (#29)
