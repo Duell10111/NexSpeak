@@ -65,6 +65,12 @@ export interface RoomSection {
   rooms: MatrixRoom[]
 }
 
+/** Rooms that can be left on their own: under Home, DMs ("direct" section) and rooms outside any server. */
+export function leavableKind(section: RoomSection | undefined, isDirectMessages: boolean): "direct" | "room" | undefined {
+  if (!isDirectMessages || !section) return undefined
+  return section.id === "direct" ? "direct" : "room"
+}
+
 interface ChannelSidebarProps {
   title: string
   sections: RoomSection[]
@@ -753,7 +759,7 @@ function ChannelList({
                       key={room.id}
                       room={room}
                       sections={[]}
-                      leavable={isDirectMessages ? (isDmSection ? "direct" : "room") : undefined}
+                      leavable={leavableKind(section, isDirectMessages)}
                     >
                       {item}
                     </ChannelContextMenu>

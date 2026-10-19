@@ -191,11 +191,10 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
           )}
         </div>
       </header>
-      {leavable && (
+      {leavable && isLeaving && (
         <LeaveRoomDialog
           room={{ id: activeChannelId, name: roomName, isDirect: leavable === "direct" }}
-          open={isLeaving}
-          onOpenChange={setIsLeaving}
+          onClose={() => setIsLeaving(false)}
         />
       )}
 

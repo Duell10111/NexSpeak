@@ -489,7 +489,6 @@ export const de = {
   'manage.deleted': 'Gelöscht.',
   'manage.deleteFailed': 'Löschen fehlgeschlagen.',
   'manage.leaveServer': 'Server verlassen',
-  'manage.leaveTitle': '„{name}“ verlassen?',
   'manage.leaveDescription': 'Du verlässt den Server und alle seine Kanäle. Zurück kommst du nur mit einer neuen Einladung.',
   'manage.leaveFailed': 'Server konnte nicht verlassen werden.',
   'leave.confirm': 'Verlassen',

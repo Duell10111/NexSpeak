@@ -485,7 +485,6 @@ export const en: Record<MessageKey, string> = {
   'manage.deleted': 'Deleted.',
   'manage.deleteFailed': 'Could not delete.',
   'manage.leaveServer': 'Leave server',
-  'manage.leaveTitle': 'Leave "{name}"?',
   'manage.leaveDescription': 'You\'ll leave the server and all of its channels. You can only come back with a new invite.',
   'manage.leaveFailed': 'Could not leave the server.',
   'leave.confirm': 'Leave',

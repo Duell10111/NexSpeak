@@ -39,6 +39,7 @@ import {
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
 import { ReportDialog } from "@/components/nexspeak/report-dialog"
 import { LeaveRoomDialog } from "@/components/nexspeak/leave-room"
+import { runAction } from "@/lib/run-action"
 import {
   NotificationModeContextItems,
   NotificationModeDropdownItems,
@@ -119,10 +120,6 @@ function useJoinNewChannels(serverId: string, structureKey: string) {
     }, 1_000)
     return () => clearTimeout(timer)
   }, [client, serverId, structureKey])
-}
-
-function runAction(action: Promise<unknown>, fallback: string) {
-  action.catch((error: unknown) => toast.error(describeMatrixError(error, fallback)))
 }
 
 export function ServerManagementProvider({
@@ -385,7 +382,7 @@ export function ServerHeaderMenu({ title }: { title: string }) {
       <ConfirmDialog
         open={dialog === "leave"}
         onOpenChange={(open) => !open && setDialog(null)}
-        title={t("manage.leaveTitle", { name: title })}
+        title={t("leave.title", { name: title })}
         description={t("manage.leaveDescription")}
         confirmLabel={t("manage.leaveServer")}
         onConfirm={leave}
@@ -497,12 +494,9 @@ export function ChannelContextMenu({
         target={reporting ? { kind: "room", roomId: room.id, roomName: room.name } : null}
         onOpenChange={setReporting}
       />
-      {leavable && (
-        <LeaveRoomDialog
-          room={{ id: room.id, name: room.name, isDirect: leavable === "direct" }}
-          open={leaving}
-          onOpenChange={setLeaving}
-        />
+      {/* Mounted only while open: it follows the call context, which changes while people speak. */}
+      {leavable && leaving && (
+        <LeaveRoomDialog room={{ id: room.id, name: room.name, isDirect: leavable === "direct" }} onClose={() => setLeaving(false)} />
       )}
     </>
   )

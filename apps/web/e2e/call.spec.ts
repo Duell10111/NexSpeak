@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { createRoom, login, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
+import { createRoom, login, matrixApi, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
 
 async function joinVoice(page: Page) {
   await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
@@ -248,4 +248,39 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   // The choice is remembered for the next stream.
   await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
   await expect(alicePage.getByRole("radio", { name: "15 FPS" })).toHaveAttribute("aria-checked", "true")
+})
+
+test("leaving a room during a call ends the call for the others too", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const carol = await registerUser("carol")
+  const roomName = `Leave ${Date.now().toString(36)}`
+  // Three members: a room under Home, not a DM.
+  const roomId = await createRoom(alice, { name: roomName, members: [bob, carol] })
+  const aliceMemberships = async () => {
+    const state = await matrixApi<Array<{ type: string; sender: string; content: Record<string, unknown> }>>(bob, "GET", `/rooms/${encodeURIComponent(roomId)}/state`)
+    return state.filter((event) => event.type === "org.matrix.msc3401.call.member" && event.sender === alice.userId && Object.keys(event.content).length > 0).length
+  }
+
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, roomName)
+  await joinVoice(alicePage)
+  await joinVoice(bobPage)
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+  expect(await aliceMemberships()).toBe(1)
+
+  await alicePage.getByRole("button", { name: new RegExp(roomName) }).first().click({ button: "right" })
+  await alicePage.getByRole("menuitem", { name: "Verlassen" }).click()
+  await alicePage.getByRole("alertdialog").getByRole("button", { name: "Verlassen" }).click()
+  await expect(alicePage.getByRole("heading", { level: 3, name: "Freunde" })).toBeVisible()
+  await expect(alicePage.getByRole("button", { name: "Anruf verlassen" })).toHaveCount(0)
+
+  // Alice's call membership was withdrawn before she left, so no ghost stays behind for Bob.
+  await expect.poll(aliceMemberships).toBe(0)
+  await expect(tiles(bobPage)).toHaveCount(1, { timeout: 20_000 })
+  await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`).getByText(alice.username)).toHaveCount(0)
 })
