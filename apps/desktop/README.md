@@ -23,6 +23,14 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 
 ## Commands (in the repository root)
 
+`npm ci` only patches the pinned `uiohook-napi` source; web work needs no C toolchain.
+`dev:desktop`, `start:desktop`, `dist:desktop` and `test:e2e:desktop` compile the filtered input
+hook for the host architecture on first use (N-API, shared by Node and Electron). That requires
+Python and a C/C++ toolchain: Xcode Command Line Tools on macOS, Visual Studio's Desktop
+development with C++ workload on Windows, or `build-essential libx11-dev libxtst-dev libxrandr-dev
+libxt-dev` on Debian/Ubuntu. Builds fail if the patch no longer applies; update and review it
+alongside any dependency update.
+
 ```bash
 npm run dev               # terminal 1: Next.js dev server
 npm run dev:desktop       # terminal 2: Electron against http://localhost:3000
@@ -30,6 +38,7 @@ npm run dev:desktop       # terminal 2: Electron against http://localhost:3000
 npm run start:desktop     # export the web app and start Electron with the export
 npm run dist:desktop      # installers in apps/desktop/release/
 npm run test:e2e:desktop  # E2E tests (the Docker stack from dev/ has to be running)
+npm run test:input-hook -w @nexspeak/desktop  # native dispatch regression test, no OS permissions
 ```
 
 ## Security
@@ -75,8 +84,24 @@ The web app owns the setting (key, release delay) and the microphone gate; the m
 reports key presses. While the user is in a call with push to talk, `src/push-to-talk.ts` runs a
 system-wide hook (uiohook-napi), so the key also works while a game has the focus.
 
-- The hook receives every input event, including mouse moves; it is started on joining and stopped
-  on leaving, never while idle. It copies events on its own thread and does not add input latency.
+- The hook is started on joining and stopped on leaving, never while idle. The native dispatch
+  filters input before allocation and before calling the N-API threadsafe function: only the
+  chosen key or mouse button's down/up events reach JavaScript. Mouse movement, dragging,
+  scrolling, synthetic clicks and unrelated keys/buttons cause no main-thread wake-ups.
+- Changing the binding stops and joins the hook thread, releases the microphone gate and starts
+  it with the new filter. Reapplying the same binding does not restart the hook.
+- `scripts/build-input-hook.mjs` applies `patches/uiohook-napi+1.5.5.patch` (`--patch-only` in
+  `postinstall`) and compiles it. Compiling removes upstream's unfiltered prebuilds and marks our
+  binaries; `electron-builder.cjs` refuses to package an architecture without that mark, and
+  `npmRebuild: false` keeps electron-builder from replacing them. The Desktop workflow compiles
+  every packaged architecture (`arm64 x64` on macOS); manually:
+  `npm run build:input-hook -w @nexspeak/desktop -- x64` (or `arm64`, with a matching toolchain).
+  Until then unit tests load upstream's unfiltered prebuilds, which accept but ignore the filter.
+- `native-test/` compiles the actual patched dispatcher with simulated OS input and counts
+  allocations and N-API submissions (no X11 headers or OS permissions needed); CI runs it on
+  Linux. To compare real CPU use, profile Electron's main process during a call with push to talk
+  while moving a 1000 Hz mouse, first with a keyboard binding, then with Mouse4. Both down/up
+  pairs must still control the microphone; leaving the call must stop the hook.
 - macOS needs the accessibility permission (the settings offer a button); until then, and on
   Wayland (no global hooks), the key only works while NexSpeak has the focus.
 - Keys are stored as `KeyboardEvent.code` (physical key) or `Mouse3`–`Mouse5`.
@@ -150,4 +175,4 @@ Setup: the repository needs at least one commit, and this repository the secret
 ## Still open (milestone "Beta 0.2 – Desktop")
 
 Developer ID signing and notarization and Windows code signing (#9; macOS auto-update depends on
-it), filtering mouse moves natively in the push-to-talk hook (#10).
+it).

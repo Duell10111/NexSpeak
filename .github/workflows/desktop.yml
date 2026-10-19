@@ -45,10 +45,13 @@ jobs:
         include:
           - os: macos-latest
             args: --mac --arm64 --x64
+            hook-archs: arm64 x64
           - os: windows-latest
             args: --win --x64
+            hook-archs: x64
           - os: ubuntu-latest
             args: --linux --x64
+            hook-archs: x64
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -65,7 +68,14 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Install input hook build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libxrandr-dev libxt-dev
+
       - run: npm ci
+
+      - name: Build the filtered input hook
+        run: npm run build:input-hook -w @nexspeak/desktop -- ${{ matrix.hook-archs }}
 
       - name: Build web app
         run: npm run build

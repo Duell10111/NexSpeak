@@ -19,6 +19,10 @@ The push-to-talk key works system-wide, so it also works while a game has the fo
 listens for it while you are in a call with push to talk, never in the background. Setup and platform
 notes: [Settings → Push to talk](settings.md#push-to-talk).
 
+Only presses and releases of your chosen key or mouse button reach the app. Mouse movement and
+scrolling are filtered in the native hook, keeping high-polling gaming mice from waking the app's
+main thread on every movement.
+
 ## Start at login
 
 **Settings → Account → Start at login** starts NexSpeak in the tray when you log in to your

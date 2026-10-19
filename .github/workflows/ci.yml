@@ -38,5 +38,8 @@ jobs:
 
       - run: npm test
 
+      - name: Native push-to-talk filter test
+        run: npm run test:input-hook -w @nexspeak/desktop
+
       - name: Build web app
         run: npm run build

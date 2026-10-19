@@ -12,6 +12,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "npm run -s build:input-hook -w @nexspeak/desktop -- --patch-only",
     "dev": "npm run dev -w @nexspeak/web",
     "build": "npm run build -w @nexspeak/web",
     "start": "npm run start -w @nexspeak/web",
@@ -30,6 +31,7 @@
     "@types/node": "^24",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "node-gyp": "12.4.0",
     "typescript": "5.7.3",
     "vitest": "^5.0.5"
   }
