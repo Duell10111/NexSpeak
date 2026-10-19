@@ -1,2 +1,2 @@
-# Unified diffs prefix empty context lines with a space.
-*.patch -whitespace
+# Match npm's LF sources on Windows; unified diffs prefix empty context lines with a space.
+*.patch text eol=lf -whitespace
