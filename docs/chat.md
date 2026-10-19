@@ -51,6 +51,11 @@ message** searches by name or takes a Matrix ID like `@alice:matrix.org`; choosi
 starts a group. People you don't share a room with can only be found by their full Matrix ID.
 Friends and friend requests are listed there as well, see [Friends](friends.md).
 
+To leave a direct message or a room under **Rooms** that doesn't belong to a server, right-click it
+(long press on touch screens) or use the **Leave** button in its header and confirm. A running call
+there ends, and the conversation disappears from your list; you can only come back if someone
+invites you again. Leaving a direct message with a friend also ends the friendship for both of you.
+
 ## Safety
 
 - **Ignore** someone (in their profile or the member list): you won't see their messages, invites or

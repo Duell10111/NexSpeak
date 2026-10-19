@@ -47,6 +47,8 @@ interface CallContextValue {
   isDeafened: boolean
   joinCall: (roomId: string) => Promise<void>
   leaveCall: () => void
+  /** Ends our call in this room (including a join still in progress) and waits until it is left. */
+  endCallIn: (roomId: string) => Promise<void>
   toggleMicrophone: () => Promise<void>
   toggleCamera: () => Promise<void>
   /** Stops a running screenshare, otherwise opens the quality dialog (like Discord's "Go Live"). */
@@ -127,6 +129,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   )
   const [isScreenshareDialogOpen, setIsScreenshareDialogOpen] = useState(false)
   const sessionRef = useRef<CallSession | null>(null)
+  /** A room whose pending join was given up (e.g. the room is being left): the join ends itself. */
+  const abandonedJoinRef = useRef("")
   const callInfoByRoom = useRtcCallInfo(client)
   const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
   usePushToTalk(session, audioSettings)
@@ -153,6 +157,12 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     if (current) void current.leave()
   }, [])
 
+  const endCallIn = useCallback(async (roomId: string) => {
+    abandonedJoinRef.current = roomId
+    const current = sessionRef.current
+    if (current?.roomId === roomId) await current.leave()
+  }, [])
+
   const joinCall = useCallback(
     async (roomId: string) => {
       if (!client || !roomId) return
@@ -160,6 +170,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
 
       // Only one call at a time, like Discord.
       await sessionRef.current?.leave()
+      abandonedJoinRef.current = ""
       setJoiningRoomId(roomId)
       try {
         const settings = loadAudioSettings()
@@ -171,6 +182,10 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           startDeafened: voicePrefsRef.current.deafened,
           pushToTalk: settings.inputMode === "push-to-talk",
         })
+        if (abandonedJoinRef.current === roomId) {
+          await next.leave()
+          return
+        }
         next.onEnded = (reason) => {
           endSession(next)
           if (reason) toast.error(reason)
@@ -178,6 +193,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
         sessionRef.current = next
         setSession(next)
       } catch (error) {
+        if (abandonedJoinRef.current === roomId) return
         if (error instanceof CallPermissionError && error.canEnable) {
           // Admins can fix the room right away, like Element offers.
           toast.error(error.message, {
@@ -366,6 +382,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       isDeafened: call ? call.isDeafened : voicePrefs.deafened,
       joinCall,
       leaveCall,
+      endCallIn,
       toggleMicrophone,
       toggleCamera,
       toggleScreenshare,
@@ -388,6 +405,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       activeChannelId,
       joinCall,
       leaveCall,
+      endCallIn,
       toggleMicrophone,
       toggleCamera,
       toggleScreenshare,

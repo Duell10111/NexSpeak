@@ -28,6 +28,8 @@ request is listed as an outgoing friend request on your side, where you can canc
 - **More** offers **Remove friend** and **Ignore**. Removing ends the friendship for both of you;
   your direct messages stay. Ignoring also removes the friend and hides their messages, invites and
   friend requests (see [Safety](chat.md#safety)).
+- Leaving your direct message with a friend ends the friendship too (see
+  [Direct messages](chat.md#direct-messages)).
 
 The dot on a friend's avatar and on direct messages in the sidebar shows whether they are online
 (green), away (yellow) or offline (grey). It is missing if your homeserver doesn't share presence.

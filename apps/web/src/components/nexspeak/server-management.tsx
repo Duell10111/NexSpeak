@@ -38,6 +38,8 @@ import {
 } from "@/components/ui/context-menu"
 import { UserPickerDialog } from "@/components/nexspeak/user-picker-dialog"
 import { ReportDialog } from "@/components/nexspeak/report-dialog"
+import { LeaveRoomDialog } from "@/components/nexspeak/leave-room"
+import { runAction } from "@/lib/run-action"
 import {
   NotificationModeContextItems,
   NotificationModeDropdownItems,
@@ -118,10 +120,6 @@ function useJoinNewChannels(serverId: string, structureKey: string) {
     }, 1_000)
     return () => clearTimeout(timer)
   }, [client, serverId, structureKey])
-}
-
-function runAction(action: Promise<unknown>, fallback: string) {
-  action.catch((error: unknown) => toast.error(describeMatrixError(error, fallback)))
 }
 
 export function ServerManagementProvider({
@@ -384,7 +382,7 @@ export function ServerHeaderMenu({ title }: { title: string }) {
       <ConfirmDialog
         open={dialog === "leave"}
         onOpenChange={(open) => !open && setDialog(null)}
-        title={t("manage.leaveTitle", { name: title })}
+        title={t("leave.title", { name: title })}
         description={t("manage.leaveDescription")}
         confirmLabel={t("manage.leaveServer")}
         onConfirm={leave}
@@ -395,20 +393,24 @@ export function ServerHeaderMenu({ title }: { title: string }) {
 
 /**
  * Right-click menu of a channel or DM (long press on touch screens): notifications and reporting
- * for everyone, managing for those who may.
+ * for everyone, managing for those who may, leaving for DMs and rooms under Home.
  */
 export function ChannelContextMenu({
   room,
   sections,
+  leavable,
   children,
 }: {
   room: MatrixRoom
   sections: ManagedSection[]
+  /** A DM or a room outside any server, which can be left on its own. */
+  leavable?: "direct" | "room"
   children: ReactNode
 }) {
   const { t } = useTranslation()
   const management = useServerManagement()
   const [reporting, setReporting] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const canEdit = Boolean(management?.canEdit(room.id))
   const canInvite = Boolean(management?.canInviteTo(room.id))
   const canManage = Boolean(management?.canManage)
@@ -470,6 +472,12 @@ export function ChannelContextMenu({
             </>
           )}
           <ContextMenuSeparator />
+          {leavable && (
+            <ContextMenuItem variant="destructive" onSelect={() => setLeaving(true)}>
+              <LogOut className="h-4 w-4" />
+              {t("leave.confirm")}
+            </ContextMenuItem>
+          )}
           <ContextMenuItem variant="destructive" onSelect={() => setReporting(true)}>
             <Flag className="h-4 w-4" />
             {t("report.room")}
@@ -486,6 +494,10 @@ export function ChannelContextMenu({
         target={reporting ? { kind: "room", roomId: room.id, roomName: room.name } : null}
         onOpenChange={setReporting}
       />
+      {/* Mounted only while open: it follows the call context, which changes while people speak. */}
+      {leavable && leaving && (
+        <LeaveRoomDialog room={{ id: room.id, name: room.name, isDirect: leavable === "direct" }} onClose={() => setLeaving(false)} />
+      )}
     </>
   )
 }

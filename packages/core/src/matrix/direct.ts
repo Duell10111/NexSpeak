@@ -59,6 +59,20 @@ async function addDirectRoom(client: MatrixClient, userIds: string[], roomId: st
   if (changed) await client.setAccountData(EventType.Direct, map)
 }
 
+/** Removes a room from m.direct, e.g. after leaving it, so it doesn't count as a DM anymore. */
+export async function forgetDirectRoom(client: MatrixClient, roomId: string): Promise<void> {
+  const map = readDirectMap(client)
+  let changed = false
+  Object.entries(map).forEach(([userId, ids]) => {
+    if (!ids.includes(roomId)) return
+    changed = true
+    const rest = ids.filter((id) => id !== roomId)
+    if (rest.length > 0) map[userId] = rest
+    else delete map[userId]
+  })
+  if (changed) await client.setAccountData(EventType.Direct, map)
+}
+
 /** An existing 1:1 DM with this user that both of us are (or will be) in. */
 export function findDirectRoom(client: MatrixClient, userId: string): Room | null {
   const ownId = client.getUserId()

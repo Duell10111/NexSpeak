@@ -185,6 +185,17 @@ export async function removeFriend(client: MatrixClient, friend: Friend): Promis
   }
 }
 
+/**
+ * Takes back our own marker before leaving a DM, so a friendship or request doesn't linger in
+ * the room (and isn't revived if we come back). Sends nothing if we never marked it.
+ */
+export async function withdrawFriendMarker(client: MatrixClient, roomId: string): Promise<void> {
+  const ownId = client.getUserId()
+  const room = client.getRoom(roomId)
+  if (!ownId || !room || room.getMyMembership() !== 'join') return
+  if (readMarker(room, ownId)?.friend) await setMarker(client, roomId, false)
+}
+
 /** Ends the friendship or request and ignores the person (no messages, invites or requests). */
 export async function blockFriend(client: MatrixClient, friend: Friend): Promise<void> {
   if (friend.status === 'incoming') await declineFriendRequest(client, friend)

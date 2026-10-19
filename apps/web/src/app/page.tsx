@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { SyncState } from "matrix-js-sdk"
 import { WifiOff } from "lucide-react"
 import { ServerSidebar } from "@/components/nexspeak/server-sidebar"
-import { ChannelSidebar, type RoomSection } from "@/components/nexspeak/channel-sidebar"
+import { ChannelSidebar, leavableKind, type RoomSection } from "@/components/nexspeak/channel-sidebar"
 import { ChatArea } from "@/components/nexspeak/chat-area"
 import { MemberList } from "@/components/nexspeak/member-list"
 import { CallProvider } from "@/components/nexspeak/call-context"
@@ -230,7 +230,7 @@ export default function NexSpeakApp() {
 
   return (
     <SecurityProvider client={client}>
-      <NavigationProvider openRoom={openRoom}>
+      <NavigationProvider openRoom={openRoom} activeRoomId={channelId}>
         <FriendsProvider friends={directory.friends}>
           <CallProvider client={client} activeChannelId={channelId}>
             <DesktopTrayVoice />
@@ -258,6 +258,10 @@ export default function NexSpeakApp() {
                     showMembers={showMembers}
                     onToggleMembers={handleToggleMembers}
                     onOpenNavigation={() => setIsNavigationOpen(true)}
+                    leavable={leavableKind(
+                      sections.find((section) => section.rooms.some((room) => room.id === channelId)),
+                      isDirectMessages,
+                    )}
                   />
                 )}
               </main>
