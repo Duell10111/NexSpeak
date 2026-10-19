@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "npm run build:input-hook -w @nexspeak/desktop",
+    "postinstall": "npm run -s build:input-hook -w @nexspeak/desktop -- --patch-only",
     "dev": "npm run dev -w @nexspeak/web",
     "build": "npm run build -w @nexspeak/web",
     "start": "npm run start -w @nexspeak/web",

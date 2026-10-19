@@ -23,11 +23,13 @@ Electron shell around the web app. The entire UI comes from `apps/web` (static e
 
 ## Commands (in the repository root)
 
-`npm ci` patches the pinned `uiohook-napi` source and compiles the input hook for the host
-architecture (N-API, shared by Node and Electron). It requires Python and a C/C++ toolchain:
-Xcode Command Line Tools on macOS, Visual Studio's Desktop development with C++ workload on
-Windows, or `build-essential libx11-dev libxtst-dev libxrandr-dev libxt-dev` on Debian/Ubuntu.
-Builds fail if the patch no longer applies; update and review it alongside any dependency update.
+`npm ci` only patches the pinned `uiohook-napi` source; web work needs no C toolchain.
+`dev:desktop`, `start:desktop`, `dist:desktop` and `test:e2e:desktop` compile the filtered input
+hook for the host architecture on first use (N-API, shared by Node and Electron). That requires
+Python and a C/C++ toolchain: Xcode Command Line Tools on macOS, Visual Studio's Desktop
+development with C++ workload on Windows, or `build-essential libx11-dev libxtst-dev libxrandr-dev
+libxt-dev` on Debian/Ubuntu. Builds fail if the patch no longer applies; update and review it
+alongside any dependency update.
 
 ```bash
 npm run dev               # terminal 1: Next.js dev server
@@ -88,17 +90,18 @@ system-wide hook (uiohook-napi), so the key also works while a game has the focu
   scrolling, synthetic clicks and unrelated keys/buttons cause no main-thread wake-ups.
 - Changing the binding stops and joins the hook thread, releases the microphone gate and starts
   it with the new filter. Reapplying the same binding does not restart the hook.
-- `patches/uiohook-napi+1.5.5.patch` is applied by `scripts/build-input-hook.mjs` during
-  `postinstall`. Upstream prebuilds are removed and replaced with locally compiled binaries;
-  `npmRebuild: false` preserves them during packaging. The Desktop workflow also compiles the
-  other macOS architecture before packaging arm64 and x64. To cross-compile manually, use
+- `scripts/build-input-hook.mjs` applies `patches/uiohook-napi+1.5.5.patch` (`--patch-only` in
+  `postinstall`) and compiles it. Compiling removes upstream's unfiltered prebuilds and marks our
+  binaries; `electron-builder.cjs` refuses to package an architecture without that mark, and
+  `npmRebuild: false` keeps electron-builder from replacing them. The Desktop workflow compiles
+  every packaged architecture (`arm64 x64` on macOS); manually:
   `npm run build:input-hook -w @nexspeak/desktop -- x64` (or `arm64`, with a matching toolchain).
+  Until then unit tests load upstream's unfiltered prebuilds, which accept but ignore the filter.
 - `native-test/` compiles the actual patched dispatcher with simulated OS input and counts
-  allocations and N-API submissions. CI runs it on macOS, Windows and Linux. To compare real CPU
-  use, profile Electron's main process during a call with push to talk while moving a 1000 Hz
-  mouse, first with a keyboard binding, then with Mouse4. Both down/up pairs must still control
-  the microphone; leaving the call must stop the hook. The regression test proves filtering,
-  while the CPU reduction depends on the mouse and OS and must be measured on that machine.
+  allocations and N-API submissions (no X11 headers or OS permissions needed); CI runs it on
+  Linux. To compare real CPU use, profile Electron's main process during a call with push to talk
+  while moving a 1000 Hz mouse, first with a keyboard binding, then with Mouse4. Both down/up
+  pairs must still control the microphone; leaving the call must stop the hook.
 - macOS needs the accessibility permission (the settings offer a button); until then, and on
   Wayland (no global hooks), the key only works while NexSpeak has the focus.
 - Keys are stored as `KeyboardEvent.code` (physical key) or `Mouse3`–`Mouse5`.

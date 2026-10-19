@@ -12,10 +12,10 @@
     "test:input-hook": "node scripts/test-input-hook.mjs",
     "build": "tsc -p .",
     "typecheck": "tsc -p . --noEmit",
-    "dev": "npm run -s build && NEXSPEAK_DEV_URL=http://localhost:3000 electron .",
-    "start": "npm run -s build && electron .",
-    "dist": "npm run -s build && electron-builder --publish never",
-    "test:e2e": "npm run -s build && playwright test"
+    "dev": "npm run -s build:input-hook && npm run -s build && NEXSPEAK_DEV_URL=http://localhost:3000 electron .",
+    "start": "npm run -s build:input-hook && npm run -s build && electron .",
+    "dist": "npm run -s build:input-hook && npm run -s build && electron-builder --publish never",
+    "test:e2e": "npm run -s build:input-hook && npm run -s build && playwright test"
   },
   "dependencies": {
     "electron-updater": "6.8.9",
