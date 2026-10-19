@@ -60,19 +60,21 @@ export async function createRoom(
 /** A space ("server") with channels; `inviteOnly` channels need an invite, the others are open to space members. */
 export async function createSpace(
   owner: TestUser,
-  options: { name: string; channels: Array<{ name: string; inviteOnly?: boolean }> },
+  options: { name: string; roomVersion?: string; channels: Array<{ name: string; inviteOnly?: boolean }> },
 ): Promise<{ spaceId: string; channelIds: string[] }> {
   const serverName = owner.userId.split(":").slice(1).join(":")
   const { room_id: spaceId } = await api<{ room_id: string }>(owner.accessToken, "POST", "/createRoom", {
     name: options.name,
     preset: "private_chat",
     creation_content: { type: "m.space" },
+    room_version: options.roomVersion,
   })
   const channelIds: string[] = []
   for (const channel of options.channels) {
     const { room_id: roomId } = await api<{ room_id: string }>(owner.accessToken, "POST", "/createRoom", {
       name: channel.name,
       preset: "private_chat",
+      room_version: options.roomVersion,
       initial_state: channel.inviteOnly
         ? []
         : [

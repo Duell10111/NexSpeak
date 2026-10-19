@@ -43,8 +43,18 @@ The menu behind the server name (top of the channel list) has **Invite people**,
 settings**, **Notifications for all channels** and **Leave server**.
 
 **Server settings**
-: **Overview**: name, description and icon. **Permissions**: change someone's role, **Kick** them
+: **Overview**: name, description and icon. **Members**: change someone's role, **Kick** them
   (they can come back with a new invite) or **Ban** them (they can't join again).
+
+  Admins can choose **Repair permissions** in **Overview** for servers with older channels or
+  categories. This restores admin-only access to role settings, history visibility, encryption,
+  room upgrades and homeserver access rules throughout the server. Roles, message permissions,
+  call permissions and stricter existing restrictions are preserved. Only rooms that need a change
+  are updated; nothing is migrated automatically. The result reports any rooms that could not be
+  checked or repaired (for example, private channels you have not joined). You can retry after
+  joining those rooms or obtaining the required permissions.
+  A running repair continues if you switch tabs or close the settings. Reopening **Overview**
+  shows its progress and prevents starting another repair until it finishes.
 
 **Create channel** / **Create category**
 : In the server menu, or right-click a category. Channel options:

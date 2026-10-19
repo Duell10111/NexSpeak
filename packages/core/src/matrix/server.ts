@@ -4,7 +4,7 @@
  * private channel = invite-only room, roles = power levels, icon = m.room.avatar.
  */
 
-import { EventType, Preset, Visibility, type MatrixClient, type Room } from 'matrix-js-sdk'
+import { EventType, Preset, Visibility, type ICreateRoomOpts, type MatrixClient, type Room } from 'matrix-js-sdk'
 import { shouldUseHydraForRoomVersion } from 'matrix-js-sdk/lib/utils/roomVersion.js'
 import { CALL_MEMBER_EVENT_TYPE } from './rtc'
 import { planMove, sortSpaceChildren, isValidOrder, type SpaceChildLink } from './space-order'
@@ -15,6 +15,31 @@ const MAX_ICON_BYTES = 10 * 1024 * 1024
 
 export const ROLE_LEVELS = { admin: 100, moderator: 50, member: 0 } as const
 export type ServerRole = keyof typeof ROLE_LEVELS
+
+// Synapse replaces its entire default `events` map when an override is supplied.
+const ADMIN_ONLY_EVENTS = [
+  EventType.RoomPowerLevels,
+  EventType.RoomHistoryVisibility,
+  EventType.RoomEncryption,
+  EventType.RoomTombstone,
+  EventType.RoomServerAcl,
+] as const
+
+function defaultPowerLevels() {
+  return {
+    users_default: ROLE_LEVELS.member,
+    events_default: ROLE_LEVELS.member,
+    state_default: ROLE_LEVELS.moderator,
+    ban: ROLE_LEVELS.moderator,
+    kick: ROLE_LEVELS.moderator,
+    redact: ROLE_LEVELS.moderator,
+    invite: ROLE_LEVELS.member,
+    events: {
+      ...Object.fromEntries(ADMIN_ONLY_EVENTS.map((type) => [type, ROLE_LEVELS.admin])),
+      [CALL_MEMBER_EVENT_TYPE]: ROLE_LEVELS.member,
+    },
+  }
+}
 
 export function roleForLevel(level: number): ServerRole {
   return level >= ROLE_LEVELS.admin ? 'admin' : level >= ROLE_LEVELS.moderator ? 'moderator' : 'member'
@@ -72,6 +97,13 @@ export function canEditRoom(client: MatrixClient, roomId: string): boolean {
 
 export function canManageRoles(client: MatrixClient, roomId: string): boolean {
   return may(client, client.getRoom(roomId), EventType.RoomPowerLevels)
+}
+
+/** Old rooms can allow moderators to edit power levels; repairs still require an admin. */
+export function canRepairServerPermissions(client: MatrixClient, serverId: string): boolean {
+  const userId = client.getUserId()
+  const level = userId ? client.getRoom(serverId)?.getMember(userId)?.powerLevel : undefined
+  return level !== undefined && level >= ROLE_LEVELS.admin && canManageRoles(client, serverId)
 }
 
 /** Categories (sub-spaces) and channels of a server, at any depth. */
@@ -137,7 +169,7 @@ export async function moveChild(
 }
 
 /** Room version and power levels for a new channel or category of a server. */
-function inheritedRoomOptions(client: MatrixClient, serverId: string): { room_version?: string; power_level_content_override: never } {
+function inheritedRoomOptions(client: MatrixClient, serverId: string) {
   // Roles are server-wide on Discord: carry the server's admins and moderators over.
   const server = client.getRoom(serverId)
   const users = { ...(powerLevels(server).users ?? {}) } as Record<string, number>
@@ -155,8 +187,33 @@ function inheritedRoomOptions(client: MatrixClient, serverId: string): { room_ve
   }
   return {
     room_version: version || undefined,
-    power_level_content_override: { users, events: { [CALL_MEMBER_EVENT_TYPE]: 0 } } as never,
+    power_level_content_override: { ...defaultPowerLevels(), users },
   }
+}
+
+/** Finish the initial state before restoring a pre-v12 creator's inherited role. */
+async function createServerChild(client: MatrixClient, serverId: string, options: ICreateRoomOpts): Promise<string> {
+  const userId = client.getUserId()
+  if (!userId) throw new Error('Not logged in')
+  const inherited = inheritedRoomOptions(client, serverId)
+  const levels = inherited.power_level_content_override
+  const creatorLevel = levels.users[userId] ?? levels.users_default
+  const restoreRole = inherited.room_version && !shouldUseHydraForRoomVersion(inherited.room_version) && creatorLevel < ROLE_LEVELS.admin
+  if (restoreRole) {
+    // Synapse sends power levels before the preset/initial state, which needs admin rights.
+    levels.users[userId] = ROLE_LEVELS.admin
+  }
+  const { room_id: roomId } = await client.createRoom({ ...options, ...inherited })
+  if (restoreRole) {
+    try {
+      await client.setPowerLevel(roomId, userId, creatorLevel)
+    } catch (error) {
+      // Never publish a room with an unintentionally elevated creator role.
+      await client.leave(roomId).catch((cleanupError: unknown) => console.warn('Could not leave incomplete server room:', cleanupError))
+      throw error
+    }
+  }
+  return roomId
 }
 
 function openToServer(serverId: string) {
@@ -177,24 +234,7 @@ export async function createServer(
   const avatar = options.icon ? await uploadRoomIcon(client, options.icon) : undefined
   // Let the homeserver assign the creator's role: 100 in older rooms, implicit and
   // immutable in v12+. Listing the creator in `users` is rejected by v12+ rooms.
-  const levels = {
-    users_default: ROLE_LEVELS.member,
-    events_default: ROLE_LEVELS.member,
-    state_default: ROLE_LEVELS.moderator,
-    ban: ROLE_LEVELS.moderator,
-    kick: ROLE_LEVELS.moderator,
-    redact: ROLE_LEVELS.moderator,
-    invite: ROLE_LEVELS.member,
-    events: {
-      [EventType.RoomPowerLevels]: ROLE_LEVELS.admin,
-      [EventType.RoomHistoryVisibility]: ROLE_LEVELS.admin,
-      [EventType.RoomEncryption]: ROLE_LEVELS.admin,
-      // Synapse replaces its whole default `events` map, so restore its admin-only entries.
-      [EventType.RoomTombstone]: ROLE_LEVELS.admin,
-      [EventType.RoomServerAcl]: ROLE_LEVELS.admin,
-      [CALL_MEMBER_EVENT_TYPE]: ROLE_LEVELS.member,
-    },
-  }
+  const levels = defaultPowerLevels()
   const { room_id: serverId } = await client.createRoom({
     name,
     topic: options.topic?.trim() || undefined,
@@ -247,13 +287,12 @@ export async function createChannel(
     initialState.push({ type: EventType.RoomEncryption, state_key: '', content: { algorithm: 'm.megolm.v1.aes-sha2' } })
   }
 
-  const { room_id: roomId } = await client.createRoom({
+  const roomId = await createServerChild(client, serverId, {
     name,
     topic: topic || undefined,
     preset: Preset.PrivateChat,
     visibility: Visibility.Private,
     initial_state: initialState as never,
-    ...inheritedRoomOptions(client, serverId),
   })
   const [placement] = planMove(getChildLinks(client.getRoom(parentId)), roomId, null)
   await linkChild(client, parentId, roomId, via, placement?.order)
@@ -263,7 +302,7 @@ export async function createChannel(
 export async function createCategory(client: MatrixClient, options: { serverId: string; name: string }): Promise<string> {
   const { serverId, name } = options
   const via = [ownServerName(client)]
-  const { room_id: roomId } = await client.createRoom({
+  const roomId = await createServerChild(client, serverId, {
     name,
     preset: Preset.PrivateChat,
     visibility: Visibility.Private,
@@ -272,7 +311,6 @@ export async function createCategory(client: MatrixClient, options: { serverId: 
       { type: EventType.RoomJoinRules, state_key: '', content: openToServer(serverId) },
       { type: SPACE_PARENT, state_key: serverId, content: { via, canonical: true } },
     ] as never,
-    ...inheritedRoomOptions(client, serverId),
   })
   const [placement] = planMove(getChildLinks(client.getRoom(serverId)), roomId, null)
   await linkChild(client, serverId, roomId, via, placement?.order)
@@ -373,6 +411,54 @@ async function forEachRoom(roomIds: string[], action: (roomId: string) => Promis
 function allServerRooms(client: MatrixClient, serverId: string): string[] {
   const { categories, channels } = getServerRoomIds(client, serverId)
   return [...channels, ...categories, serverId]
+}
+
+type PermissionRepairResult = { repaired: number; failed: number }
+const permissionRepairs = new WeakMap<MatrixClient, Map<string, Promise<PermissionRepairResult>>>()
+
+/**
+ * Explicit repair only: restore admin-only state events without resetting roles or channel
+ * permissions. Share a pending run even if its settings dialog is unmounted and opened again.
+ */
+export function repairServerPermissions(client: MatrixClient, serverId: string): Promise<PermissionRepairResult> {
+  let repairs = permissionRepairs.get(client)
+  const existing = repairs?.get(serverId)
+  if (existing) return existing
+  if (!repairs) {
+    repairs = new Map()
+    permissionRepairs.set(client, repairs)
+  }
+  const pending = runPermissionRepair(client, serverId).finally(() => {
+    repairs.delete(serverId)
+    if (!repairs.size) permissionRepairs.delete(client)
+  })
+  repairs.set(serverId, pending)
+  return pending
+}
+
+async function runPermissionRepair(
+  client: MatrixClient,
+  serverId: string,
+): Promise<PermissionRepairResult> {
+  if (!canRepairServerPermissions(client, serverId)) throw new Error('Only server admins can repair permissions')
+  let repaired = 0
+  // Read fresh state and keep stricter limits. Sequential writes avoid flooding homeservers;
+  // failures do not stop the remaining rooms, and unchanged rooms need no write.
+  const failed = await forEachRoom(allServerRooms(client, serverId), async (roomId) => {
+    const levels = await client.getStateEvent(roomId, EventType.RoomPowerLevels, '')
+    const events = { ...levels.events }
+    let changed = false
+    for (const type of ADMIN_ONLY_EVENTS) {
+      if ((events[type] ?? levels.state_default ?? ROLE_LEVELS.moderator) < ROLE_LEVELS.admin) {
+        events[type] = ROLE_LEVELS.admin
+        changed = true
+      }
+    }
+    if (!changed) return
+    await sendState(client, roomId, EventType.RoomPowerLevels, { ...levels, events })
+    repaired += 1
+  })
+  return { repaired, failed }
 }
 
 /** Discord roles map to power levels; applied in every room of the server we may change. */

@@ -7,6 +7,14 @@ const PNG = Buffer.from(
   "base64",
 )
 
+const ADMIN_EVENTS = {
+  'm.room.power_levels': 100,
+  'm.room.history_visibility': 100,
+  'm.room.encryption': 100,
+  'm.room.tombstone': 100,
+  'm.room.server_acl': 100,
+}
+
 function channel(page: Page, name: string): Locator {
   return page.getByRole("button", { name, exact: true })
 }
@@ -90,7 +98,7 @@ for (const withDetails of [false, true]) {
     for (const roomId of [serverId, channelId]) {
       expect(await getState(alice, roomId, 'm.room.power_levels')).toMatchObject({
         users_default: 0, state_default: 50,
-        events: { 'org.matrix.msc3401.call.member': 0, 'm.room.tombstone': 100, 'm.room.server_acl': 100 },
+        events: { ...ADMIN_EVENTS, 'org.matrix.msc3401.call.member': 0 },
       })
       const creation = await getState<{ room_version: string }>(alice, roomId, 'm.room.create')
       const levels = await getState<{ users: Record<string, number> }>(alice, roomId, 'm.room.power_levels')
@@ -170,7 +178,9 @@ test("create, edit, move and delete channels and categories", async ({ browser }
   // Category and a channel inside it.
   await serverMenu(page, "Kategorie erstellen")
   await page.getByRole("dialog").getByLabel("Kategoriename").fill("Spiele")
+  const categoryCreated = page.waitForResponse((response) => response.url().endsWith('/createRoom') && response.request().method() === 'POST')
   await page.getByRole("dialog").getByRole("button", { name: "Kategorie erstellen" }).click()
+  const { room_id: categoryId } = await (await categoryCreated).json()
   await expect(page.getByRole("button", { name: "Spiele", exact: true })).toBeVisible()
 
   await page.getByRole("button", { name: "Kanal in Spiele erstellen" }).click()
@@ -178,6 +188,7 @@ test("create, edit, move and delete channels and categories", async ({ browser }
   await dialog.getByLabel("Kanalname").fill("minecraft")
   await dialog.getByRole("button", { name: "Kanal erstellen" }).click()
   await expect(page.getByRole("heading", { level: 3, name: "minecraft" })).toBeVisible()
+  const minecraftId = await page.evaluate(() => JSON.parse(localStorage.getItem('nexspeak_selection')!).channelId as string)
 
   await serverMenu(page, "Kanal erstellen")
   dialog = page.getByRole("dialog")
@@ -186,6 +197,13 @@ test("create, edit, move and delete channels and categories", async ({ browser }
   await page.getByRole("option", { name: "Spiele" }).click()
   await dialog.getByRole("button", { name: "Kanal erstellen" }).click()
   await expect(page.getByRole("heading", { level: 3, name: "valorant" })).toBeVisible()
+  const valorantId = await page.evaluate(() => JSON.parse(localStorage.getItem('nexspeak_selection')!).channelId as string)
+  for (const roomId of [categoryId, minecraftId, valorantId]) {
+    expect(await getState(alice, roomId, 'm.room.power_levels')).toMatchObject({
+      users_default: 0, state_default: 50,
+      events: { ...ADMIN_EVENTS, 'org.matrix.msc3401.call.member': 0 },
+    })
+  }
   await expectAbove(page, "minecraft", "valorant")
 
   // New channels appear for other members on their own.
@@ -238,6 +256,184 @@ test("create, edit, move and delete channels and categories", async ({ browser }
   await expect(channel(bobPage, "valorant")).toHaveCount(0)
 })
 
+test('v11 moderators create categories and plain or encrypted channels with their inherited role', async ({ browser, request }) => {
+  const alice = await registerUser('owner')
+  const bob = await registerUser('moderator')
+  const serverName = `Legacy ${Date.now().toString(36)}`
+  const { spaceId } = await createSpace(alice, { name: serverName, roomVersion: '11', channels: [{ name: 'general' }] })
+  const levels = await getState<{ users: Record<string, number> }>(alice, spaceId, 'm.room.power_levels')
+  const roomsUrl = 'http://localhost:8008/_matrix/client/v3/rooms'
+  const ownerHeaders = { Authorization: `Bearer ${alice.accessToken}` }
+  expect((await request.put(`${roomsUrl}/${encodeURIComponent(spaceId)}/state/m.room.power_levels`, {
+    headers: ownerHeaders, data: { ...levels, users: { ...levels!.users, [bob.userId]: 50 } },
+  })).ok()).toBe(true)
+  expect((await request.post(`${roomsUrl}/${encodeURIComponent(spaceId)}/invite`, {
+    headers: ownerHeaders, data: { user_id: bob.userId },
+  })).ok()).toBe(true)
+  expect((await request.post(`http://localhost:8008/_matrix/client/v3/join/${encodeURIComponent(spaceId)}`, {
+    headers: { Authorization: `Bearer ${bob.accessToken}` }, data: {},
+  })).ok()).toBe(true)
+
+  const page = await newPage(browser)
+  await login(page, bob)
+  await openServer(page, serverName)
+  await serverMenu(page, 'Kategorie erstellen')
+  await page.getByRole('dialog').getByLabel('Kategoriename').fill('Moderator category')
+  const categoryCreated = page.waitForResponse((response) => response.url().endsWith('/createRoom') && response.request().method() === 'POST')
+  await page.getByRole('dialog').getByRole('button', { name: 'Kategorie erstellen' }).click()
+  const { room_id: categoryId } = await (await categoryCreated).json()
+  await expect(page.getByRole('button', { name: 'Moderator category', exact: true })).toBeVisible()
+  const createdIds: string[] = [categoryId]
+  for (const encrypted of [false, true]) {
+    const name = encrypted ? 'encrypted-by-mod' : 'plain-by-mod'
+    await page.getByRole('button', { name: 'Kanal in Moderator category erstellen' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Kanalname').fill(name)
+    if (encrypted) await dialog.getByLabel('Ende-zu-Ende-verschlüsselt', { exact: true }).check()
+    await dialog.getByRole('button', { name: 'Kanal erstellen' }).click()
+    await expect(page.getByRole('heading', { level: 3, name })).toBeVisible()
+    const roomId = await page.evaluate(() => JSON.parse(localStorage.getItem('nexspeak_selection')!).channelId as string)
+    createdIds.push(roomId)
+    expect(await getState(bob, categoryId, 'm.space.child', roomId)).toMatchObject({ via: ['synapse'] })
+    if (encrypted) expect(await getState(bob, roomId, 'm.room.encryption')).toMatchObject({ algorithm: 'm.megolm.v1.aes-sha2' })
+  }
+  for (const roomId of createdIds) {
+    expect(await getState(bob, roomId, 'm.room.power_levels')).toMatchObject({
+      users: { [alice.userId]: 100, [bob.userId]: 50 },
+      events: { ...ADMIN_EVENTS, 'org.matrix.msc3401.call.member': 0 },
+    })
+    expect(await getState(bob, roomId, 'm.room.create')).toMatchObject({ room_version: '11' })
+  }
+})
+
+test('repair legacy permissions manually, report skipped rooms and retry without redundant writes', async ({ browser }) => {
+  const { alice, serverName } = await setupServer()
+  const page = await newPage(browser)
+  await login(page, alice)
+  await openServer(page, serverName)
+
+  await serverMenu(page, 'Kategorie erstellen')
+  await page.getByRole('dialog').getByLabel('Kategoriename').fill('Legacy category')
+  const categoryCreated = page.waitForResponse((response) => response.url().endsWith('/createRoom') && response.request().method() === 'POST')
+  await page.getByRole('dialog').getByRole('button', { name: 'Kategorie erstellen' }).click()
+  const { room_id: categoryId } = await (await categoryCreated).json()
+  await page.getByRole('button', { name: 'Kanal in Legacy category erstellen' }).click()
+  await page.getByRole('dialog').getByLabel('Kanalname').fill('legacy-channel')
+  await page.getByRole('dialog').getByRole('button', { name: 'Kanal erstellen' }).click()
+  await expect(page.getByRole('heading', { level: 3, name: 'legacy-channel' })).toBeVisible()
+  const channelId = await page.evaluate(() => JSON.parse(localStorage.getItem('nexspeak_selection')!).channelId as string)
+
+  // Reproduce the old shallow override, retaining custom roles and announcement/call restrictions.
+  const originals = new Map<string, Record<string, unknown>>()
+  for (const roomId of [categoryId, channelId]) {
+    const levels = await getState(alice, roomId, 'm.room.power_levels')
+    const legacy = { ...levels, events_default: 50, events: { 'org.matrix.msc3401.call.member': 50, 'm.room.message': 50 } }
+    const response = await fetch(`http://localhost:8008/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.power_levels`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${alice.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(legacy),
+    })
+    expect(response.ok).toBe(true)
+    originals.set(roomId, legacy)
+  }
+
+  let writes = 0
+  page.on('request', (request) => {
+    if (request.method() === 'PUT' && request.url().includes('/state/m.room.power_levels')) writes += 1
+  })
+  // One inaccessible private room must not prevent the category repair.
+  let failNextRead = true
+  await page.route((url) => url.pathname.replace(/\/$/, '').endsWith('/state/m.room.power_levels'), async (route) => {
+    if (failNextRead && route.request().method() === 'GET' && decodeURIComponent(route.request().url()).includes(`/rooms/${channelId}/`)) {
+      failNextRead = false
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ errcode: 'M_FORBIDDEN', error: 'Not joined' }) })
+    } else {
+      await route.continue()
+    }
+  })
+  await serverMenu(page, 'Servereinstellungen')
+  const repair = page.getByRole('dialog').getByRole('button', { name: 'Berechtigungen reparieren', exact: true })
+  await expect(repair).toBeEnabled()
+  expect(writes).toBe(0)
+  expect(await getState(alice, channelId, 'm.room.power_levels')).toEqual(originals.get(channelId))
+
+  await repair.click()
+  await expect(page.getByText('Aktualisierte Räume: 1. Räume, die nicht geprüft oder repariert werden konnten: 1. Du kannst es erneut versuchen.')).toBeVisible()
+  expect(writes).toBe(1)
+  await expect(repair).toBeEnabled()
+  await repair.click()
+  await expect(page.getByText('Reparatur abgeschlossen. Aktualisierte Räume: 1.', { exact: true })).toBeVisible()
+  expect(writes).toBe(2)
+  for (const roomId of [categoryId, channelId]) {
+    const original = originals.get(roomId)!
+    expect(await getState(alice, roomId, 'm.room.power_levels')).toEqual({
+      ...original, events: { ...(original.events as Record<string, number>), ...ADMIN_EVENTS },
+    })
+  }
+  await expect(repair).toBeEnabled()
+  await repair.click()
+  await expect(page.getByText('Reparatur abgeschlossen. Aktualisierte Räume: 0.', { exact: true })).toBeVisible()
+  expect(writes).toBe(2)
+})
+
+test('a running repair remains locked across tab changes and closing the settings', async ({ browser, request }) => {
+  const alice = await registerUser('repair-tabs')
+  const serverName = `Repair ${Date.now().toString(36)}`
+  const { spaceId, channelIds: [roomId] } = await createSpace(alice, { name: serverName, channels: [{ name: 'legacy' }] })
+  const levels = await getState(alice, roomId, 'm.room.power_levels')
+  expect((await request.put(`http://localhost:8008/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.power_levels`, {
+    headers: { Authorization: `Bearer ${alice.accessToken}` },
+    data: { ...levels, events: { 'org.matrix.msc3401.call.member': 0 } },
+  })).ok()).toBe(true)
+  const page = await newPage(browser)
+  await login(page, alice)
+  await openServer(page, serverName)
+  await serverMenu(page, 'Servereinstellungen')
+
+  let reads = 0
+  let writes = 0
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  await page.route((url) => decodeURIComponent(url.pathname).includes(`/rooms/${roomId}/state/m.room.power_levels`), async (route) => {
+    if (route.request().method() === 'GET') {
+      const response = await route.fetch()
+      reads += 1
+      await gate
+      await route.fulfill({ response })
+    } else {
+      if (route.request().method() === 'PUT') writes += 1
+      await route.continue()
+    }
+  })
+  const dialog = page.getByRole('dialog')
+  const busy = dialog.getByRole('button', { name: 'Reparatur läuft…' })
+  try {
+    await dialog.getByRole('button', { name: 'Berechtigungen reparieren', exact: true }).click()
+    await expect.poll(() => reads).toBe(1)
+    await expect(busy).toBeDisabled()
+    await dialog.getByRole('tab', { name: 'Mitglieder' }).click()
+    await dialog.getByRole('tab', { name: 'Übersicht' }).click()
+    await expect(busy).toBeDisabled()
+    await dialog.getByRole('button', { name: 'Schließen' }).click()
+    await serverMenu(page, 'Servereinstellungen')
+    await expect(busy).toBeDisabled()
+    expect(reads).toBe(1)
+    expect(writes).toBe(0)
+    release()
+    await expect(page.getByText('Reparatur abgeschlossen. Aktualisierte Räume: 1.', { exact: true })).toBeVisible()
+    expect(writes).toBe(1)
+    const repair = dialog.getByRole('button', { name: 'Berechtigungen reparieren', exact: true })
+    await expect(repair).toBeEnabled()
+    await repair.click()
+    await expect(page.getByText('Reparatur abgeschlossen. Aktualisierte Räume: 0.', { exact: true })).toBeVisible()
+    expect(reads).toBe(2)
+    expect(writes).toBe(1)
+    expect(await getState(alice, spaceId, 'm.space.child', roomId)).toMatchObject({ via: ['synapse'] })
+  } finally {
+    release()
+  }
+})
+
 test("server icon, description and roles", async ({ browser }) => {
   const { alice, bob, serverName, spaceId } = await setupServer()
   await fetch(`http://localhost:8008/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/invite`, {
@@ -274,6 +470,13 @@ test("server icon, description and roles", async ({ browser }) => {
   await expect(page.getByText(`${bob.username} ist jetzt Moderator.`)).toBeVisible()
   const levels = await getState<{ users: Record<string, number> }>(alice, spaceId, "m.room.power_levels")
   expect(levels?.users[bob.userId]).toBe(50)
+
+  // Legacy power levels can let moderators edit roles; the repair action remains admin-only.
+  const bobPage = await newPage(browser)
+  await login(bobPage, bob)
+  await openServer(bobPage, serverName)
+  await serverMenu(bobPage, 'Servereinstellungen')
+  await expect(bobPage.getByRole('dialog').getByRole('button', { name: 'Berechtigungen reparieren' })).toHaveCount(0)
 
   // Kicking removes Bob from the server and its channels.
   await dialog.getByRole("button", { name: "Rauswerfen" }).click()

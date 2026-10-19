@@ -41,11 +41,13 @@ import {
   banFromServer,
   canEditRoom,
   canManageRoles,
+  canRepairServerPermissions,
   createCategory,
   createChannel,
   kickFromServer,
   readChannelPermissions,
   readRoomDetails,
+  repairServerPermissions,
   roleForLevel,
   ROLE_LEVELS,
   saveChannelPermissions,
@@ -732,6 +734,21 @@ function MembersTab({ serverId }: { serverId: string }) {
   )
 }
 
+function RepairPermissions({ isRepairing, onRepair }: { isRepairing: boolean; onRepair: () => void }) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <h3 className="text-sm font-medium">{t("manage.repairPermissions")}</h3>
+      <p className="text-sm text-muted-foreground">{t("manage.repairDescription")}</p>
+      <Button variant="outline" disabled={isRepairing} onClick={onRepair}>
+        {isRepairing && <Spinner className="mr-2 h-4 w-4" />}
+        {t(isRepairing ? "manage.repairing" : "manage.repairPermissions")}
+      </Button>
+    </div>
+  )
+}
+
 export function ServerSettingsDialog({
   serverId,
   open,
@@ -747,10 +764,31 @@ export function ServerSettingsDialog({
   const room = client?.getRoom(serverId)
   const name = room?.name ?? ""
   const canEdit = Boolean(client && canEditRoom(client, serverId))
+  const [isRepairing, setIsRepairing] = useState(false)
+  const repairing = useRef(false)
+
+  const repair = async () => {
+    if (!client || repairing.current) return
+    repairing.current = true
+    setIsRepairing(true)
+    try {
+      const { repaired, failed } = await repairServerPermissions(client, serverId)
+      if (failed) {
+        toast.warning(t("manage.repairPartial", { repaired, failed }))
+      } else {
+        toast.success(t("manage.repairDone", { count: repaired }))
+      }
+    } catch (error) {
+      toast.error(describeMatrixError(error, t("manage.repairFailed")))
+    } finally {
+      repairing.current = false
+      setIsRepairing(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t("manage.serverSettings")}</DialogTitle>
           <DialogDescription>{name}</DialogDescription>
@@ -764,6 +802,9 @@ export function ServerSettingsDialog({
             <TabsContent value="overview" className="space-y-6 pt-2">
               <IconPicker roomId={serverId} name={name} rounded disabled={!canEdit} />
               <DetailsForm roomId={serverId} topicLabel={t("manage.serverDescription")} />
+              {client && canRepairServerPermissions(client, serverId) && (
+                <RepairPermissions isRepairing={isRepairing} onRepair={() => void repair()} />
+              )}
             </TabsContent>
             <TabsContent value="members" className="pt-2">
               <MembersTab serverId={serverId} />
