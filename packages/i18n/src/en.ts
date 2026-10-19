@@ -102,6 +102,12 @@ export const en: Record<MessageKey, string> = {
   'server.joinChannelsFailed': 'Could not join the channels.',
   'server.noJoinableChannels': 'There are no channels you can join without an invite.',
 
+  'createServer.add': 'Add a server',
+  'createServer.title': 'Create a server',
+  'createServer.description': 'Choose a name, and optionally an icon and description. Your server starts with a general channel for text and voice. Invite people when you are ready.',
+  'createServer.created': 'Created {name}',
+  'createServer.failed': 'Could not create the server.',
+
   'join.title': 'Join a server or room',
   'join.description': 'Enter the address of a Matrix space or room.',
   'join.address': 'Address',

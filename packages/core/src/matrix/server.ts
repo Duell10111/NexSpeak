@@ -5,6 +5,7 @@
  */
 
 import { EventType, Preset, Visibility, type MatrixClient, type Room } from 'matrix-js-sdk'
+import { shouldUseHydraForRoomVersion } from 'matrix-js-sdk/lib/utils/roomVersion.js'
 import { CALL_MEMBER_EVENT_TYPE } from './rtc'
 import { planMove, sortSpaceChildren, isValidOrder, type SpaceChildLink } from './space-order'
 
@@ -135,14 +136,100 @@ export async function moveChild(
   }
 }
 
-function inheritedPowerLevels(client: MatrixClient, serverId: string): Record<string, unknown> {
+/** Room version and power levels for a new channel or category of a server. */
+function inheritedRoomOptions(client: MatrixClient, serverId: string): { room_version?: string; power_level_content_override: never } {
   // Roles are server-wide on Discord: carry the server's admins and moderators over.
-  const users = (powerLevels(client.getRoom(serverId)).users ?? {}) as Record<string, number>
-  return { users, events: { [CALL_MEMBER_EVENT_TYPE]: 0 } }
+  const server = client.getRoom(serverId)
+  const users = { ...(powerLevels(server).users ?? {}) } as Record<string, number>
+  const version = server?.getVersion()
+  if (server && version && shouldUseHydraForRoomVersion(version)) {
+    // v12+ creators hold the top role implicitly and are not listed in `users`; list them so
+    // the owner stays admin in channels created by other admins.
+    const create = server.currentState.getStateEvents(EventType.RoomCreate, '')
+    const additional = create?.getContent().additional_creators
+    for (const creator of [create?.getSender(), ...(Array.isArray(additional) ? additional : [])]) {
+      if (typeof creator === 'string') users[creator] = ROLE_LEVELS.admin
+    }
+    // The new room uses the same version, so we become its creator, and v12+ rejects listing creators.
+    delete users[client.getUserId() ?? '']
+  }
+  return {
+    room_version: version || undefined,
+    power_level_content_override: { users, events: { [CALL_MEMBER_EVENT_TYPE]: 0 } } as never,
+  }
 }
 
 function openToServer(serverId: string) {
   return { join_rule: 'restricted', allow: [{ type: 'm.room_membership', room_id: serverId }] }
+}
+
+/** Creates a private server and its first text/voice channel without waiting for sync. */
+export async function createServer(
+  client: MatrixClient,
+  options: { name: string; topic?: string; icon?: File },
+): Promise<{ serverId: string; channelId: string }> {
+  const name = options.name.trim()
+  const userId = client.getUserId()
+  if (!name) throw new Error('Server name is required')
+  if (!userId) throw new Error('Not logged in')
+
+  // Upload before creating any rooms so an upload failure leaves no half-created server.
+  const avatar = options.icon ? await uploadRoomIcon(client, options.icon) : undefined
+  // Let the homeserver assign the creator's role: 100 in older rooms, implicit and
+  // immutable in v12+. Listing the creator in `users` is rejected by v12+ rooms.
+  const levels = {
+    users_default: ROLE_LEVELS.member,
+    events_default: ROLE_LEVELS.member,
+    state_default: ROLE_LEVELS.moderator,
+    ban: ROLE_LEVELS.moderator,
+    kick: ROLE_LEVELS.moderator,
+    redact: ROLE_LEVELS.moderator,
+    invite: ROLE_LEVELS.member,
+    events: {
+      [EventType.RoomPowerLevels]: ROLE_LEVELS.admin,
+      [EventType.RoomHistoryVisibility]: ROLE_LEVELS.admin,
+      [EventType.RoomEncryption]: ROLE_LEVELS.admin,
+      // Synapse replaces its whole default `events` map, so restore its admin-only entries.
+      [EventType.RoomTombstone]: ROLE_LEVELS.admin,
+      [EventType.RoomServerAcl]: ROLE_LEVELS.admin,
+      [CALL_MEMBER_EVENT_TYPE]: ROLE_LEVELS.member,
+    },
+  }
+  const { room_id: serverId } = await client.createRoom({
+    name,
+    topic: options.topic?.trim() || undefined,
+    preset: Preset.PrivateChat,
+    visibility: Visibility.Private,
+    creation_content: { type: 'm.space' },
+    initial_state: avatar ? [{ type: EventType.RoomAvatar, state_key: '', content: avatar }] : [],
+    power_level_content_override: levels,
+  })
+
+  let channelId: string | undefined
+  try {
+    const via = [ownServerName(client)]
+    const result = await client.createRoom({
+      name: 'general',
+      preset: Preset.PrivateChat,
+      visibility: Visibility.Private,
+      initial_state: [
+        { type: EventType.RoomJoinRules, state_key: '', content: openToServer(serverId) },
+        { type: EventType.RoomHistoryVisibility, state_key: '', content: { history_visibility: 'shared' } },
+        { type: SPACE_PARENT, state_key: serverId, content: { via, canonical: true } },
+      ] as never,
+      power_level_content_override: levels,
+    })
+    channelId = result.room_id
+    await linkChild(client, serverId, channelId, via)
+    return { serverId, channelId }
+  } catch (error) {
+    // Nobody else has been invited yet. Leave incomplete rooms so retries don't clutter the sidebar.
+    for (const roomId of [channelId, serverId]) {
+      if (!roomId) continue
+      await client.leave(roomId).catch((cleanupError: unknown) => console.warn('Could not leave incomplete server room:', cleanupError))
+    }
+    throw error
+  }
 }
 
 export async function createChannel(
@@ -166,7 +253,7 @@ export async function createChannel(
     preset: Preset.PrivateChat,
     visibility: Visibility.Private,
     initial_state: initialState as never,
-    power_level_content_override: inheritedPowerLevels(client, serverId) as never,
+    ...inheritedRoomOptions(client, serverId),
   })
   const [placement] = planMove(getChildLinks(client.getRoom(parentId)), roomId, null)
   await linkChild(client, parentId, roomId, via, placement?.order)
@@ -185,11 +272,17 @@ export async function createCategory(client: MatrixClient, options: { serverId: 
       { type: EventType.RoomJoinRules, state_key: '', content: openToServer(serverId) },
       { type: SPACE_PARENT, state_key: serverId, content: { via, canonical: true } },
     ] as never,
-    power_level_content_override: inheritedPowerLevels(client, serverId) as never,
+    ...inheritedRoomOptions(client, serverId),
   })
   const [placement] = planMove(getChildLinks(client.getRoom(serverId)), roomId, null)
   await linkChild(client, serverId, roomId, via, placement?.order)
   return roomId
+}
+
+async function uploadRoomIcon(client: MatrixClient, file: File) {
+  if (file.size > MAX_ICON_BYTES) throw new RangeError('icon too large')
+  const { content_uri: url } = await client.uploadContent(file, { name: file.name, type: file.type })
+  return { url, info: { mimetype: file.type, size: file.size } }
 }
 
 export async function setRoomIcon(client: MatrixClient, roomId: string, file: File | null): Promise<void> {
@@ -197,9 +290,7 @@ export async function setRoomIcon(client: MatrixClient, roomId: string, file: Fi
     await sendState(client, roomId, EventType.RoomAvatar, {})
     return
   }
-  if (file.size > MAX_ICON_BYTES) throw new RangeError('icon too large')
-  const { content_uri: url } = await client.uploadContent(file, { name: file.name, type: file.type })
-  await sendState(client, roomId, EventType.RoomAvatar, { url, info: { mimetype: file.type, size: file.size } })
+  await sendState(client, roomId, EventType.RoomAvatar, await uploadRoomIcon(client, file))
 }
 
 export interface RoomDetails {
