@@ -152,6 +152,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Pause the preview of your own stream to save resources (#20)
 - [x] Friends list (#21): friendship marked in the DM (`io.nexspeak.friend`), requests with accept/decline like Discord
 - [x] Create a server from inside the app (#31): space with roles and a default channel, like Element
+- [ ] Leave direct messages and rooms outside a server (#70)
 
 ### Later (0.3+)
 
