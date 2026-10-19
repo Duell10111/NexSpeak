@@ -157,6 +157,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 - Message search with filters (#37), link previews (opt-in, #40), custom emoji (`im.ponies`, #39),
   polls (#38)
+- Full emoji picker with search and categories, loaded on first open (#50); stickers (#51)
 - GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
 - Play audio and video attachments inline, loaded only on play (#42)
 - Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)
@@ -175,6 +176,29 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
   designed together on top of power levels
 - Milestone "Mobile Alpha" after a successful crypto spike
 
+### Milestone "0.4 – Everyday"
+
+- [ ] Inbox for unread messages and mentions (#52)
+- [ ] Server folders and server order in the sidebar, synced via account data (#53)
+- [ ] Nickname and avatar per server (#54); About Me, pronouns and banner (#55)
+- [ ] Forward messages and attachments (#56)
+- [ ] Record and send voice messages (#57)
+- [ ] Named threads and a better thread list (#58)
+- [ ] Appearance settings: theme, font size, compact mode (#59)
+
+### Milestone "0.5 – Moderation"
+
+Built on the role model from 0.3 (#32, #33). Rules the client cannot enforce alone run in a
+companion service; which one is decided first (#49).
+
+- [ ] Decide on a companion service for server-side enforcement (#49)
+- [ ] Time out members (#60)
+- [ ] Slowmode per channel (#61)
+- [ ] AutoMod and raid protection (#62)
+- [ ] Audit log (#63)
+- [ ] Invite links with expiry, usage limit and revocation (#64)
+- [ ] Incoming webhooks per channel (#65)
+
 ### Milestone "1.0"
 
 - [ ] Signed builds (#9; macOS: Developer ID certificate and notarization; Windows: optional, otherwise
@@ -182,7 +206,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ## 5. GitHub organization
 
-- **Milestones:** `Beta 0.1 – Web`, `Beta 0.2 – Desktop`, `0.3`, `1.0`, `Mobile Alpha`
+- **Milestones:** `Beta 0.1 – Web`, `Beta 0.2 – Desktop`, `0.3`, `0.4 – Everyday`, `0.5 – Moderation`,
+  `1.0`, `Mobile Alpha`
 - **Labels:**
   - Area: `area:web`, `area:desktop`, `area:mobile`, `area:core`, `area:calls`, `area:repo`
   - Type: `type:bug`, `type:feature`, `type:chore`
