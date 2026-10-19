@@ -32,3 +32,6 @@ jobs:
           path-to-signatures: signatures/v1/cla.json
           branch: cla-signatures
           allowlist: Duell10111,dependabot[bot],renovate[bot],github-actions[bot]
+          # Locking merged PRs breaks release-please: it comments on its merged release PR after
+          # tagging and fails on a locked one (the desktop build is then skipped).
+          lock-pullrequest-aftermerge: false

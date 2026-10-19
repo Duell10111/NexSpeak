@@ -1,6 +1,6 @@
 # Builds the desktop app for macOS, Windows and Linux. Called by release-please.yml for a release
 # and by nightly.yml for a nightly (installers are attached to the release), or started by hand
-# (installers only as workflow artifacts).
+# (installers only as workflow artifacts, or attached to an existing release with `tag`).
 #
 # Signing is optional and switches on with repository secrets, no workflow change needed:
 # - macOS: CSC_LINK + CSC_KEY_PASSWORD (Developer ID Application certificate as base64 .p12) and
@@ -33,6 +33,11 @@ on:
         type: string
         default: ""
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach the installers to (default: none)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
