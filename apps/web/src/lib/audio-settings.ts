@@ -1,7 +1,13 @@
 /**
- * Audio device and input mode preferences, persisted per browser.
+ * Audio device, input mode and voice processing preferences, persisted per browser.
  */
 
+import {
+  DEFAULT_AUDIO_PROCESSING,
+  NOISE_SUPPRESSION_MODES,
+  type AudioProcessingOptions,
+  type NoiseSuppressionMode,
+} from '@nexspeak/core/audio-processing'
 import { emptyCallShortcutBindings, parseCallShortcutBindings, type CallShortcutBindings } from '@nexspeak/core/global-shortcuts'
 
 export type InputMode = 'voice-activity' | 'push-to-talk'
@@ -25,6 +31,13 @@ export interface AudioSettings {
   /** Turns all sound cues off at once; soundCueGroups picks individual ones. */
   soundCues: boolean
   soundCueGroups: Record<SoundCueGroup, boolean>
+  noiseSuppression: NoiseSuppressionMode
+  echoCancellation: boolean
+  autoGainControl: boolean
+  /** Voice activity mode: only transmit while the level is above the input sensitivity. */
+  inputSensitivityEnabled: boolean
+  /** Input sensitivity in dBFS, MIN_INPUT_SENSITIVITY_DB to 0. */
+  inputSensitivityDb: number
   callShortcuts: CallShortcutBindings
 }
 
@@ -39,9 +52,15 @@ const DEFAULT_SETTINGS: AudioSettings = {
   pushToTalkReleaseDelayMs: 100,
   soundCues: true,
   soundCueGroups: { own: true, others: true, screenshare: true },
+  noiseSuppression: DEFAULT_AUDIO_PROCESSING.noiseSuppression,
+  echoCancellation: DEFAULT_AUDIO_PROCESSING.echoCancellation,
+  autoGainControl: DEFAULT_AUDIO_PROCESSING.autoGainControl,
+  inputSensitivityEnabled: false,
+  inputSensitivityDb: -50,
   callShortcuts: emptyCallShortcutBindings(),
 }
 export const MAX_PUSH_TO_TALK_RELEASE_DELAY_MS = 1000
+export const MIN_INPUT_SENSITIVITY_DB = -80
 const listeners = new Set<() => void>()
 
 let cachedRaw: string | null | undefined
@@ -73,11 +92,32 @@ export function loadAudioSettings(): AudioSettings {
         others: parsed.soundCueGroups?.others !== false,
         screenshare: parsed.soundCueGroups?.screenshare !== false,
       },
+      noiseSuppression: NOISE_SUPPRESSION_MODES.includes(parsed.noiseSuppression as NoiseSuppressionMode)
+        ? (parsed.noiseSuppression as NoiseSuppressionMode)
+        : DEFAULT_SETTINGS.noiseSuppression,
+      echoCancellation: parsed.echoCancellation !== false,
+      autoGainControl: parsed.autoGainControl !== false,
+      inputSensitivityEnabled: parsed.inputSensitivityEnabled === true,
+      inputSensitivityDb:
+        typeof parsed.inputSensitivityDb === 'number'
+          ? Math.min(0, Math.max(MIN_INPUT_SENSITIVITY_DB, parsed.inputSensitivityDb))
+          : DEFAULT_SETTINGS.inputSensitivityDb,
     }
   } catch {
     cachedSettings = DEFAULT_SETTINGS
   }
   return cachedSettings
+}
+
+/** What the call and the microphone test do with the microphone. */
+export function audioProcessingOptions(settings: AudioSettings): AudioProcessingOptions {
+  return {
+    noiseSuppression: settings.noiseSuppression,
+    echoCancellation: settings.echoCancellation,
+    autoGainControl: settings.autoGainControl,
+    voiceGateDb:
+      settings.inputMode === 'voice-activity' && settings.inputSensitivityEnabled ? settings.inputSensitivityDb : null,
+  }
 }
 
 export function getDefaultAudioSettings(): AudioSettings {

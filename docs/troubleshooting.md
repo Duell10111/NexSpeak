@@ -19,8 +19,9 @@ You don't hear anyone
   the output device and **Call volume** in **Settings → Audio**, and whether you are deafened.
 
 Others don't hear you
-: Check the input device with **Test microphone**. With push to talk, check that a key is set. On
-  macOS, the key only works in games with the accessibility permission.
+: Check the input device with **Test microphone**. With **Input sensitivity**, the test shows whether
+  your voice is above the threshold; move it further left if not. With push to talk, check that a key
+  is set. On macOS, the key only works in games with the accessibility permission.
 
 "You joined this call on another device."
 : You are in the same call with another device or app (e.g. the nightly and the stable app). Leave it

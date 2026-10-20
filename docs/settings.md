@@ -11,9 +11,13 @@ depends on your homeserver.
 
 ## Audio
 
-- **Input device** and **Output device**, **Call volume**, **Play test tone** and **Test
-  microphone** with a level meter. Some browsers can't choose the output device.
+- **Input device** and **Output device**, **Call volume** and **Play test tone**. Some browsers can't
+  choose the output device.
 - **Input mode**: **Voice activity** or **Push to talk**.
+- **Voice processing**: noise suppression, echo cancellation and automatic gain control, see
+  [below](#voice-processing).
+- **Test microphone** records for five seconds with your current input mode and voice processing and
+  shows the level. Closing the settings or a processing error releases the microphone immediately.
 - **Share system audio**: include sound when starting a screen share. The choice is remembered and
   applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
   depends on the browser and capture source. See [Calls and screen sharing](calls.md).
@@ -21,6 +25,43 @@ depends on your homeserver.
   a stream starts or stops. Turn them all off, or each one (**When you join or leave**, **When
   others join or leave**, **When a stream starts or stops**). They play on the output device at the
   call volume, and not while you are deafened.
+
+### Voice activity and input sensitivity
+
+With **Voice activity**, everything your microphone picks up is sent. Turn on **Input sensitivity** to
+send only while you are louder than the threshold (in dB; further left is more sensitive). It stays
+open for a moment after you stop, so word endings and short pauses aren't cut off. **Test microphone**
+marks the threshold on the level meter and shows whether you would be sent (**Transmitting**) or not
+(**Below the threshold – not transmitted**). Others don't see you as muted while the threshold holds
+you back.
+
+### Voice processing
+
+**Noise suppression**:
+
+| Option | What it does |
+|---|---|
+| **Standard (browser)** | The browser's built-in suppression (the default). |
+| **Enhanced (RNNoise)** | Filters keyboard, fan and background noise more strongly with [RNNoise](https://github.com/xiph/rnnoise). Replaces the browser's suppression. |
+| **Off** | No suppression, e.g. for music or a studio microphone. |
+
+**Echo cancellation** and **Automatic gain control** are on by default; turn echo cancellation off
+only with headphones. Changes also apply to a running call; switching echo cancellation or gain
+control reopens the microphone for a moment.
+Transmission pauses while a voice processor is replaced, including while RNNoise loads.
+
+Enhanced suppression and input sensitivity only run during a call (and the microphone test), on the
+browser's audio thread, and pause while you are muted. Measured cost (Apple M1 Max, one 48 kHz
+microphone):
+
+| Mode | CPU (one core) |
+|---|---|
+| **Standard (browser)** | Part of the browser's audio processing, no extra cost |
+| **Enhanced (RNNoise)** | about 1 % (about 1.6 % on CPUs without SIMD in WebAssembly) |
+| **Input sensitivity** | about 0.01 % |
+
+RNNoise needs the microphone at 48 kHz. Firefox can't convert other sample rates; there, enhanced
+suppression falls back to no suppression with a microphone at e.g. 44.1 kHz.
 
 ### Push to talk
 

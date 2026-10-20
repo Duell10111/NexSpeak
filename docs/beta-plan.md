@@ -164,7 +164,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Play audio and video attachments inline, loaded only on play (#42)
 - Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)
 - Custom status text and "Do not disturb" (#45)
-- Better noise suppression and voice activity detection (#41)
+- [x] Better noise suppression and voice activity detection (#41)
 - Camera selection and camera preview (#43)
 - Pop out streams and video into an always-on-top window, reusing the existing track (#47)
 - Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33
