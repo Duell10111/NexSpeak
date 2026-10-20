@@ -133,7 +133,8 @@ npm start       # serves apps/web/out/ locally with the security headers
 The app is a purely client-side Matrix application; credentials only go to the homeserver. The export runs
 on any static web server – requirements (security headers, MIME types, caching) and examples for Caddy and
 nginx are in [docs/hosting.md](docs/hosting.md). The LiveKit E2EE worker is copied to
-`apps/web/public/livekit-e2ee-worker.mjs` during the build.
+`apps/web/public/livekit-e2ee-worker.mjs` and the audio worklets (RNNoise, voice activity gate) to
+`apps/web/public/audio-processing/` during the build.
 
 ## Contributing & license
 

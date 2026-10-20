@@ -17,6 +17,7 @@ import {
   Track,
   TrackEvent,
   VideoPresets,
+  type LocalAudioTrack,
   type LocalTrackPublication,
   type LocalVideoTrack,
   type Participant,
@@ -54,6 +55,14 @@ import {
   type EncoderInfo,
 } from '../video-codec'
 import { createConnectionSampler, type ConnectionInfo } from '../connection-stats'
+import {
+  CallAudioProcessor,
+  captureConstraints,
+  DEFAULT_AUDIO_PROCESSING,
+  needsAudioGraph,
+  sameCaptureConstraints,
+  type AudioProcessingOptions,
+} from '../audio-processing'
 import { t } from '@nexspeak/i18n'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
@@ -171,6 +180,8 @@ export interface CallAudioOptions {
   startDeafened?: boolean
   /** Push-to-talk mode: the microphone only transmits while setPushToTalkPressed(true). */
   pushToTalk?: boolean
+  /** Noise suppression, echo cancellation, gain control and the voice activity gate. */
+  processing?: AudioProcessingOptions
   /** Called for sound cues (never while deafened, nor for the people already there when we join). */
   onCue?: (cue: CallCue) => void
 }
@@ -211,6 +222,10 @@ export class CallSession {
   private readonly startMuted: boolean
   private pushToTalk: boolean
   private pushToTalkPressed = false
+  private processing: AudioProcessingOptions
+  /** Holds the microphone back until its processor is in place, so nothing unprocessed goes out. */
+  private processingPending = false
+  private processingQueue: Promise<void> = Promise.resolve()
   /** Per-participant playback volume (0..1) and local mutes, by identity. */
   private readonly participantVolumes = new Map<string, number>()
   private readonly locallyMuted = new Set<string>()
@@ -251,6 +266,7 @@ export class CallSession {
     this.isDeafened = audio.startDeafened ?? false
     this.startMuted = audio.startMuted ?? false
     this.pushToTalk = audio.pushToTalk ?? false
+    this.processing = audio.processing ?? DEFAULT_AUDIO_PROCESSING
     this.onCue = audio.onCue
     this.audioContainer = document.createElement('div')
     this.audioContainer.hidden = true
@@ -295,9 +311,7 @@ export class CallSession {
       audioCaptureDefaults: {
         // A preference, not a requirement: a remembered device may be unplugged by now.
         deviceId: audio.inputDeviceId ? { ideal: audio.inputDeviceId } : undefined,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        ...captureConstraints(audio.processing ?? DEFAULT_AUDIO_PROCESSING),
       },
       audioOutput: audio.outputDeviceId ? { deviceId: audio.outputDeviceId } : undefined,
       e2ee: keyProvider
@@ -441,7 +455,9 @@ export class CallSession {
     const onLocalTrackPublished = (publication: LocalTrackPublication) => {
       if (publication.source !== Track.Source.Microphone) return
       publication.track?.on(TrackEvent.Restarted, gateMicrophone)
+      if (needsAudioGraph(this.processing)) this.processingPending = true
       gateMicrophone()
+      void this.queueAudioProcessing(() => this.applyAudioProcessing())
     }
     room.on(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
     room.on(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
@@ -678,7 +694,76 @@ export class CallSession {
     if (this.isLeaving) return
     await this.livekitRoom.localParticipant.setMicrophoneEnabled(enabled)
     this.applyTransmitGate()
+    this.microphoneProcessor()?.setActive(enabled)
     this.changed()
+  }
+
+  private microphoneTrack(): LocalAudioTrack | undefined {
+    return this.livekitRoom.localParticipant.getTrackPublication(Track.Source.Microphone)?.audioTrack
+  }
+
+  private microphoneProcessor(): CallAudioProcessor | null {
+    const processor = this.microphoneTrack()?.getProcessor()
+    return processor instanceof CallAudioProcessor ? processor : null
+  }
+
+  /** Changes noise suppression, echo cancellation, gain control or the voice gate in a running call. */
+  setAudioProcessing(options: AudioProcessingOptions): Promise<void> {
+    return this.queueAudioProcessing(async () => {
+      const previous = this.processing
+      if (
+        sameCaptureConstraints(previous, options) &&
+        previous.noiseSuppression === options.noiseSuppression &&
+        previous.voiceGateDb === options.voiceGateDb
+      ) {
+        return
+      }
+      this.processing = options
+      const constraints = captureConstraints(options)
+      // Used for the first publish and every later restart of the microphone.
+      Object.assign(this.livekitRoom.options.audioCaptureDefaults ?? {}, constraints)
+
+      const track = this.microphoneTrack()
+      if (!track) return
+      if (!sameCaptureConstraints(previous, options)) {
+        // Browsers apply these only when the microphone is opened.
+        const deviceId = this.livekitRoom.getActiveDevice('audioinput') ?? 'default'
+        await track.restartTrack({ ...constraints, deviceId: { ideal: deviceId } })
+      }
+      await this.applyAudioProcessing()
+    })
+  }
+
+  private queueAudioProcessing(task: () => Promise<void>): Promise<void> {
+    this.processingQueue = this.processingQueue.then(task).catch((error: unknown) => {
+      console.warn('Failed to apply audio processing:', error)
+    })
+    return this.processingQueue
+  }
+
+  private async applyAudioProcessing(): Promise<void> {
+    const track = this.microphoneTrack()
+    try {
+      if (!track || this.isLeaving) return
+      const current = this.microphoneProcessor()
+      if (!needsAudioGraph(this.processing)) {
+        if (current) await track.stopProcessor()
+      } else if (!current || !(await current.update(this.processing))) {
+        const processor = new CallAudioProcessor(this.processing)
+        try {
+          await track.setProcessor(processor)
+        } catch (error) {
+          await processor.destroy()
+          throw error
+        }
+        processor.setActive(!track.isMuted)
+        debug('audio processor set', this.processing)
+      }
+    } finally {
+      // Without a processor (it failed to load) the microphone still works, just unprocessed.
+      this.processingPending = false
+      this.applyTransmitGate()
+    }
   }
 
   /** Push-to-talk mode on or off; off transmits whenever the microphone is unmuted. */
@@ -694,12 +779,14 @@ export class CallSession {
 
   /**
    * Push-to-talk gates the microphone track instead of muting it: others don't see us as muted,
-   * and with Opus DTX a disabled track sends practically nothing.
+   * and with Opus DTX a disabled track sends practically nothing. With a processor this is its
+   * input, the unprocessed microphone; the processed track LiveKit sends stays enabled.
    */
   private applyTransmitGate(): void {
-    const track = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    const track = this.microphoneTrack()
     if (!track || track.isMuted) return
-    track.mediaStreamTrack.enabled = !this.pushToTalk || this.pushToTalkPressed
+    const input = this.microphoneProcessor()?.inputTrack ?? track.mediaStreamTrack
+    input.enabled = !this.processingPending && (!this.pushToTalk || this.pushToTalkPressed)
   }
 
   async setCameraEnabled(enabled: boolean): Promise<void> {

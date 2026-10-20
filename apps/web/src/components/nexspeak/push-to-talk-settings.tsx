@@ -6,8 +6,15 @@ import type { PushToTalkStatus } from "@nexspeak/core/desktop-bridge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
 import { useTranslation } from "@/hooks/useTranslation"
-import { MAX_PUSH_TO_TALK_RELEASE_DELAY_MS, saveAudioSettings, type AudioSettings, type InputMode } from "@/lib/audio-settings"
+import {
+  MAX_PUSH_TO_TALK_RELEASE_DELAY_MS,
+  MIN_INPUT_SENSITIVITY_DB,
+  saveAudioSettings,
+  type AudioSettings,
+  type InputMode,
+} from "@/lib/audio-settings"
 import { desktopBridge } from "@/lib/desktop"
 import { keyboardKeyLabel, keyFromKeyboardEvent, keyFromMouseEvent, mouseButtonNumber } from "@/lib/push-to-talk"
 import { cn } from "@/lib/utils"
@@ -118,6 +125,35 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
           </button>
         ))}
       </div>
+
+      {!isPushToTalk && (
+        <div className="space-y-3 rounded-md bg-muted/40 p-3">
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="input-sensitivity-enabled">{t("settings.inputSensitivity")}</Label>
+            <Switch
+              id="input-sensitivity-enabled"
+              checked={settings.inputSensitivityEnabled}
+              onCheckedChange={(inputSensitivityEnabled) => saveAudioSettings({ inputSensitivityEnabled })}
+            />
+          </div>
+          {settings.inputSensitivityEnabled && (
+            <div className="flex items-center gap-3">
+              <Slider
+                aria-label={t("settings.inputSensitivity")}
+                min={MIN_INPUT_SENSITIVITY_DB}
+                max={0}
+                step={1}
+                value={[settings.inputSensitivityDb]}
+                onValueChange={(value) => saveAudioSettings({ inputSensitivityDb: value[0] })}
+              />
+              <span className="w-14 shrink-0 text-right text-sm font-medium text-muted-foreground">
+                {settings.inputSensitivityDb} dB
+              </span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">{t("settings.inputSensitivityHint")}</p>
+        </div>
+      )}
 
       {isPushToTalk && (
         <div className="space-y-4 rounded-md bg-muted/40 p-3">

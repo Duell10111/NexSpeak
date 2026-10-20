@@ -13,8 +13,9 @@ const eslintConfig = defineConfig([
     "**/out/**",
     "**/build/**",
     "**/next-env.d.ts",
-    // Copied from livekit-client at build time (apps/web/scripts/copy-livekit-worker.mjs).
+    // Copied at build time (apps/web/scripts/copy-public-assets.mjs).
     "apps/web/public/livekit-e2ee-worker.mjs",
+    "apps/web/public/audio-processing/**",
     "**/test-results/**",
     "**/playwright-report/**",
     "dev/.data/**",

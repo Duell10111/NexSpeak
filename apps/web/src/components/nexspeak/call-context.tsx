@@ -17,7 +17,12 @@ import { CallSession, type CallSnapshot } from "@nexspeak/core/matrix/call-sessi
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { t } from "@nexspeak/i18n"
 import { CallPermissionError, enableCallsInRoom } from "@nexspeak/core/matrix/rtc"
-import { getDefaultAudioSettings, loadAudioSettings, subscribeAudioSettings } from "@/lib/audio-settings"
+import {
+  audioProcessingOptions,
+  getDefaultAudioSettings,
+  loadAudioSettings,
+  subscribeAudioSettings,
+} from "@/lib/audio-settings"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
 import {
   DEFAULT_SCREENSHARE_QUALITY,
@@ -183,6 +188,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           startMuted: voicePrefsRef.current.muted,
           startDeafened: voicePrefsRef.current.deafened,
           pushToTalk: settings.inputMode === "push-to-talk",
+          processing: audioProcessingOptions(settings),
           onCue: (cue) => {
             const current = loadAudioSettings()
             if (!isCueEnabled(current, cue)) return
@@ -368,6 +374,12 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       console.warn("Failed to switch audio output:", error)
     })
   }, [session, audioSettings.outputDeviceId])
+
+  const { noiseSuppression, echoCancellation, autoGainControl, voiceGateDb } = audioProcessingOptions(audioSettings)
+  useEffect(() => {
+    if (!session) return
+    void session.setAudioProcessing({ noiseSuppression, echoCancellation, autoGainControl, voiceGateDb })
+  }, [session, noiseSuppression, echoCancellation, autoGainControl, voiceGateDb])
 
   // Leave when the tab closes; the delayed leave event on the server covers crashes.
   useEffect(() => {
