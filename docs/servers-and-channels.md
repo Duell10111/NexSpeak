@@ -8,6 +8,7 @@ NexSpeak shows Matrix the way Discord is organized, and Element sees the same st
 | Category | Sub-space |
 | Channel (text and voice at once) | Room |
 | Admin, Moderator, Member | Power levels 100, 50, 0 |
+| Custom roles | Power levels in between, names and colors only in NexSpeak |
 
 ## Creating a server
 
@@ -43,9 +44,10 @@ The menu behind the server name (top of the channel list) has **Invite people**,
 settings**, **Notifications for all channels** and **Leave server**.
 
 **Server settings**
-: **Overview**: name, description and icon. **Permissions**: the server's default
-  [permissions](#permissions). **Members**: change someone's role, **Kick** them (they can come
-  back with a new invite) or **Ban** them (they can't join again).
+: **Overview**: name, description and icon. **Roles**: the server's [roles](#roles).
+  **Permissions**: the server's default [permissions](#permissions). **Members**: change someone's
+  roles, **Kick** them (they can come back with a new invite) or **Ban** them (they can't join
+  again).
 
   Admins can choose **Repair permissions** in **Overview** for servers with older channels or
   categories. This restores admin-only access to role settings, history visibility, encryption,
@@ -85,7 +87,36 @@ What each role may do follows the Matrix power levels of the rooms; by default:
 | Moderator | Manage channels and categories, remove members, send in announcement channels |
 | Member | Write, react and join calls (where allowed) |
 
-Roles apply to the whole server, in all of its channels.
+Roles apply to the whole server, in all of its channels. Someone can hold several roles; they
+get the permissions of the highest one.
+
+**Custom roles**
+: In **Server settings → Roles**, choose **Create role**. A new role starts right above Member.
+  Give it a name, a color (shown on member names) and choose whether to **Show separately in the
+  member list**. Move roles with the arrows: roles higher in the list rank above lower ones. A
+  custom role can sit above or below Moderator, but always below Admin. Admin, Moderator and
+  Member are built in; you can change their color and grouping but not move or delete them.
+
+  Each role has a level between those of the built-in roles (shown as **Level …**), and NexSpeak
+  picks it from the role's position. Moving a role changes its level: members with that role and
+  permissions set to it move along. Deleting a role gives its permissions to the next higher role,
+  and its members fall back to their next lower role.
+
+**Assigning roles**
+: In **Server settings → Members** or by clicking someone in the member list, open the role
+  picker next to their name and tick the roles they should have. You can only change people below your own role and only
+  give roles up to your own.
+
+**Member list**
+: Members are grouped by their highest role that is shown separately (by default Admin and
+  Moderator); everyone else is listed under **Online**, and offline members are listed together.
+  The highest role with a color colors the name.
+
+:::{note}
+Matrix only knows the power level. Element and other clients see the level (e.g. 75) but not the
+role names, colors or groups. If someone's level is changed in another client, NexSpeak shows the
+role that matches the new level.
+:::
 
 ## Permissions
 

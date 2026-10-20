@@ -14,8 +14,17 @@ import {
   readPermissionLevels,
   samePermissionLevels,
   type PermissionLevels,
-  type PermissionRole,
 } from './permissions'
+import {
+  levelForRoles,
+  MEMBER_ROLES_EVENT,
+  memberRolesStateKey,
+  readAssignedRoleIds,
+  readRoles,
+  ROLES_EVENT,
+  rolesContent,
+  type ServerRoleInfo,
+} from './roles'
 import { planMove, sortSpaceChildren, isValidOrder, type SpaceChildLink } from './space-order'
 
 const SPACE_CHILD = 'm.space.child'
@@ -265,6 +274,8 @@ export async function createServer(
   // Let the homeserver assign the creator's role: 100 in older rooms, implicit and
   // immutable in v12+. Listing the creator in `users` is rejected by v12+ rooms.
   const levels = defaultPowerLevels()
+  // Role metadata is shown to everybody, so only admins may write it.
+  const spaceLevels = { ...levels, events: { ...levels.events, [ROLES_EVENT]: ROLE_LEVELS.admin, [MEMBER_ROLES_EVENT]: ROLE_LEVELS.admin } }
   const { room_id: serverId } = await client.createRoom({
     name,
     topic: options.topic?.trim() || undefined,
@@ -272,7 +283,7 @@ export async function createServer(
     visibility: Visibility.Private,
     creation_content: { type: 'm.space' },
     initial_state: avatar ? [{ type: EventType.RoomAvatar, state_key: '', content: avatar }] : [],
-    power_level_content_override: levels,
+    power_level_content_override: spaceLevels,
   })
 
   let channelId: string | undefined
@@ -379,11 +390,10 @@ export async function saveRoomDetails(client: MatrixClient, roomId: string, next
   if (next.topic.trim() !== current.topic) await client.setRoomTopic(roomId, next.topic.trim())
 }
 
-export const PERMISSION_ROLES: Array<PermissionRole & { id: ServerRole }> = [
-  { id: 'admin', level: ROLE_LEVELS.admin },
-  { id: 'moderator', level: ROLE_LEVELS.moderator },
-  { id: 'member', level: ROLE_LEVELS.member },
-]
+/** Built-in and custom roles of a server, highest first. */
+export function readServerRoles(client: MatrixClient, serverId: string): ServerRoleInfo[] {
+  return readRoles(client.getRoom(serverId))
+}
 
 // Nobody calls in a space itself. Spaces of other clients (and Synapse's defaults) don't list
 // call events, which would otherwise read as "moderators only" and be passed on to new channels.
@@ -538,13 +548,143 @@ async function runPermissionRepair(
   return { repaired, failed }
 }
 
-/** Discord roles map to power levels; applied in every room of the server we may change. */
-export async function setServerRole(client: MatrixClient, serverId: string, userId: string, role: ServerRole): Promise<void> {
-  const level = ROLE_LEVELS[role]
-  // The server itself first: if that fails, the user isn't allowed to hand out this role.
-  await client.setPowerLevel(serverId, userId, level)
-  const rooms = allServerRooms(client, serverId).filter((roomId) => roomId !== serverId && client.getRoom(roomId)?.getMember(userId))
-  await forEachRoom(rooms, (roomId) => client.setPowerLevel(roomId, userId, level))
+interface LevelRewrite {
+  /** New power level per user. */
+  users: Record<string, number>
+  /** Permission thresholds to move, old level → new level (a role moved or was deleted). */
+  thresholds: Map<number, number>
+}
+
+/**
+ * One power level event per room for all user levels and thresholds that change. Like the
+ * homeserver, nobody else at or above our own level is touched (this also skips v12+ creators).
+ */
+function rewriteLevels(client: MatrixClient, roomId: string, rewrite: LevelRewrite, isServer: boolean): Record<string, unknown> | null {
+  const room = client.getRoom(roomId)
+  const ownId = client.getUserId() ?? ''
+  const ownLevel = client.getRoom(roomId)?.getMember(ownId)?.powerLevel ?? ROLE_LEVELS.member
+  const content = powerLevels(room)
+  const usersDefault = typeof content.users_default === 'number' ? content.users_default : ROLE_LEVELS.member
+  const users = { ...((content.users ?? {}) as Record<string, number>) }
+  let changed = false
+  for (const [userId, level] of Object.entries(rewrite.users)) {
+    const current = users[userId] ?? room?.getMember(userId)?.powerLevel ?? usersDefault
+    const membership = room?.getMember(userId)?.membership
+    const present = isServer || userId in users || membership === 'join' || membership === 'invite'
+    if (current === level || !present || level > ownLevel || (userId !== ownId && current >= ownLevel)) continue
+    if (level === usersDefault) delete users[userId]
+    else users[userId] = level
+    changed = true
+  }
+  const permissions = readRoomPermissions(room)
+  const moved = Object.fromEntries(
+    Object.entries(permissions).flatMap(([key, level]) => (rewrite.thresholds.has(level) ? [[key, rewrite.thresholds.get(level)!]] : [])),
+  )
+  let next: Record<string, unknown> = { ...content, users }
+  if (Object.keys(moved).length) {
+    next = applyPermissionLevels(next, moved)
+    changed = true
+  }
+  if (isServer) {
+    // Older servers: make role metadata admin-only in the same event.
+    const events = { ...((next.events ?? {}) as Record<string, number>) }
+    for (const type of [ROLES_EVENT, MEMBER_ROLES_EVENT]) {
+      if (events[type] === undefined) {
+        events[type] = ROLE_LEVELS.admin
+        changed = true
+      }
+    }
+    next.events = events
+  }
+  return changed ? next : null
+}
+
+/**
+ * Apply a rewrite to the whole server. The server first: if that fails, we lack the permission
+ * and nothing else changed. `between` runs after the server and before the other rooms.
+ */
+async function rewriteServerLevels(
+  client: MatrixClient,
+  serverId: string,
+  rewrite: LevelRewrite,
+  between?: () => Promise<unknown>,
+): Promise<{ failed: number }> {
+  const serverLevels = rewriteLevels(client, serverId, rewrite, true)
+  if (serverLevels) await sendState(client, serverId, EventType.RoomPowerLevels, serverLevels)
+  await between?.()
+  const rooms = allServerRooms(client, serverId).filter((roomId) => roomId !== serverId)
+  const failed = await forEachRoom(rooms, async (roomId) => {
+    const next = rewriteLevels(client, roomId, rewrite, false)
+    if (next) await sendState(client, roomId, EventType.RoomPowerLevels, next)
+  })
+  return { failed }
+}
+
+/** The roles someone holds: assigned with NexSpeak, or the built-in role of their level. */
+export function readMemberRoleIds(client: MatrixClient, serverId: string, userId: string): string[] {
+  const space = client.getRoom(serverId)
+  const roles = readRoles(space)
+  const assigned = readAssignedRoleIds(space, userId)
+  const level = Math.min(space?.getMember(userId)?.powerLevel ?? ROLE_LEVELS.member, ROLE_LEVELS.admin)
+  if (assigned && levelForRoles(roles, assigned) === level) return assigned.filter((id) => roles.some((role) => role.id === id))
+  const exact = roles.find((role) => role.level === level)
+  return exact && exact.id !== 'member' ? [exact.id] : []
+}
+
+/**
+ * Give someone exactly these roles. Their power level becomes the highest role level in every
+ * room of the server (one event per room); the roles themselves are one event in the space.
+ */
+export async function setMemberRoles(client: MatrixClient, serverId: string, userId: string, roleIds: string[]): Promise<{ failed: number }> {
+  const roles = readRoles(client.getRoom(serverId))
+  const ids = roleIds.filter((id) => id !== 'member' && roles.some((role) => role.id === id))
+  const level = levelForRoles(roles, ids)
+  const ownLevel = client.getRoom(serverId)?.getMember(client.getUserId() ?? '')?.powerLevel ?? ROLE_LEVELS.member
+  if (level > ownLevel) throw new Error('Cannot give a role above your own')
+  return rewriteServerLevels(client, serverId, { users: { [userId]: level }, thresholds: new Map() }, () =>
+    sendState(client, serverId, MEMBER_ROLES_EVENT, { roles: ids }, memberRolesStateKey(userId)),
+  )
+}
+
+/**
+ * Save the roles of a server (built-in and custom, highest first, with their planned levels).
+ * Members whose roles changed level get their new power level, and thresholds of permissions
+ * follow a moved role; those of a deleted role go to the next higher role, so nobody gains a
+ * permission. One event for the roles and one power level event per room that changes.
+ */
+export async function saveServerRoles(client: MatrixClient, serverId: string, next: ServerRoleInfo[]): Promise<{ failed: number }> {
+  const space = client.getRoom(serverId)
+  const previous = readRoles(space)
+  const sorted = [...next].sort((a, b) => b.level - a.level)
+  const thresholds = new Map<number, number>()
+  // Members without assigned roles whose level is exactly a custom role's level.
+  const unassignedLevels = new Map<number, number>()
+  for (const role of previous) {
+    if (role.builtIn) continue
+    const kept = sorted.find((candidate) => candidate.id === role.id)
+    const level = kept?.level ?? sorted.filter((candidate) => candidate.level > role.level).at(-1)?.level ?? ROLE_LEVELS.admin
+    if (level !== role.level) thresholds.set(role.level, level)
+    const memberLevel = kept?.level ?? sorted.find((candidate) => candidate.level < role.level)?.level ?? ROLE_LEVELS.member
+    if (memberLevel !== role.level) unassignedLevels.set(role.level, memberLevel)
+  }
+
+  const users: Record<string, number> = {}
+  for (const member of space?.getMembers() ?? []) {
+    if (member.membership !== 'join' && member.membership !== 'invite') continue
+    const assigned = readAssignedRoleIds(space, member.userId)
+    if (!assigned) {
+      const level = unassignedLevels.get(member.powerLevel)
+      if (level !== undefined) users[member.userId] = level
+      continue
+    }
+    // Only if the level still matches the assigned roles; otherwise it was changed elsewhere.
+    if (member.powerLevel !== levelForRoles(previous, assigned)) continue
+    const level = levelForRoles(sorted, assigned)
+    if (level !== member.powerLevel) users[member.userId] = level
+  }
+  return rewriteServerLevels(client, serverId, { users, thresholds }, () =>
+    sendState(client, serverId, ROLES_EVENT, rolesContent(sorted)),
+  )
 }
 
 function roomsWithMember(client: MatrixClient, roomIds: string[], userId: string): string[] {

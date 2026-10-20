@@ -26,10 +26,14 @@ import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
 import { useFriendActions, useFriendOf } from "@/components/nexspeak/friends-context"
 import { PresenceAvatar, USER_PRESENCE_LABELS } from "@/components/nexspeak/presence-avatar"
 import { getUserPresence, type UserPresence } from "@nexspeak/core/matrix/presence"
+import { displayRole, MEMBER_ROLES_EVENT, memberRoles, readAssignedRoleIds, readRoles, ROLES_EVENT, type ServerRoleInfo } from "@nexspeak/core/matrix/roles"
+import { RoleDot, roleLabel, RolePicker } from "@/components/nexspeak/server-roles"
 import type { MessageKey } from "@nexspeak/i18n"
 
 interface MemberListProps {
   activeRoomId: string
+  /** The server of the room; roles come from there. Missing for DMs and rooms outside servers. */
+  serverId?: string
   className?: string
 }
 
@@ -39,25 +43,40 @@ interface UiMember {
   avatarMxc?: string
   presence: UserPresence
   powerLevel: number
+  /** Highest first. */
+  roles: ServerRoleInfo[]
+  hoisted: ServerRoleInfo | null
+  color?: string
 }
 
-function readMembers(client: MatrixClient, roomId: string): UiMember[] {
+function readMembers(client: MatrixClient, roomId: string, serverId: string | undefined): UiMember[] {
   const room = client.getRoom(roomId)
   if (!room) return []
+  // Roles are server-wide, like the power levels they come from.
+  const space = serverId ? client.getRoom(serverId) : null
+  const roles = readRoles(space)
 
   return room
     .getJoinedMembers()
-    .map((member) => ({
-      userId: member.userId,
-      name: member.name || member.userId,
-      avatarMxc: member.getMxcAvatarUrl() || undefined,
-      presence: getUserPresence(client, member.userId),
-      powerLevel: member.powerLevel,
-    }))
+    .map((member) => {
+      const powerLevel = space?.getMember(member.userId)?.powerLevel ?? member.powerLevel
+      const shown = memberRoles(roles, space ? readAssignedRoleIds(space, member.userId) : null, powerLevel)
+      return {
+        userId: member.userId,
+        name: member.name || member.userId,
+        avatarMxc: member.getMxcAvatarUrl() || undefined,
+        presence: getUserPresence(client, member.userId),
+        powerLevel,
+        roles: shown,
+        ...displayRole(shown),
+      }
+    })
     .sort((a, b) => b.powerLevel - a.powerLevel || a.name.localeCompare(b.name))
 }
 
-function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember[] {
+const ROLE_STATE = new Set<string>([ROLES_EVENT, MEMBER_ROLES_EVENT, "m.room.power_levels"])
+
+function useJoinedMembers(client: MatrixClient | null, roomId: string, serverId: string | undefined): UiMember[] {
   const [state, setState] = useState<{ roomId: string; members: UiMember[] } | null>(null)
 
   useEffect(() => {
@@ -68,7 +87,7 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
       if (frame !== null) return
       frame = requestAnimationFrame(() => {
         frame = null
-        setState({ roomId, members: readMembers(client, roomId) })
+        setState({ roomId, members: readMembers(client, roomId, serverId) })
       })
     }
 
@@ -80,6 +99,11 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
       .then(refresh)
       .catch((error: unknown) => console.warn("Failed to load room members:", error))
 
+    const onState = (event: { getRoomId: () => string | undefined; getType: () => string }) => {
+      const eventRoomId = event.getRoomId()
+      if ((eventRoomId === roomId || eventRoomId === serverId) && ROLE_STATE.has(event.getType())) refresh()
+    }
+    client.on(RoomStateEvent.Events, onState)
     client.on(RoomStateEvent.Members, refresh)
     client.on(RoomStateEvent.NewMember, refresh)
     client.on(RoomMemberEvent.Membership, refresh)
@@ -89,6 +113,7 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
 
     return () => {
       if (frame !== null) cancelAnimationFrame(frame)
+      client.removeListener(RoomStateEvent.Events, onState)
       client.removeListener(RoomStateEvent.Members, refresh)
       client.removeListener(RoomStateEvent.NewMember, refresh)
       client.removeListener(RoomMemberEvent.Membership, refresh)
@@ -96,7 +121,7 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string): UiMember
       client.removeListener(UserEvent.Presence, refresh)
       client.removeListener(UserEvent.CurrentlyActive, refresh)
     }
-  }, [client, roomId])
+  }, [client, roomId, serverId])
 
   return state && state.roomId === roomId ? state.members : []
 }
@@ -200,7 +225,7 @@ function FriendButton({ userId, name }: { userId: string; name: string }) {
 }
 
 /** Discord's profile popout: who it is and a way to message them directly. */
-function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: boolean; onDone: () => void }) {
+function MemberProfile({ member, serverId, isSelf, onDone }: { member: UiMember; serverId?: string; isSelf: boolean; onDone: () => void }) {
   const { t } = useTranslation()
   const openDirectMessage = useOpenDirectMessage()
   const [isOpening, setIsOpening] = useState(false)
@@ -223,6 +248,20 @@ function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: b
           {presenceLabel && <p className="text-xs text-muted-foreground">{t(presenceLabel)}</p>}
         </div>
       </div>
+      {serverId && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t("members.roles")}</p>
+          <ul className="flex flex-wrap gap-1">
+            {(member.roles.length ? member.roles.map((role) => ({ key: role.id, color: role.color, label: roleLabel(role, t) })) : [{ key: "member", color: undefined, label: t("role.member") }]).map((role) => (
+              <li key={role.key} className="flex items-center gap-1.5 rounded bg-accent px-1.5 py-0.5 text-xs">
+                <RoleDot color={role.color} className="h-2.5 w-2.5" />
+                {role.label}
+              </li>
+            ))}
+          </ul>
+          <RolePicker serverId={serverId} userId={member.userId} name={member.name} className="w-full" />
+        </div>
+      )}
       {!isSelf && (
         <div className="space-y-2">
           <Button className="w-full" size="sm" onClick={() => void message()} disabled={isOpening}>
@@ -237,7 +276,7 @@ function MemberProfile({ member, isSelf, onDone }: { member: UiMember; isSelf: b
   )
 }
 
-function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voiceRoomName?: string; isSelf: boolean }) {
+function MemberItem({ member, serverId, voiceRoomName, isSelf }: { member: UiMember; serverId?: string; voiceRoomName?: string; isSelf: boolean }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const isAway = member.presence === "offline"
@@ -260,7 +299,10 @@ function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voice
             dotClassName="border-secondary group-hover:border-nx-hover"
           />
           <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-[15px] leading-5 font-medium text-muted-foreground group-hover:text-foreground">
+            <p
+              className="truncate text-[15px] leading-5 font-medium text-muted-foreground group-hover:text-foreground"
+              style={member.color ? { color: member.color } : undefined}
+            >
               {member.name}
             </p>
             {voiceRoomName && (
@@ -273,7 +315,7 @@ function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voice
         </button>
       </PopoverTrigger>
       <PopoverContent side="left" align="start" className="w-72">
-        <MemberProfile member={member} isSelf={isSelf} onDone={() => setOpen(false)} />
+        <MemberProfile member={member} serverId={serverId} isSelf={isSelf} onDone={() => setOpen(false)} />
       </PopoverContent>
     </Popover>
   )
@@ -282,11 +324,13 @@ function MemberItem({ member, voiceRoomName, isSelf }: { member: UiMember; voice
 function MemberSection({
   title,
   members,
+  serverId,
   voiceRoomByUser,
   ownUserId,
 }: {
   title: string
   members: UiMember[]
+  serverId?: string
   voiceRoomByUser: Map<string, string>
   ownUserId: string
 }) {
@@ -302,6 +346,7 @@ function MemberSection({
           <MemberItem
             key={member.userId}
             member={member}
+            serverId={serverId}
             voiceRoomName={voiceRoomByUser.get(member.userId)}
             isSelf={member.userId === ownUserId}
           />
@@ -311,33 +356,37 @@ function MemberSection({
   )
 }
 
-/** Discord groups members by their highest role; power levels are Matrix' roles. */
-function roleTitle(powerLevel: number): MessageKey | null {
-  if (powerLevel >= 100) return "members.admin"
-  if (powerLevel >= 50) return "members.moderator"
-  return null
-}
+type MemberGroup = { key: string; title: string; members: UiMember[] }
 
-function groupMembers(members: UiMember[], presenceKnown: boolean): Array<{ title: MessageKey; members: UiMember[] }> {
-  const groups = new Map<MessageKey, UiMember[]>()
-  const add = (title: MessageKey, member: UiMember) => groups.set(title, [...(groups.get(title) ?? []), member])
-
+/** Like Discord: by the highest role shown separately, the rest online, then everybody offline. */
+function groupMembers(members: UiMember[], presenceKnown: boolean, t: ReturnType<typeof useTranslation>["t"]): MemberGroup[] {
+  const byRole = new Map<string, { role: ServerRoleInfo; members: UiMember[] }>()
+  const rest: UiMember[] = []
+  const offline: UiMember[] = []
   members.forEach((member) => {
-    // Like Discord, offline members are listed together regardless of their role.
-    if (presenceKnown && member.presence === "offline") return
-    add(roleTitle(member.powerLevel) ?? (presenceKnown ? "presence.online" : "members.title"), member)
+    if (presenceKnown && member.presence === "offline") offline.push(member)
+    else if (member.hoisted) {
+      const group = byRole.get(member.hoisted.id) ?? { role: member.hoisted, members: [] }
+      group.members.push(member)
+      byRole.set(member.hoisted.id, group)
+    } else rest.push(member)
   })
-  if (presenceKnown) members.filter((member) => member.presence === "offline").forEach((member) => add("presence.offline", member))
-
-  return Array.from(groups, ([title, grouped]) => ({ title, members: grouped }))
+  const restKey: MessageKey = presenceKnown ? "presence.online" : "members.title"
+  return [
+    ...[...byRole.values()]
+      .sort((a, b) => b.role.level - a.role.level)
+      .map(({ role, members: grouped }) => ({ key: `role:${role.id}`, title: roleLabel(role, t), members: grouped })),
+    { key: restKey, title: t(restKey), members: rest },
+    { key: "presence.offline", title: t("presence.offline"), members: offline },
+  ]
 }
 
-export function MemberList({ activeRoomId, className }: MemberListProps) {
+export function MemberList({ activeRoomId, serverId, className }: MemberListProps) {
   const { t } = useTranslation()
   const { client } = useMatrixClient()
   const { callInfoByRoom } = useCallContext()
   const ownUserId = client?.getUserId() ?? ""
-  const members = useJoinedMembers(client, activeRoomId)
+  const members = useJoinedMembers(client, activeRoomId, serverId)
   const presenceKnown = members.some((member) => member.presence !== "unknown")
 
   const voiceRoomByUser = new Map<string, string>()
@@ -349,11 +398,12 @@ export function MemberList({ activeRoomId, className }: MemberListProps) {
   return (
     <aside className={cn("flex h-full w-60 shrink-0 flex-col bg-secondary", className)} aria-label={t("members.title")}>
       <ScrollArea className="min-h-0 flex-1">
-        {groupMembers(members, presenceKnown).map((group) => (
+        {groupMembers(members, presenceKnown, t).map((group) => (
           <MemberSection
-            key={group.title}
-            title={t(group.title)}
+            key={group.key}
+            title={group.title}
             members={group.members}
+            serverId={serverId}
             voiceRoomByUser={voiceRoomByUser}
             ownUserId={ownUserId}
           />

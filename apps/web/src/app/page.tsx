@@ -255,6 +255,7 @@ export default function NexSpeakApp() {
                   <ChatArea
                     key={channelId}
                     activeChannelId={channelId}
+                    serverId={isDirectMessages || !serverId ? undefined : serverId}
                     showMembers={showMembers}
                     onToggleMembers={handleToggleMembers}
                     onOpenNavigation={() => setIsNavigationOpen(true)}
@@ -278,7 +279,9 @@ export default function NexSpeakApp() {
                 <SheetContent side="right" className="w-auto gap-0 p-0 [&>button:last-child]:hidden">
                   <SheetTitle className="sr-only">{t("members.title")}</SheetTitle>
                   <SheetDescription className="sr-only">{t("members.description")}</SheetDescription>
-                  {channelId && !isFriendsView && <MemberList activeRoomId={channelId} />}
+                  {channelId && !isFriendsView && (
+                    <MemberList activeRoomId={channelId} serverId={isDirectMessages || !serverId ? undefined : serverId} />
+                  )}
                 </SheetContent>
               </Sheet>
             </div>

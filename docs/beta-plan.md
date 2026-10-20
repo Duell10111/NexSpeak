@@ -177,7 +177,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Push-to-talk hook subscribes only to the events its binding needs, at the OS level (#74)
 - [x] Share system audio with the screen on macOS, with a remembered audio sharing toggle (#36)
 - [x] Granular permissions with category/channel overrides on top of power levels (#33)
-- Custom, stackable roles (#32), extending the roles of the permission editor
+- [x] Custom, stackable roles with colors and member list groups on top of power levels (#32)
 - Milestone "Mobile Alpha" after a successful crypto spike
 
 ### Milestone "0.4 – Everyday"
