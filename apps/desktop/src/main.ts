@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { extname, join, normalize, sep } from "node:path"
+import { release } from "node:os"
 import { pathToFileURL } from "node:url"
 import {
   app,
@@ -22,6 +23,7 @@ import { setBadgeCount } from "./badge"
 import { APP_ID, CHANNEL, DEEP_LINK_SCHEME, PRODUCT_NAME } from "./channel"
 import { registerDeepLinks, setupDeepLinks } from "./deep-links"
 import { originOf } from "./origin"
+import { screenShareAudioDevice, supportsSystemAudio } from "./display-media"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
 import { createTray, setTrayUpdate, trayLabels } from "./tray"
 import { setupUpdater, setUpdaterInCall } from "./updater"
@@ -46,6 +48,13 @@ const webRoot = join(webDir, "out")
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("enable-features", "AcceleratedVideoEncoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL")
 }
+// Use ScreenCaptureKit on macOS 13+, including its own-process audio exclusion. Electron 44's
+// default CoreAudio tap path needs separate audio permission and can silently return dead audio.
+// Revisit this flag when upgrading Electron: Chromium 155 removes it.
+if (process.platform === "darwin") {
+  app.commandLine.appendSwitch("disable-features", "MacCatapLoopbackAudioForScreenShare")
+}
+const canShareSystemAudio = supportsSystemAudio(process.platform, release())
 
 // Windows only shows notifications for apps with an AppUserModelID (same as appId in
 // electron-builder.cjs).
@@ -197,8 +206,8 @@ function restrictPermissions(target: Session) {
 }
 
 /**
- * Screen capture: macOS 15+ shows its own picker (ScreenCaptureKit), Wayland shows the portal's.
- * Elsewhere the web app shows ours (DesktopSourcePicker) and answers over IPC.
+ * Screen capture: Wayland shows the portal's picker; elsewhere the web app shows ours and
+ * answers over IPC. On macOS our handler must run to grant loopback with own-audio exclusion.
  */
 function handleDisplayMedia(target: Session) {
   let nextRequestId = 0
@@ -244,14 +253,16 @@ function handleDisplayMedia(target: Session) {
 
         const source = choices.find((candidate) => candidate.id === chosenId)
         if (!source) return callback({})
-        // System audio only exists as loopback on Windows.
-        callback({ video: source, ...(request.audioRequested && process.platform === "win32" && { audio: "loopback" }) })
+        const audio = screenShareAudioDevice(request.audioRequested, process.platform, release())
+        // Electron accepts this Chromium device id, but its type only lists loopback/loopbackWithMute.
+        // Select it explicitly: Blink ignores restrictOwnAudio on the older ScreenCaptureKit path.
+        callback({ video: source, ...(audio && { audio: audio as Electron.Streams["audio"] }) })
       } catch (error) {
         console.error("Screen capture request failed", error)
         callback({})
       }
     },
-    { useSystemPicker: true },
+    { useSystemPicker: false },
   )
 }
 
@@ -282,6 +293,7 @@ function createWindow() {
         `--nexspeak-deep-link-scheme=${DEEP_LINK_SCHEME}`,
         `--nexspeak-app-version=${app.getVersion()}`,
         `--nexspeak-channel=${CHANNEL}`,
+        `--nexspeak-system-audio=${canShareSystemAudio}`,
       ],
     },
   })

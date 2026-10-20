@@ -335,6 +335,9 @@ export const en: Record<MessageKey, string> = {
 
   'stream.resolution': 'Resolution',
   'stream.framerate': 'Frame rate',
+  'stream.shareAudio': 'Share system audio',
+  'stream.shareAudioHintDesktop': 'Share sound from other apps when starting a screen share. Applies to the next share.',
+  'stream.shareAudioHintBrowser': 'Request audio when starting a screen share. Availability depends on the browser and source; you may also need to enable it in the browser picker. Applies to the next share.',
   'stream.source': 'Source',
   'stream.goLive': 'Go Live',
   'stream.pickSource': 'What do you want to share?',

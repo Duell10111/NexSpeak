@@ -65,6 +65,8 @@ export type UpdateStatus =
 
 export interface DesktopBridge {
   platform: 'darwin' | 'win32' | 'linux'
+  /** System audio capture is available on Windows and macOS 13+. */
+  supportsSystemAudio: boolean
   /** Version of the desktop app (may differ from the web build's). */
   appVersion: string
   channel: 'stable' | 'nightly'

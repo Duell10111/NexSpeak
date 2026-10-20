@@ -36,11 +36,27 @@ you**). This doesn't affect what others hear.
 
 **Go Live**
 : Then choose the screen or window. In the browser, the browser asks; in the desktop app NexSpeak
-  shows its own picker (macOS 15 and Wayland use the system's picker). On Windows the desktop app
-  also shares the system audio.
+  shows its own picker (Wayland uses the system's picker).
+
+**Share system audio**
+: Turn sound sharing on or off before choosing **Go Live**, or in **Settings → Audio**. The choice
+  is remembered on this device and applies to the next share. It is on by default. Turning it off
+  captures only video; your microphone is controlled separately.
+
+  The desktop app supports system audio on Windows and macOS 13 or later. On older macOS and on
+  Linux the option is hidden. On macOS, NexSpeak excludes its own audio output, including the
+  voices of other call participants, from the shared sound. Sound from other apps is captured
+  system-wide, including when you share a single window. In a browser, audio availability depends
+  on the browser and selected source; you may also need to enable audio in its picker.
+
+  On macOS, allow NexSpeak under **System Settings → Privacy & Security → Screen & System Audio
+  Recording** (called **Screen Recording** on older releases). Restart NexSpeak if macOS asks.
 
 While you stream, **Stream settings** changes the quality without stopping, and **Stop streaming**
 ends it.
+
+To change whether a running stream includes sound, stop it and start a new share with the desired
+**Share system audio** setting.
 
 Your own stream tile doesn't show your screen by default ("Your stream is still running! We paused
 the preview to save your resources."), so the preview costs no graphics card time while you play.

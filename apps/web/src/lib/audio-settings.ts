@@ -13,6 +13,8 @@ export interface AudioSettings {
   outputDeviceId: string
   /** 0-100 */
   outputVolume: number
+  /** Include system/tab audio when starting a screen share, where supported. */
+  shareSystemAudio: boolean
   inputMode: InputMode
   /** KeyboardEvent.code or "Mouse3"–"Mouse5" (see lib/push-to-talk.ts); null until chosen. */
   pushToTalkKey: string | null
@@ -28,6 +30,7 @@ const DEFAULT_SETTINGS: AudioSettings = {
   inputDeviceId: '',
   outputDeviceId: '',
   outputVolume: 100,
+  shareSystemAudio: true,
   inputMode: 'voice-activity',
   pushToTalkKey: null,
   pushToTalkReleaseDelayMs: 100,
@@ -52,6 +55,7 @@ export function loadAudioSettings(): AudioSettings {
       outputDeviceId: typeof parsed.outputDeviceId === 'string' ? parsed.outputDeviceId : '',
       outputVolume:
         typeof parsed.outputVolume === 'number' ? Math.min(100, Math.max(0, parsed.outputVolume)) : 100,
+      shareSystemAudio: typeof parsed.shareSystemAudio === 'boolean' ? parsed.shareSystemAudio : true,
       inputMode: parsed.inputMode === 'push-to-talk' ? 'push-to-talk' : 'voice-activity',
       pushToTalkKey: typeof parsed.pushToTalkKey === 'string' ? parsed.pushToTalkKey : null,
       pushToTalkReleaseDelayMs:
