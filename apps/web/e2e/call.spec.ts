@@ -199,6 +199,13 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   const bobPage = await newPage(browser)
   // Keep the peer connections reachable to inspect what is actually sent.
   await alicePage.addInitScript(() => {
+    const requests: DisplayMediaStreamOptions[] = []
+    ;(window as unknown as { __displayRequests: DisplayMediaStreamOptions[] }).__displayRequests = requests
+    const getDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getDisplayMedia = (options) => {
+      requests.push(options ?? {})
+      return getDisplayMedia(options)
+    }
     const connections: RTCPeerConnection[] = []
     ;(window as unknown as { __pcs: RTCPeerConnection[] }).__pcs = connections
     const Original = window.RTCPeerConnection
@@ -222,8 +229,14 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   const dialog = alicePage.getByRole("dialog", { name: "Bildschirm teilen" })
   await dialog.getByRole("radio", { name: "720p" }).click()
   await dialog.getByRole("radio", { name: "60 FPS" }).click()
+  await expect(dialog.getByRole("switch", { name: "Systemaudio teilen" })).toBeChecked()
+  await dialog.getByRole("switch", { name: "Systemaudio teilen" }).uncheck()
   await dialog.getByRole("button", { name: "Live gehen" }).click()
   await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+  const captureRequests = () => alicePage.evaluate(() =>
+    (window as unknown as { __displayRequests: DisplayMediaStreamOptions[] }).__displayRequests,
+  )
+  expect(await captureRequests()).toMatchObject([{ audio: false, systemAudio: "exclude" }])
 
   // Alice's own preview is paused by default (no <video>), and can be shown on demand.
   await expect(alicePage.getByText("Dein Stream läuft weiter!", { exact: false })).toBeVisible()
@@ -308,6 +321,27 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   // The choice is remembered for the next stream.
   await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
   await expect(alicePage.getByRole("radio", { name: "15 FPS" })).toHaveAttribute("aria-checked", "true")
+  await expect(dialog.getByRole("switch", { name: "Systemaudio teilen" })).not.toBeChecked()
+  await dialog.getByRole("button", { name: "Abbrechen" }).click()
+
+  // The Audio settings and Go Live dialog use the same preference, also after a reload.
+  await alicePage.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  const settingsDialog = alicePage.getByRole("dialog", { name: "Einstellungen", exact: true })
+  await settingsDialog.getByRole("tab", { name: "Audio", exact: true }).click()
+  await expect(settingsDialog.getByRole("switch", { name: "Systemaudio teilen" })).not.toBeChecked()
+  await settingsDialog.getByRole("switch", { name: "Systemaudio teilen" }).check()
+  await alicePage.keyboard.press("Escape")
+  await alicePage.reload()
+  await openRoom(alicePage, roomName)
+  await joinVoice(alicePage)
+  await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+  await expect(dialog.getByRole("switch", { name: "Systemaudio teilen" })).toBeChecked()
+  await dialog.getByRole("button", { name: "Live gehen" }).click()
+  await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+  expect(await captureRequests()).toMatchObject([{
+    audio: true,
+    systemAudio: "include",
+  }])
 })
 
 test("leaving a room during a call ends the call for the others too", async ({ browser }) => {

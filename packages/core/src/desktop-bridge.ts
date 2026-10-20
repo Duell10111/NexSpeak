@@ -1,3 +1,5 @@
+import type { CallShortcutAction, CallShortcutBindings, CallShortcutStatuses } from './global-shortcuts.js'
+
 /**
  * What the desktop app (apps/desktop/src/preload.ts) exposes to the web app as `window.nexspeak`.
  * Absent in the browser; every desktop feature must check for it.
@@ -65,6 +67,8 @@ export type UpdateStatus =
 
 export interface DesktopBridge {
   platform: 'darwin' | 'win32' | 'linux'
+  /** System audio capture is available on Windows and macOS 13+. */
+  supportsSystemAudio: boolean
   /** Version of the desktop app (may differ from the web build's). */
   appVersion: string
   channel: 'stable' | 'nightly'
@@ -90,6 +94,13 @@ export interface DesktopBridge {
   requestPushToTalkPermission(): Promise<PushToTalkStatus>
   /** Key pressed (true) or released (false). Returns an unsubscribe function. */
   onPushToTalk(handler: (pressed: boolean) => void): () => void
+  /** Configures call-only global keys. The main process gates registration on voice state. */
+  setCallShortcuts(bindings: CallShortcutBindings, pushToTalkKey: string | null): Promise<void>
+  /** Temporarily unregisters keys while assigning shortcuts; false resumes them. */
+  setCallShortcutsSuspended(suspended: boolean): void
+  onCallShortcut(handler: (action: CallShortcutAction) => void): () => void
+  /** Includes the current status, then event-driven updates (no polling). */
+  onCallShortcutStatus(handler: (statuses: CallShortcutStatuses) => void): () => void
   /** Brings the window back from the tray, e.g. after a click on a notification. */
   showWindow(): void
   /** Dock badge (macOS), taskbar overlay (Windows), launcher count (Linux); 0 clears it. */

@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { release, tmpdir } from "node:os"
 import { join } from "node:path"
 import { _electron as electron, chromium, expect, test, type ElectronApplication, type Page } from "@playwright/test"
+import { supportsSystemAudio } from "../src/display-media"
 import {
   createLoginToken,
   createRoom,
@@ -55,6 +56,7 @@ test("serves the web build from app:// as a locked-down, secure origin", async (
     const worker = await fetch("/livekit-e2ee-worker.mjs")
     return {
       bridge: typeof window.nexspeak?.onChooseDisplaySource,
+      systemAudio: window.nexspeak?.supportsSystemAudio,
       secureContext: isSecureContext,
       nodeInRenderer: typeof (window as { require?: unknown }).require !== "undefined",
       workerType: worker.headers.get("content-type"),
@@ -68,6 +70,7 @@ test("serves the web build from app:// as a locked-down, secure origin", async (
   })
   expect(info).toEqual({
     bridge: "function",
+    systemAudio: supportsSystemAudio(process.platform, release()),
     secureContext: true,
     nodeInRenderer: false,
     workerType: "text/javascript; charset=utf-8",
@@ -99,7 +102,7 @@ test("the screen picker answers the main process", async () => {
   const alice = await registerUser("alice")
   await login(page, alice, "app://nexspeak/login")
 
-  // What the main process sends when getDisplayMedia needs our picker (Windows, Linux on X11).
+  // What the main process sends when getDisplayMedia needs our picker (macOS, Windows, X11).
   const thumbnail =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
   const chosen = app.evaluate(
@@ -182,6 +185,129 @@ test("tray commands mute, deafen and leave the call", async () => {
   await trayCommand("leave-call")
   await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeHidden()
   await expect.poll(lastVoiceState).toMatchObject({ inCall: false })
+})
+
+test("call shortcuts are assigned, checked against each other and PTT, cleared and persisted", async () => {
+  const alice = await registerUser("alice")
+  await login(page, alice, "app://nexspeak/login")
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Einstellungen" })
+  const shortcuts = dialog.getByRole("region", { name: "Globale Anruf-Tastenkürzel" })
+  const mute = shortcuts.getByRole("group", { name: "Stummschaltung umschalten", exact: true })
+  const deafen = shortcuts.getByRole("group", { name: "Taubschaltung umschalten", exact: true })
+  await expect(shortcuts.getByText("Nicht belegt", { exact: true })).toHaveCount(4)
+  await mute.getByRole("button", { name: "Taste festlegen" }).click()
+  await page.keyboard.press("Control+Shift+KeyM")
+  await expect(mute.getByText("Ctrl + Shift + M", { exact: true })).toBeVisible()
+  await deafen.getByRole("button", { name: "Taste festlegen" }).click()
+  await page.keyboard.press("Control+Shift+KeyM")
+  await expect(shortcuts.getByRole("alert")).toContainText("überschneidet sich")
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeVisible()
+  await deafen.getByRole("button", { name: "Taste festlegen" }).click()
+  await page.keyboard.press("Control+Shift+KeyD")
+
+  await dialog.getByRole("radio", { name: "Push-to-Talk" }).click()
+  await dialog.getByRole("button", { name: "Taste festlegen", exact: true }).first().click()
+  await page.keyboard.press("KeyM")
+  await expect(dialog.getByRole("alert")).toContainText("überschneidet sich")
+  await dialog.getByRole("button", { name: "Taste festlegen", exact: true }).first().click()
+  await page.keyboard.press("KeyT")
+  const leave = shortcuts.getByRole("group", { name: "Anruf verlassen" })
+  await leave.getByRole("button", { name: "Taste festlegen" }).click()
+  await page.keyboard.press("Control+Shift+KeyT")
+  await expect(shortcuts.getByRole("alert")).toContainText("überschneidet sich")
+  await page.keyboard.press("Escape")
+  await mute.getByRole("button", { name: "Entfernen" }).click()
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("nexspeak_audio_settings") ?? "{}"))).toMatchObject({
+    pushToTalkKey: "KeyT", callShortcuts: { "toggle-mute": null, "toggle-deafen": { accelerator: "Control+Shift+D" } },
+  })
+  expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0)
+  await page.reload()
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  await expect(page.getByText("Ctrl + Shift + D", { exact: true })).toBeVisible()
+  expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Shift+D"))).toBe(false)
+})
+
+test("global shortcuts register only in calls, pause during capture and dispatch call actions", async () => {
+  // Exercise the callbacks supplied to the real native registration API, without sending OS input.
+  await app.evaluate(({ globalShortcut }) => {
+    const callbacks = new Map<string, () => void>()
+    const register = globalShortcut.register.bind(globalShortcut)
+    globalShortcut.register = (accelerator, callback) => {
+      callbacks.set(accelerator, callback)
+      return register(accelerator, callback)
+    }
+    ;(globalThis as typeof globalThis & { shortcutCallbacks: Map<string, () => void> }).shortcutCallbacks = callbacks
+  })
+  const fire = (accelerator: string) => app.evaluate((_, key) => {
+    const callback = (globalThis as typeof globalThis & { shortcutCallbacks: Map<string, () => void> }).shortcutCallbacks.get(key)
+    if (!callback) throw new Error(`Shortcut not registered: ${key}`)
+    callback()
+  }, accelerator)
+  const registered = (accelerator: string) => app.evaluate(({ globalShortcut }, key) => globalShortcut.isRegistered(key), accelerator)
+  const alice = await registerUser("alice")
+  const roomName = `Shortcuts ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [] })
+  await login(page, alice, "app://nexspeak/login")
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Einstellungen" })
+  const shortcuts = dialog.getByRole("region", { name: "Globale Anruf-Tastenkürzel" })
+  const assignments = [
+    ["Stummschaltung umschalten", "F6"],
+    ["Taubschaltung umschalten", "F7"],
+    ["Anruf verlassen", "F8"],
+    ["Bildschirmfreigabe stoppen", "F9"],
+  ]
+  for (const [label, key] of assignments) {
+    await shortcuts.getByRole("group", { name: label, exact: true }).getByRole("button", { name: "Taste festlegen" }).click()
+    await page.keyboard.press(`Control+Alt+Shift+${key}`)
+    expect(await registered(`Control+Alt+Shift+${key}`)).toBe(false)
+  }
+  await page.keyboard.press("Escape")
+  await openRoom(page, roomName)
+  await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
+  await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeVisible({ timeout: 30_000 })
+  for (const [, key] of assignments) await expect.poll(() => registered(`Control+Alt+Shift+${key}`)).toBe(true)
+  await fire("Control+Alt+Shift+F6")
+  await expect(page.getByRole("button", { name: "Mikrofon aktivieren" }).first()).toBeVisible()
+  await fire("Control+Alt+Shift+F7")
+  await expect(page.getByRole("button", { name: "Ton aktivieren", exact: true }).first()).toBeVisible()
+  await fire("Control+Alt+Shift+F9")
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  // Use the fake camera as a display source, so this test never opens an OS screen picker.
+  await page.evaluate(() => {
+    navigator.mediaDevices.getDisplayMedia = async () => navigator.mediaDevices.getUserMedia({ video: true })
+  })
+  await page.getByRole("button", { name: "Bildschirm teilen", exact: true }).last().click()
+  await page.getByRole("button", { name: "Live gehen" }).click()
+  await expect(page.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+  // Presses closer together than REPEAT_WINDOW_MS (750 ms) count as one held key.
+  await page.waitForTimeout(800)
+  await fire("Control+Alt+Shift+F9")
+  await expect(page.getByRole("button", { name: "Stream-Einstellungen" })).toBeHidden()
+
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  // A shortcut held elsewhere (even by another feature in this app) must show a useful warning.
+  await app.evaluate(({ globalShortcut }) => {
+    if (!globalShortcut.register("Control+Alt+Shift+F10", () => {})) throw new Error("Could not reserve test shortcut")
+  })
+  const stopShare = shortcuts.getByRole("group", { name: "Bildschirmfreigabe stoppen" })
+  await stopShare.getByRole("button", { name: "Taste ändern" }).click()
+  await page.keyboard.press("Control+Alt+Shift+F10")
+  await expect(stopShare.getByRole("alert")).toContainText("konnte nicht registriert werden")
+  await dialog.screenshot({ path: test.info().outputPath("shortcut-settings.png") })
+  await shortcuts.getByRole("group", { name: "Anruf verlassen" }).getByRole("button", { name: "Taste ändern" }).click()
+  await expect.poll(() => registered("Control+Alt+Shift+F8")).toBe(false)
+  await fire("Control+Alt+Shift+F8") // A queued old callback cannot disconnect while capturing.
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect.poll(() => registered("Control+Alt+Shift+F8")).toBe(true)
+  await page.keyboard.press("Escape")
+  await fire("Control+Alt+Shift+F8")
+  await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeHidden()
+  for (const [, key] of assignments) await expect.poll(() => registered(`Control+Alt+Shift+${key}`)).toBe(false)
+  await app.evaluate(({ globalShortcut }) => globalShortcut.unregister("Control+Alt+Shift+F10"))
 })
 
 test("the global push-to-talk key from the main process controls the microphone", async () => {

@@ -14,6 +14,7 @@ import {
 import { hasSoftwareOnlyVideoEncoder } from "@nexspeak/core/video-codec"
 import { useTranslation } from "@/hooks/useTranslation"
 import { desktopBridge } from "@/lib/desktop"
+import { SystemAudioSetting } from "@/components/nexspeak/system-audio-setting"
 
 function OptionGroup<T extends string | number>({
   label,
@@ -106,6 +107,7 @@ function StreamQualityForm({
   return (
     <>
       <StreamQualityOptions quality={quality} onChange={setQuality} />
+      <SystemAudioSetting />
       <DialogFooter>
         <button
           type="button"

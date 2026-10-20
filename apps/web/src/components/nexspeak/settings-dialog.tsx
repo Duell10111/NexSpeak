@@ -20,12 +20,13 @@ import { ExternalLink, Headphones, Languages, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
-import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
 import { SoundCueSettings } from "@/components/nexspeak/sound-cue-settings"
+import { CallInputSettings } from "@/components/nexspeak/call-shortcut-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
 import { AboutPanel } from "@/components/nexspeak/about-panel"
 import { DesktopAutostartSetting } from "@/components/nexspeak/desktop-settings"
+import { SystemAudioSetting } from "@/components/nexspeak/system-audio-setting"
 import { IgnoredUsersList } from "@/components/nexspeak/ignored-users"
 import { useTranslation } from "@/hooks/useTranslation"
 import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
@@ -326,7 +327,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
               </Select>
             </div>
 
-            <PushToTalkSettings settings={settings} />
+            <CallInputSettings settings={settings} />
 
             <VoiceProcessingSettings settings={settings} />
 
@@ -384,7 +385,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
                 className="w-full"
               />
             </div>
-
+            <SystemAudioSetting />
             <SoundCueSettings settings={settings} />
           </TabsContent>
 

@@ -110,10 +110,34 @@ system-wide hook (uiohook-napi), so the key also works while a game has the focu
 
 `getDisplayMedia` goes to `setDisplayMediaRequestHandler`:
 
-- macOS 15+: the system picker (ScreenCaptureKit), no picker of our own.
 - Linux with Wayland: the desktop portal's picker.
-- Otherwise (Windows, X11): `DesktopSourcePicker` from the web app; Windows also shares the system
-  audio via loopback.
+- Otherwise (macOS, Windows, X11): `DesktopSourcePicker` from the web app.
+
+**Share system audio** in Settings → Audio and the Go Live dialog is remembered for the next
+share. Windows and macOS 13+ can supply loopback audio; Linux and older macOS hide the option.
+When disabled, no display audio is requested or captured. Microphone capture is independent.
+
+On macOS, `MacCatapLoopbackAudioForScreenShare` is disabled before Electron is ready, keeping
+capture on ScreenCaptureKit and the Screen Recording permission path. The native picker is
+disabled so every request passes through our handler. On macOS the handler explicitly supplies
+`loopbackWithoutChrome`; Chromium's ScreenCaptureKit backend sets
+`excludesCurrentProcessAudio`, excluding the audio service's playback (including call audio).
+No audio processing runs in JavaScript. This captures sound system-wide even for a window share.
+Do not replace this with the renderer's `restrictOwnAudio` constraint: Blink only forwards that
+constraint when CoreAudio tap capture is supported, so it is ignored on the ScreenCaptureKit path.
+
+Implementation references: [Electron's own-audio exclusion](https://releases.electronjs.org/pr/52455),
+[Chromium's ScreenCaptureKit backend](https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.167/media/audio/mac/audio_loopback_input_mac_impl.mm)
+and [Electron's macOS permission notes](https://www.electronjs.org/docs/latest/api/desktop-capturer#macos-versions-142-or-higher).
+Revisit the capture path when upgrading Electron: Chromium 155 removes the CoreAudio opt-out flag.
+The packaged Info.plist also includes `NSAudioCaptureUsageDescription` for the CoreAudio path.
+
+To verify on a Mac, grant Screen Recording permission, join an E2EE call with a second device,
+and share a screen and then a window while playing sound in another app. Viewers must hear that
+sound but never their own call audio. Repeat with **Share system audio** off: video and microphone
+must still work, without system sound. Stop sharing and check that the recording indicator ends.
+Repeat on macOS 13 and a current macOS release; browser E2E uses synthetic media and cannot verify
+the OS permission prompt or native own-process exclusion.
 
 ## Autostart
 

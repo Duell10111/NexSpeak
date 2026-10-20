@@ -18,6 +18,9 @@ depends on your homeserver.
   [below](#voice-processing).
 - **Test microphone** records for five seconds with your current input mode and voice processing and
   shows the level. Closing the settings or a processing error releases the microphone immediately.
+- **Share system audio**: include sound when starting a screen share. The choice is remembered and
+  applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
+  depends on the browser and capture source. See [Calls and screen sharing](calls.md).
 - **Sound cues in calls**: short sounds when you join or leave, when others join or leave, and when
   a stream starts or stops. Turn them all off, or each one (**When you join or leave**, **When
   others join or leave**, **When a stream starts or stops**). They play on the output device at the
@@ -70,8 +73,51 @@ off. Without a key nothing is sent.
 - **In the desktop app** the key works system-wide, also while a game has the focus. NexSpeak only
   listens for it while you are in a call.
   - macOS needs the accessibility permission: choose **Grant permission**.
-  - On Linux with Wayland there are no global keys; the key only works while NexSpeak is in the
+  - On Linux with Wayland there is no global push-to-talk input hook; the key only works while NexSpeak is in the
     foreground.
+
+### Global call shortcuts (desktop)
+
+Under **Global call shortcuts**, next to the push-to-talk settings, assign a key or combination for
+**Toggle mute**, **Toggle deafen**, **Leave call** or **Stop screen sharing**. Choose **Set key**
+(or **Change key**), hold any modifiers and press the final key. Esc cancels; **Clear** removes a
+binding. The assignments are saved on this device. This section is hidden in the browser.
+
+All bindings start unassigned. They work in other apps, including games, only during a call.
+NexSpeak releases them when the call ends, and temporarily releases them while you record a new
+binding. **Stop screen sharing** only stops an existing share; it never starts one or opens a picker.
+
+A shortcut combines a letter, number, numpad digit or navigation key with Ctrl, Alt or Cmd/Super;
+function keys (F1 to F24) also work alone. During a call the combination is taken from every other
+app, so a single letter would no longer type anywhere. Punctuation keys are not supported, because
+they sit in different places on different keyboard layouts.
+
+Duplicate shortcuts and combinations overlapping the push-to-talk key are rejected. For example,
+if push to talk uses M, Ctrl+Shift+M conflicts too, since holding M would also open the microphone.
+If the operating system or another app reserves a combination, a warning appears during a call;
+choose another combination. Outside calls, availability cannot be checked without reserving keys.
+On Wayland, global call shortcuts depend on your desktop's Global Shortcuts portal and its consent
+settings; this is separate from the push-to-talk input hook.
+
+#### Choosing useful shortcuts
+
+These are suggestions to assign yourself, not preconfigured bindings. Use Cmd instead of Ctrl on
+macOS, and choose alternatives if a game or another app already uses them.
+
+| Action | Suggested combination | Purpose |
+|---|---|---|
+| Toggle mute | Ctrl+Shift+M | Briefly talk to someone outside the call |
+| Toggle deafen | Ctrl+Shift+D | Silence the call and your microphone to focus on the game |
+| Leave call | Ctrl+Alt+Shift+H | Disconnect without switching away from a game |
+| Stop screen sharing | Ctrl+Alt+Shift+S | Quickly stop showing private information |
+
+The mute/deafen suggestions follow [Discord's documented call shortcuts](https://discord.com/blog/how-to-navigate-discord-using-only-your-keyboard).
+The disconnect and stop-sharing combinations are NexSpeak suggestions. Discord also documents
+[Push To Mute and Toggle VAD](https://support.discord.com/hc/en-us/articles/217083547-How-do-I-add-different-Keybinds).
+Push to mute would need reliable key-release tracking and another input-hook mode; switching
+between voice activity and push to talk can unexpectedly change when the microphone transmits.
+These are candidates for future work. Channel navigation and the quick switcher belong to app
+navigation rather than system-wide call bindings (quick switcher: #44).
 
 ## Notifications
 

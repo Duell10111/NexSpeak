@@ -23,6 +23,7 @@ import {
   loadAudioSettings,
   subscribeAudioSettings,
 } from "@/lib/audio-settings"
+import { desktopBridge } from "@/lib/desktop"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
 import {
   DEFAULT_SCREENSHARE_QUALITY,
@@ -36,6 +37,7 @@ import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
 import { usePushToTalk } from "@/hooks/usePushToTalk"
 import { createCallSoundPlayer, isCueEnabled } from "@/lib/call-sounds"
+import { emptyCallShortcutBindings } from "@nexspeak/core/global-shortcuts"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@nexspeak/core/matrix/call-session"
@@ -290,7 +292,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       const current = sessionRef.current
       if (!current) return
       try {
-        await current.setScreenShareEnabled(true, quality)
+        const bridge = desktopBridge()
+        const shareAudio = loadAudioSettings().shareSystemAudio && (!bridge || bridge.supportsSystemAudio)
+        await current.setScreenShareEnabled(true, quality, shareAudio)
       } catch (error) {
         // Closing the browser's picker is not an error worth reporting.
         if (error instanceof DOMException && error.name === "NotAllowedError") return
@@ -334,6 +338,30 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       updateVoicePrefs({ muted: unmute ? false : isMuted, deafened: false, mutedByDeafen: false })
     }
   }, [updateVoicePrefs])
+
+  // Bindings only reach the main process while a session can handle them: a registered key is
+  // swallowed system-wide, so it must not be taken while joining or after the session is gone.
+  const hasSession = session !== null
+  useEffect(() => {
+    const bridge = desktopBridge()
+    if (!bridge) return
+    void bridge.setCallShortcuts(
+      hasSession ? audioSettings.callShortcuts : emptyCallShortcutBindings(),
+      audioSettings.inputMode === "push-to-talk" ? audioSettings.pushToTalkKey : null,
+    )
+  }, [hasSession, audioSettings.callShortcuts, audioSettings.inputMode, audioSettings.pushToTalkKey])
+
+  useEffect(() => {
+    if (!session) return
+    return desktopBridge()?.onCallShortcut((action) => {
+      if (action === "toggle-mute") void toggleMicrophone()
+      else if (action === "toggle-deafen") toggleDeafen()
+      else if (action === "leave-call") leaveCall()
+      else if (action === "stop-screen-share" && session.getSnapshot().isScreensharing) {
+        session.setScreenShareEnabled(false).catch((error: unknown) => reportError(error, t("call.error.screenshareStopFailed")))
+      }
+    })
+  }, [session, toggleMicrophone, toggleDeafen, leaveCall])
 
   const setParticipantVolume = useCallback((identity: string, volume: number) => {
     sessionRef.current?.setParticipantVolume(identity, volume)

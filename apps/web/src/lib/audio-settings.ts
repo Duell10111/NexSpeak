@@ -8,6 +8,7 @@ import {
   type AudioProcessingOptions,
   type NoiseSuppressionMode,
 } from '@nexspeak/core/audio-processing'
+import { emptyCallShortcutBindings, parseCallShortcutBindings, type CallShortcutBindings } from '@nexspeak/core/global-shortcuts'
 
 export type InputMode = 'voice-activity' | 'push-to-talk'
 /** Sound cues in calls: our own join/leave, others joining/leaving, screen shares starting/stopping. */
@@ -20,6 +21,8 @@ export interface AudioSettings {
   outputDeviceId: string
   /** 0-100 */
   outputVolume: number
+  /** Include system/tab audio when starting a screen share, where supported. */
+  shareSystemAudio: boolean
   inputMode: InputMode
   /** KeyboardEvent.code or "Mouse3"–"Mouse5" (see lib/push-to-talk.ts); null until chosen. */
   pushToTalkKey: string | null
@@ -35,6 +38,7 @@ export interface AudioSettings {
   inputSensitivityEnabled: boolean
   /** Input sensitivity in dBFS, MIN_INPUT_SENSITIVITY_DB to 0. */
   inputSensitivityDb: number
+  callShortcuts: CallShortcutBindings
 }
 
 const STORAGE_KEY = 'nexspeak_audio_settings'
@@ -42,6 +46,7 @@ const DEFAULT_SETTINGS: AudioSettings = {
   inputDeviceId: '',
   outputDeviceId: '',
   outputVolume: 100,
+  shareSystemAudio: true,
   inputMode: 'voice-activity',
   pushToTalkKey: null,
   pushToTalkReleaseDelayMs: 100,
@@ -52,6 +57,7 @@ const DEFAULT_SETTINGS: AudioSettings = {
   autoGainControl: DEFAULT_AUDIO_PROCESSING.autoGainControl,
   inputSensitivityEnabled: false,
   inputSensitivityDb: -50,
+  callShortcuts: emptyCallShortcutBindings(),
 }
 export const MAX_PUSH_TO_TALK_RELEASE_DELAY_MS = 1000
 export const MIN_INPUT_SENSITIVITY_DB = -80
@@ -72,8 +78,10 @@ export function loadAudioSettings(): AudioSettings {
       outputDeviceId: typeof parsed.outputDeviceId === 'string' ? parsed.outputDeviceId : '',
       outputVolume:
         typeof parsed.outputVolume === 'number' ? Math.min(100, Math.max(0, parsed.outputVolume)) : 100,
+      shareSystemAudio: typeof parsed.shareSystemAudio === 'boolean' ? parsed.shareSystemAudio : true,
       inputMode: parsed.inputMode === 'push-to-talk' ? 'push-to-talk' : 'voice-activity',
       pushToTalkKey: typeof parsed.pushToTalkKey === 'string' ? parsed.pushToTalkKey : null,
+      callShortcuts: parseCallShortcutBindings(parsed.callShortcuts),
       pushToTalkReleaseDelayMs:
         typeof parsed.pushToTalkReleaseDelayMs === 'number'
           ? Math.min(MAX_PUSH_TO_TALK_RELEASE_DELAY_MS, Math.max(0, parsed.pushToTalkReleaseDelayMs))

@@ -820,11 +820,14 @@ export class CallSession {
     this.changed()
   }
 
-  async setScreenShareEnabled(enabled: boolean, quality?: ScreenShareQuality): Promise<void> {
+  async setScreenShareEnabled(enabled: boolean, quality?: ScreenShareQuality, shareAudio = true): Promise<void> {
     if (enabled) await this.waitForOwnKey()
     if (this.isLeaving) return
     if (!enabled || !quality) {
-      await this.livekitRoom.localParticipant.setScreenShareEnabled(enabled, { audio: true })
+      await this.livekitRoom.localParticipant.setScreenShareEnabled(enabled, {
+        audio: shareAudio,
+        systemAudio: shareAudio ? 'include' : 'exclude',
+      })
       this.changed()
       return
     }
@@ -832,7 +835,8 @@ export class CallSession {
     await this.livekitRoom.localParticipant.setScreenShareEnabled(
       true,
       {
-        audio: true,
+        audio: shareAudio,
+        systemAudio: shareAudio ? 'include' : 'exclude',
         // Our own constraints instead of LiveKit's `resolution`, which drops the frame
         // rate when the resolution is uncapped and asks for an ideal (upscaled) size.
         resolution: { width: 0, height: 0 },
