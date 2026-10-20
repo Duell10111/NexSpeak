@@ -496,6 +496,85 @@ test('a running repair remains locked across tab changes and closing the setting
   }
 })
 
+test("custom roles: create, assign several, group in the member list and use in permissions", async ({ browser }) => {
+  const { alice, bob, serverName, spaceId } = await setupServer()
+  await fetch(`http://localhost:8008/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/invite`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${alice.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: bob.userId }),
+  })
+  await fetch(`http://localhost:8008/_matrix/client/v3/join/${encodeURIComponent(spaceId)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${bob.accessToken}`, "Content-Type": "application/json" },
+    body: "{}",
+  })
+  const page = await newPage(browser)
+  await login(page, alice)
+  await openServer(page, serverName)
+  await serverMenu(page, "Servereinstellungen")
+  const dialog = page.getByRole("dialog")
+  const levelsOf = (roomId: string) => getState<{ users: Record<string, number>; ban?: number; events?: Record<string, number> }>(alice, roomId, "m.room.power_levels")
+
+  // A new role starts right above Member, separate in the member list and colored.
+  await dialog.getByRole("tab", { name: "Rollen" }).click()
+  await dialog.getByRole("button", { name: "Rolle erstellen" }).click()
+  await dialog.getByRole("textbox", { name: "Rollenname" }).fill("Eventteam")
+  await dialog.getByRole("button", { name: "Farbe von Eventteam" }).click()
+  await page.getByRole("button", { name: "#e91e63" }).click()
+  await dialog.getByRole("switch", { name: "In der Mitgliederliste separat anzeigen: Eventteam" }).click()
+  await expect(dialog.getByText("Stufe 25")).toBeVisible()
+  await dialog.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect(page.getByText("Gespeichert.")).toBeVisible()
+  await expect.poll(async () => (await levelsOf(spaceId))?.events?.["io.nexspeak.roles"]).toBe(100)
+
+  // Several roles: the highest one is the power level, in the server and its channels.
+  await dialog.getByRole("tab", { name: "Mitglieder" }).click()
+  await dialog.getByRole("button", { name: `Rollen von ${bob.username}` }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Eventteam" }).click()
+  await expect(page.getByText(`Rollen von ${bob.username} aktualisiert.`)).toBeVisible()
+  await expect.poll(async () => (await levelsOf(spaceId))?.users[bob.userId]).toBe(25)
+  await page.keyboard.press("Escape")
+
+  // Permissions offer the new role.
+  await dialog.getByRole("tab", { name: "Berechtigungen" }).click()
+  await dialog.getByRole("button", { name: "Alle Berechtigungen" }).click()
+  await dialog.getByRole("combobox", { name: "Mitglieder bannen" }).click()
+  await page.getByRole("option", { name: "Eventteam" }).click()
+  await dialog.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect.poll(async () => (await levelsOf(spaceId))?.ban).toBe(25)
+
+  // Moving the role above Moderator moves Bob and the threshold with it.
+  await dialog.getByRole("tab", { name: "Rollen" }).click()
+  await dialog.getByRole("button", { name: "Eventteam nach oben" }).click()
+  await dialog.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect.poll(async () => (await levelsOf(spaceId))?.users[bob.userId]).toBe(75)
+  expect((await levelsOf(spaceId))?.ban).toBe(75)
+  await dialog.getByRole("button", { name: "Schließen" }).click()
+
+  // The member list groups Bob under the role, with its color. He joins the channel only now, so
+  // its power levels don't list him: roles come from the server.
+  const state = await (await fetch(`http://localhost:8008/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/state`, {
+    headers: { Authorization: `Bearer ${alice.accessToken}` },
+  })).json() as Array<{ type: string; state_key: string }>
+  const channelId = state.find((event) => event.type === "m.space.child")!.state_key
+  await fetch(`http://localhost:8008/_matrix/client/v3/join/${encodeURIComponent(channelId)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${bob.accessToken}`, "Content-Type": "application/json" },
+    body: "{}",
+  })
+  // Offline members are listed together regardless of their role, like on Discord.
+  const bobPage = await newPage(browser)
+  await login(bobPage, bob)
+  await page.getByRole("button", { name: "allgemein", exact: true }).click()
+  const members = page.getByRole("complementary", { name: "Mitglieder" })
+  await expect(members.getByRole("heading", { name: /^Eventteam — 1$/ })).toBeVisible()
+  await expect(members.getByText(bob.username, { exact: true })).toHaveCSS("color", "rgb(233, 30, 99)")
+  await members.getByText(bob.username, { exact: true }).click()
+  const profile = page.getByRole("dialog")
+  await expect(profile.getByRole("listitem").filter({ hasText: "Eventteam" })).toBeVisible()
+  await expect(profile.getByRole("button", { name: `Rollen von ${bob.username}` })).toHaveText("Eventteam")
+})
+
 test("server icon, description and roles", async ({ browser }) => {
   const { alice, bob, serverName, spaceId } = await setupServer()
   await fetch(`http://localhost:8008/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/invite`, {
@@ -527,9 +606,10 @@ test("server icon, description and roles", async ({ browser }) => {
 
   // Roles are power levels, applied in the server and its channels.
   await dialog.getByRole("tab", { name: "Mitglieder" }).click()
-  await dialog.getByRole("combobox", { name: `Rolle von ${bob.username}` }).click()
-  await page.getByRole("option", { name: "Moderator" }).click()
-  await expect(page.getByText(`${bob.username} ist jetzt Moderator.`)).toBeVisible()
+  await dialog.getByRole("button", { name: `Rollen von ${bob.username}` }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Moderator" }).click()
+  await expect(page.getByText(`Rollen von ${bob.username} aktualisiert.`)).toBeVisible()
+  await page.keyboard.press("Escape")
   const levels = await getState<{ users: Record<string, number> }>(alice, spaceId, "m.room.power_levels")
   expect(levels?.users[bob.userId]).toBe(50)
 

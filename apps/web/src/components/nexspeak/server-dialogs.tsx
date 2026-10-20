@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
+import { RoleDot, roleLabel, RolePicker, RolesTab } from "@/components/nexspeak/server-roles"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useMediaUrl } from "@/hooks/useMediaUrl"
 import { useTranslation } from "@/hooks/useTranslation"
@@ -46,20 +47,18 @@ import {
   createChannel,
   isPrivateChannel,
   kickFromServer,
-  PERMISSION_ROLES,
   readPermissionParent,
   readRoomDetails,
   readRoomPermissions,
+  readServerRoles,
   repairServerPermissions,
-  roleForLevel,
   ROLE_LEVELS,
   savePermissions,
   saveRoomDetails,
   setRoomIcon,
-  setServerRole,
   syncPermissionsWithParent,
-  type ServerRole,
 } from "@nexspeak/core/matrix/server"
+import type { ServerRoleInfo } from "@nexspeak/core/matrix/roles"
 import {
   PERMISSION_KEYS,
   roleForThreshold,
@@ -510,19 +509,21 @@ const CUSTOM_LEVEL = "custom"
 /** One threshold: "from role X upwards". Levels that match no role stay visible as "custom". */
 function PermissionSelect({
   permission,
+  roles,
   value,
   ownLevel,
   disabled,
   onChange,
 }: {
   permission: PermissionKey
+  roles: ServerRoleInfo[]
   value: number
   ownLevel: number
   disabled: boolean
   onChange: (level: number) => void
 }) {
   const { t } = useTranslation()
-  const role = roleForThreshold(value, PERMISSION_ROLES)
+  const role = roleForThreshold(value, roles)
   const label = t(`manage.permission.${permission}`)
   return (
     <div className="flex items-center justify-between gap-4">
@@ -530,7 +531,7 @@ function PermissionSelect({
       <Select
         value={role?.id ?? CUSTOM_LEVEL}
         onValueChange={(id) => {
-          const next = PERMISSION_ROLES.find((option) => option.id === id)
+          const next = roles.find((option) => option.id === id)
           if (next) onChange(next.level)
         }}
         disabled={disabled}
@@ -544,9 +545,12 @@ function PermissionSelect({
               {t("manage.permissionCustomLevel", { level: value })}
             </SelectItem>
           )}
-          {PERMISSION_ROLES.map((option) => (
+          {roles.map((option) => (
             <SelectItem key={option.id} value={option.id} disabled={option.level > ownLevel}>
-              {t(`role.${option.id}`)}
+              <span className="flex items-center gap-2">
+                <RoleDot color={option.color} />
+                {roleLabel(option, t)}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>
@@ -568,6 +572,7 @@ function PermissionsForm({ roomId, serverId, scope }: { roomId: string; serverId
   const editable = Boolean(client && canManageRoles(client, roomId))
   const ownLevel = room?.getMember(client?.getUserId() ?? "")?.powerLevel ?? ROLE_LEVELS.member
   const parent = client ? readPermissionParent(client, serverId, roomId) : null
+  const roles = client ? readServerRoles(client, serverId) : []
   const parentName = parent ? (client?.getRoom(parent.roomId)?.name ?? "") : ""
   const isDirty = !samePermissionLevels(levels, original) || (scope === "channel" && isPrivate !== isPrivateChannel(room))
   const update = (changes: Partial<PermissionLevels>) => setLevels({ ...levels, ...changes })
@@ -660,6 +665,7 @@ function PermissionsForm({ roomId, serverId, scope }: { roomId: string; serverId
               <PermissionSelect
                 key={key}
                 permission={key}
+                roles={roles}
                 value={levels[key]}
                 ownLevel={ownLevel}
                 disabled={!mayChange(key, levels[key])}
@@ -739,8 +745,6 @@ export function ChannelSettingsDialog({
   )
 }
 
-const ROLES: ServerRole[] = ["admin", "moderator", "member"]
-
 function MembersTab({ serverId }: { serverId: string }) {
   const { t } = useTranslation()
   const { client } = useMatrixClient()
@@ -758,19 +762,9 @@ function MembersTab({ serverId }: { serverId: string }) {
   const ownLevel = room.getMember(ownId)?.powerLevel ?? 0
   const kickLevel = (levels.kick as number | undefined) ?? 50
   const banLevel = (levels.ban as number | undefined) ?? 50
-  const mayChangeRoles = canManageRoles(client, serverId)
   const members = room
     .getJoinedMembers()
     .sort((a, b) => b.powerLevel - a.powerLevel || a.name.localeCompare(b.name))
-
-  const changeRole = async (member: RoomMember, role: ServerRole) => {
-    try {
-      await setServerRole(client, serverId, member.userId, role)
-      toast.success(t("manage.roleChanged", { name: member.name, role: t(`role.${role}`) }))
-    } catch (error) {
-      toast.error(describeMatrixError(error, t("manage.roleFailed")))
-    }
-  }
 
   const remove = async () => {
     const target = pending
@@ -797,7 +791,6 @@ function MembersTab({ serverId }: { serverId: string }) {
             const isSelf = member.userId === ownId
             // Like Discord: only people below your own role can be changed or removed.
             const outranked = member.powerLevel < ownLevel
-            const role = roleForLevel(member.powerLevel)
             return (
               <li key={member.userId} className="flex items-center gap-3 rounded px-2 py-1.5 hover:bg-nx-hover">
                 <MatrixAvatar mxcUrl={member.getMxcAvatarUrl()} name={member.name} size={32} />
@@ -805,22 +798,7 @@ function MembersTab({ serverId }: { serverId: string }) {
                   <p className="truncate text-sm font-medium text-foreground">{member.name}</p>
                   <p className="truncate text-xs text-muted-foreground">{member.userId}</p>
                 </div>
-                <Select
-                  value={role}
-                  onValueChange={(value) => void changeRole(member, value as ServerRole)}
-                  disabled={!mayChangeRoles || isSelf || !outranked}
-                >
-                  <SelectTrigger className="h-8 w-32" aria-label={t("manage.roleOf", { name: member.name })}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROLES.map((option) => (
-                      <SelectItem key={option} value={option} disabled={ROLE_LEVELS[option] > ownLevel}>
-                        {t(`role.${option}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <RolePicker serverId={serverId} userId={member.userId} name={member.name} />
                 {!isSelf && outranked && ownLevel >= kickLevel && (
                   <Button
                     size="sm"
@@ -918,8 +896,9 @@ export function ServerSettingsDialog({
         </DialogHeader>
         {open && (
           <Tabs defaultValue="overview">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="overview">{t("manage.overview")}</TabsTrigger>
+              <TabsTrigger value="roles">{t("manage.roles")}</TabsTrigger>
               <TabsTrigger value="permissions">{t("manage.permissions")}</TabsTrigger>
               <TabsTrigger value="members">{t("members.title")}</TabsTrigger>
             </TabsList>
@@ -929,6 +908,9 @@ export function ServerSettingsDialog({
               {client && canRepairServerPermissions(client, serverId) && (
                 <RepairPermissions isRepairing={isRepairing} onRepair={() => void repair()} />
               )}
+            </TabsContent>
+            <TabsContent value="roles" className="pt-2">
+              <RolesTab serverId={serverId} />
             </TabsContent>
             <TabsContent value="permissions" className="pt-2">
               <PermissionsForm roomId={serverId} serverId={serverId} scope="server" />

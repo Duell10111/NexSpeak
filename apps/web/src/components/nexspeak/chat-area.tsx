@@ -27,6 +27,8 @@ import {
 
 interface ChatAreaProps {
   activeChannelId: string
+  /** The server of the channel, if it belongs to one. */
+  serverId?: string
   showMembers: boolean
   onToggleMembers: () => void
   /** Mobile only: open the server/channel navigation. */
@@ -98,7 +100,7 @@ function NotificationModeButton({ roomId }: { roomId: string }) {
   )
 }
 
-export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpenNavigation, leavable }: ChatAreaProps) {
+export function ChatArea({ activeChannelId, serverId, showMembers, onToggleMembers, onOpenNavigation, leavable }: ChatAreaProps) {
   const { t } = useTranslation()
   const { isInCallInActiveChannel, joinCall, joiningRoomId } = useCallContext()
   const { client } = useMatrixClient()
@@ -214,7 +216,7 @@ export function ChatArea({ activeChannelId, showMembers, onToggleMembers, onOpen
             className="absolute inset-0 z-20 lg:static lg:w-[420px] lg:shrink-0"
           />
         ) : (
-          showMembers && <MemberList activeRoomId={activeChannelId} className="hidden lg:flex" />
+          showMembers && <MemberList activeRoomId={activeChannelId} serverId={serverId} className="hidden lg:flex" />
         )}
       </div>
     </div>

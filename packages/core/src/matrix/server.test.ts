@@ -8,10 +8,14 @@ import {
   moveChild,
   readPermissionParent,
   readRoomPermissions,
+  readMemberRoleIds,
   repairServerPermissions,
   savePermissions,
+  saveServerRoles,
+  setMemberRoles,
   syncPermissionsWithParent,
 } from './server'
+import { MEMBER_ROLES_EVENT, readRoles, ROLES_EVENT } from './roles'
 import { readPermissionLevels } from './permissions'
 import { CALL_MEMBER_EVENT_TYPE } from './rtc'
 
@@ -507,5 +511,135 @@ describe('category and channel permissions', () => {
     const [request] = fake.createRoom.mock.calls[0]
     expect(readPermissionLevels(request.power_level_content_override)).toMatchObject({ sendMessages: 50, joinCalls: 50 })
     expect(request.power_level_content_override.events).toMatchObject(ADMIN_EVENTS)
+  })
+})
+
+describe('custom roles', () => {
+  const BOB = '@bob:example.org'
+  const CAROL = '@carol:example.org'
+  const OWNER = '@owner:example.org'
+  const LOBBY = '!lobby:example.org'
+  type Levels = { users?: Record<string, number>; [key: string]: unknown }
+  const CUSTOM = [{ id: 'stream', name: 'Streamer', level: 75 }, { id: 'events', name: 'Events', level: 25 }]
+
+  /** Server with two channels; Bob is in both, Carol only in the server, the owner is a v12 creator. */
+  function setupRoles(ownLevel = 100) {
+    const levels: Record<string, Levels> = Object.fromEntries([SERVER, CHANNEL, LOBBY].map((id) => [id, structuredClone({
+      ...DEFAULT_LEVELS, users: { [USER]: ownLevel, [BOB]: 25 },
+      events: { ...DEFAULT_LEVELS.events, 'm.room.message': 25 }, events_default: 25,
+    })]))
+    const state: Record<string, { content: Record<string, unknown> }> = {
+      [`${ROLES_EVENT}|`]: { content: { roles: CUSTOM } },
+      [`${MEMBER_ROLES_EVENT}|user:${BOB}`]: { content: { roles: ['events'] } },
+    }
+    const members: Record<string, string[]> = { [SERVER]: [USER, BOB, CAROL, OWNER], [CHANNEL]: [USER, BOB], [LOBBY]: [USER, BOB] }
+    const rooms = Object.fromEntries(Object.keys(levels).map((id) => {
+      const member = (userId: string) => members[id].includes(userId)
+        ? { userId, membership: 'join', powerLevel: userId === OWNER ? Infinity : (levels[id].users?.[userId] ?? 0) }
+        : null
+      return [id, {
+        roomId: id,
+        isSpaceRoom: () => id === SERVER,
+        getMember: member,
+        getMembers: () => members[id].map(member),
+        currentState: {
+          maySendStateEvent: () => true,
+          getStateEvents: (type: string, stateKey?: string) => {
+            if (type === 'm.room.power_levels') return { getContent: () => levels[id] }
+            if (type === 'm.space.child') {
+              return id === SERVER ? [CHANNEL, LOBBY].map((child) => ({ getContent: () => ({ via: ['example.org'] }), getStateKey: () => child, getTs: () => 0 })) : []
+            }
+            if (id !== SERVER) return stateKey === undefined ? [] : null
+            const event = (key: string) => ({ getSender: () => USER, getContent: () => state[`${type}|${key}`].content, getStateKey: () => key })
+            if (stateKey === undefined) {
+              return Object.keys(state).filter((key) => key.startsWith(`${type}|`)).map((key) => event(key.slice(type.length + 1)))
+            }
+            return state[`${type}|${stateKey}`] ? event(stateKey) : null
+          },
+        },
+      }]
+    }))
+    const fake = {
+      getUserId: vi.fn(() => USER),
+      getRoom: vi.fn((id: string) => rooms[id] ?? null),
+      sendStateEvent: vi.fn(async (id: string, type: string, content: Levels, stateKey: string) => {
+        if (type === 'm.room.power_levels') levels[id] = content
+        else state[`${type}|${stateKey}`] = { content }
+      }),
+    }
+    const client = fake as unknown as MatrixClient
+    const writes = () => fake.sendStateEvent.mock.calls.map(([id, type]) => `${type}@${id}`)
+    return { fake, client, levels, state, writes, rooms }
+  }
+
+  it('reads assigned roles, falling back to the role of the power level', () => {
+    const { client, levels } = setupRoles()
+    expect(readMemberRoleIds(client, SERVER, BOB)).toEqual(['events'])
+    expect(readMemberRoleIds(client, SERVER, CAROL)).toEqual([])
+    levels[SERVER].users![BOB] = 50
+    expect(readMemberRoleIds(client, SERVER, BOB)).toEqual(['moderator'])
+  })
+
+  it('assigns several roles with one event per room, the server first', async () => {
+    const { fake, client, levels, state, writes } = setupRoles()
+    await expect(setMemberRoles(client, SERVER, BOB, ['events', 'stream', 'member', 'unknown'])).resolves.toEqual({ failed: 0 })
+    expect(writes()).toEqual([`m.room.power_levels@${SERVER}`, `${MEMBER_ROLES_EVENT}@${SERVER}`, `m.room.power_levels@${CHANNEL}`, `m.room.power_levels@${LOBBY}`])
+    expect(state[`${MEMBER_ROLES_EVENT}|user:${BOB}`].content).toEqual({ roles: ['events', 'stream'] })
+    // Admins can't send state keys that start with someone else's user ID.
+    expect(fake.sendStateEvent).toHaveBeenCalledWith(SERVER, MEMBER_ROLES_EVENT, { roles: ['events', 'stream'] }, `user:${BOB}`)
+    for (const id of [SERVER, CHANNEL, LOBBY]) expect(levels[id].users?.[BOB]).toBe(75)
+    // Older servers get the role metadata restricted to admins in the same event.
+    expect(levels[SERVER].events).toMatchObject({ [ROLES_EVENT]: 100, [MEMBER_ROLES_EVENT]: 100 })
+    expect(levels[CHANNEL].events).not.toHaveProperty(ROLES_EVENT)
+  })
+
+  it('only writes the server for members who are not in the channels, and removes default levels', async () => {
+    const { client, levels, writes } = setupRoles()
+    await setMemberRoles(client, SERVER, CAROL, ['events'])
+    expect(writes()).toEqual([`m.room.power_levels@${SERVER}`, `${MEMBER_ROLES_EVENT}@${SERVER}`])
+    expect(levels[SERVER].users?.[CAROL]).toBe(25)
+    await setMemberRoles(client, SERVER, BOB, [])
+    expect(levels[CHANNEL].users).not.toHaveProperty(BOB)
+  })
+
+  it('refuses roles above the own level and leaves higher members alone', async () => {
+    const { client, fake } = setupRoles(50)
+    await expect(setMemberRoles(client, SERVER, BOB, ['stream'])).rejects.toThrow('above your own')
+    expect(fake.sendStateEvent).not.toHaveBeenCalled()
+    const owner = setupRoles()
+    await setMemberRoles(owner.client, SERVER, OWNER, ['events'])
+    expect(owner.levels[SERVER].users).not.toHaveProperty(OWNER)
+  })
+
+  it('moves members and permission thresholds with a role that changes level', async () => {
+    const { client, levels, rooms, state, writes } = setupRoles()
+    const roles = readRoles(rooms[SERVER] as never).map((role) => (role.id === 'events' ? { ...role, level: 40, name: 'Event team' } : role))
+    await expect(saveServerRoles(client, SERVER, roles)).resolves.toEqual({ failed: 0 })
+    expect(writes()).toEqual([`m.room.power_levels@${SERVER}`, `${ROLES_EVENT}@${SERVER}`, `m.room.power_levels@${CHANNEL}`, `m.room.power_levels@${LOBBY}`])
+    expect(readRoles(rooms[SERVER] as never).find((role) => role.id === 'events')).toMatchObject({ level: 40, name: 'Event team' })
+    expect(state[`${ROLES_EVENT}|`].content.roles).toContainEqual({ id: 'events', name: 'Event team', level: 40, hoist: false })
+    for (const id of [SERVER, CHANNEL, LOBBY]) {
+      expect(levels[id].users?.[BOB]).toBe(40)
+      expect(levels[id]).toMatchObject({ events_default: 40, events: { 'm.room.message': 40, 'm.reaction': 40 } })
+    }
+  })
+
+  it('gives the permissions of a deleted role to the next higher role and drops its members a level', async () => {
+    const { client, levels, rooms } = setupRoles()
+    levels[SERVER].users![CAROL] = 75 // Streamer, given in Element without NexSpeak's metadata.
+    const roles = readRoles(rooms[SERVER] as never).filter((role) => role.id !== 'events' && role.id !== 'stream')
+    await saveServerRoles(client, SERVER, roles)
+    expect(levels[SERVER].users).not.toHaveProperty(BOB)
+    expect(levels[SERVER].users?.[CAROL]).toBe(50)
+    expect(levels[CHANNEL]).toMatchObject({ events_default: 50 })
+  })
+
+  it('does not touch members whose level was changed elsewhere, and sends no power levels for a rename', async () => {
+    const { client, levels, rooms, writes } = setupRoles()
+    levels[SERVER].users![BOB] = 50
+    const roles = readRoles(rooms[SERVER] as never).map((role) => (role.id === 'events' ? { ...role, name: 'Renamed' } : role))
+    levels[SERVER].events = { ...(levels[SERVER].events as object), [ROLES_EVENT]: 100, [MEMBER_ROLES_EVENT]: 100 }
+    await saveServerRoles(client, SERVER, roles)
+    expect(writes()).toEqual([`${ROLES_EVENT}@${SERVER}`])
   })
 })
