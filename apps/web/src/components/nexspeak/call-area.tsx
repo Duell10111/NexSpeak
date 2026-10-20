@@ -29,6 +29,7 @@ import {
   Minimize,
   Minimize2,
   MonitorUp,
+  PictureInPicture2,
   PhoneOff,
   ScreenShareOff,
   Video,
@@ -38,6 +39,8 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { desktopBridge } from "@/lib/desktop"
+import { supportsVideoPopout } from "@/lib/video-popout"
 import { Spinner } from "@/components/ui/spinner"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -136,32 +139,20 @@ function tileColor(userId: string): string {
   return `hsl(${Math.abs(hash) % 360} 30% 32%)`
 }
 
+const noPopout = () => null
+
 function VideoView({ feed }: { feed: CallVideoFeed }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const { videoPopout: popout } = useCallContext()
 
+  const { track, isLocal, isScreenshare } = feed
   useEffect(() => {
-    const element = videoRef.current
-    if (!element) return
-    feed.track.attach(element)
-    return () => {
-      feed.track.detach(element)
-    }
-  }, [feed.track])
+    const container = containerRef.current
+    if (container) return popout.mount({ track, isLocal, isScreenshare }, container)
+  }, [track, isLocal, isScreenshare, popout])
 
-  return (
-    // Audio is played through LiveKit's own audio elements; video stays muted.
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={cn(
-        "absolute inset-0 h-full w-full",
-        feed.isScreenshare ? "object-contain" : "object-cover",
-        feed.isLocal && !feed.isScreenshare && "-scale-x-100",
-      )}
-    />
-  )
+  // The controller owns the video so React never removes a node moved into another document.
+  return <div ref={containerRef} className="pointer-events-none absolute inset-0 overflow-hidden" />
 }
 
 const STREAM_PREVIEW_KEY = "nexspeak:stream-preview"
@@ -265,12 +256,16 @@ function TileMenu({
   isFocused,
   onToggleFocus,
   onWatch,
+  onPopout,
+  isPoppedOut,
   children,
 }: {
   tile: CallTile
   isFocused: boolean
   onToggleFocus: () => void
   onWatch: (watched: boolean) => void
+  onPopout?: () => void
+  isPoppedOut: boolean
   children: ReactNode
 }) {
   const { t } = useTranslation()
@@ -283,6 +278,7 @@ function TileMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         <ContextMenuItem onSelect={onToggleFocus}>{isFocused ? t("call.unfocus") : t("call.focus")}</ContextMenuItem>
+        {onPopout && <ContextMenuItem onSelect={onPopout}>{t(isPoppedOut ? "call.returnToCall" : "call.popOut")}</ContextMenuItem>}
         {tile.isScreenshare && !participant.isLocal && (
           <ContextMenuItem onSelect={() => onWatch(!participant.isWatchingScreenshare)}>
             {participant.isWatchingScreenshare ? t("call.stopWatching") : t("call.watchStream")}
@@ -404,9 +400,21 @@ function CallTileView({
   const isSpeaking = participant.isSpeaking && !participant.isMicMuted && !isScreenshare
   const avatarSize = size === "strip" ? 40 : size === "stage" ? 96 : 80
   const isRemoteStream = isScreenshare && !participant.isLocal
+  const { videoPopout: popout } = useCallContext()
+  const poppedTrack = useSyncExternalStore(popout.subscribe, popout.getSnapshot, noPopout)
+  const isPoppedOut = !!feed && poppedTrack === feed.track
+  const onPopout = feed && supportsVideoPopout() ? () => {
+    if (isPoppedOut) popout.close()
+    else void popout.open(feed, {
+      title: participant.name,
+      returnToCall: t("call.returnToCall"),
+    }, !!desktopBridge()).catch((error: unknown) => {
+      if (!(error instanceof DOMException && error.name === "AbortError")) toast.error(t("call.popOutFailed"))
+    })
+  } : undefined
 
   return (
-    <TileMenu tile={tile} isFocused={isFocused} onToggleFocus={onToggleFocus} onWatch={onWatch}>
+    <TileMenu tile={tile} isFocused={isFocused} onToggleFocus={onToggleFocus} onWatch={onWatch} onPopout={onPopout} isPoppedOut={isPoppedOut}>
       <div
         data-testid="call-tile"
         data-connecting={participant.isConnecting || undefined}
@@ -418,11 +426,17 @@ function CallTileView({
         )}
         style={{ ...style, "--tile-color": tileColor(participant.userId) } as React.CSSProperties}
       >
-        {feed && isScreenshare && participant.isLocal ? (
+        {feed && !(isScreenshare && participant.isLocal) && <VideoView feed={feed} />}
+        {isPoppedOut ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+            <PictureInPicture2 className="h-8 w-8" />
+            <button onClick={(event) => { event.stopPropagation(); popout.close() }} className="rounded-md bg-white/10 px-3 py-1.5 text-sm">
+              {t("call.returnToCall")}
+            </button>
+          </div>
+        ) : feed && isScreenshare && participant.isLocal ? (
           <OwnStreamView feed={feed} size={size} />
-        ) : feed ? (
-          <VideoView feed={feed} />
-        ) : isRemoteStream ? (
+        ) : feed ? null : isRemoteStream ? (
           <StreamPlaceholder participant={participant} size={size} onWatch={() => onWatch(true)} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -467,6 +481,11 @@ function CallTileView({
             {isRemoteStream && participant.isWatchingScreenshare && (
               <TileOverlayButton label={t("call.stopWatching")} onClick={() => onWatch(false)}>
                 <EyeOff className="h-4 w-4" />
+              </TileOverlayButton>
+            )}
+            {onPopout && (
+              <TileOverlayButton label={t(isPoppedOut ? "call.returnToCall" : "call.popOut")} onClick={onPopout}>
+                <PictureInPicture2 className="h-4 w-4" />
               </TileOverlayButton>
             )}
             <TileOverlayButton label={isFocused ? t("call.unfocus") : t("call.focus")} onClick={onToggleFocus}>
