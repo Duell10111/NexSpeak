@@ -28,6 +28,10 @@ for (const encrypted of [false, true]) {
     await joinVoice(alicePage)
     // Bob sees the running call in the room list before joining.
     await expect(bobPage.getByText(alice.username).first()).toBeVisible()
+    const duration = bobPage.getByLabel(/^Anruf läuft seit /)
+    await expect(duration).toHaveText(/^\d+:\d{2}$/)
+    const initialDuration = await duration.textContent()
+    await expect(duration).not.toHaveText(initialDuration!)
     await joinVoice(bobPage)
 
     for (const page of [alicePage, bobPage]) {
@@ -61,6 +65,14 @@ for (const encrypted of [false, true]) {
     // Leaving updates the other side.
     await alicePage.getByRole("button", { name: "Anruf verlassen" }).click()
     await expect(tiles(bobPage)).toHaveCount(1, { timeout: 30_000 })
+    await expect(duration).toHaveCount(1)
+    await bobPage.getByRole("button", { name: "Anruf verlassen" }).click()
+    await expect(duration).toHaveCount(0)
+    await expect(alicePage.getByLabel(/^Anruf läuft seit /)).toHaveCount(0)
+
+    // A new call uses a fresh membership timestamp instead of the previous call's duration.
+    await joinVoice(alicePage)
+    await expect(duration).toHaveText(/^0:0\d$/)
   })
 }
 
@@ -105,6 +117,7 @@ test("calls that are already running at login show up in the channel list", asyn
   const bobPage = await newPage(browser)
   await login(bobPage, bob)
   await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`).getByText(alice.username)).toBeVisible({ timeout: 30_000 })
+  await expect(bobPage.getByLabel(/^Anruf läuft seit /)).toHaveText(/^\d+:\d{2}$/)
 })
 
 test("mute and deafen work before joining and apply to the call", async ({ browser }) => {

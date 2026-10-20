@@ -262,6 +262,7 @@ export const de = {
   'call.deafen': 'Ton stummschalten',
   'call.undeafen': 'Ton aktivieren',
   'call.muted': 'Stummgeschaltet',
+  'call.runningFor': 'Anruf läuft seit {duration}',
   'call.mutedForYou': 'Für dich stummgeschaltet',
   'call.mute': 'Stummschalten',
   'call.live': 'Live',

@@ -261,6 +261,7 @@ export const en: Record<MessageKey, string> = {
   'call.deafen': 'Deafen',
   'call.undeafen': 'Undeafen',
   'call.muted': 'Muted',
+  'call.runningFor': 'Call running for {duration}',
   'call.mutedForYou': 'Muted for you',
   'call.mute': 'Mute',
   'call.live': 'Live',
