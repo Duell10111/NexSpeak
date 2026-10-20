@@ -256,6 +256,68 @@ test("create, edit, move and delete channels and categories", async ({ browser }
   await expect(channel(bobPage, "valorant")).toHaveCount(0)
 })
 
+test("category permissions apply to synced channels, custom channels keep theirs", async ({ browser }) => {
+  const { alice, serverName } = await setupServer()
+  const page = await newPage(browser)
+  await login(page, alice)
+  await openServer(page, serverName)
+
+  await serverMenu(page, "Kategorie erstellen")
+  await page.getByRole("dialog").getByLabel("Kategoriename").fill("Spiele")
+  await page.getByRole("dialog").getByRole("button", { name: "Kategorie erstellen" }).click()
+  const channelIds: string[] = []
+  for (const name of ["minecraft", "valorant"]) {
+    await page.getByRole("button", { name: "Kanal in Spiele erstellen" }).click()
+    await page.getByRole("dialog").getByLabel("Kanalname").fill(name)
+    await page.getByRole("dialog").getByRole("button", { name: "Kanal erstellen" }).click()
+    await expect(page.getByRole("heading", { level: 3, name })).toBeVisible()
+    channelIds.push(await page.evaluate(() => JSON.parse(localStorage.getItem("nexspeak_selection")!).channelId as string))
+  }
+  const [minecraftId, valorantId] = channelIds
+  const levelsOf = (roomId: string) => getState<{ events_default?: number; ban?: number }>(alice, roomId, "m.room.power_levels")
+
+  const editPermissions = async (target: string, menuItem: string) => {
+    await page.getByRole("button", { name: target, exact: true }).click({ button: "right" })
+    await page.getByRole("menuitem", { name: menuItem }).click()
+    const dialog = page.getByRole("dialog")
+    await dialog.getByRole("tab", { name: "Berechtigungen" }).click()
+    return dialog
+  }
+
+  // Saving the category also updates both channels that follow it.
+  let dialog = await editPermissions("Spiele", "Kategorie bearbeiten")
+  await dialog.getByRole("switch", { name: "Nur Moderatoren dürfen schreiben" }).click()
+  await dialog.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect(page.getByText("Gespeichert. Aktualisierte synchronisierte Räume: 2.")).toBeVisible()
+  await expect.poll(async () => (await levelsOf(minecraftId))?.events_default).toBe(50)
+  await page.keyboard.press("Escape")
+
+  // A channel that diverges keeps its own permissions.
+  dialog = await editPermissions("valorant", "Kanal bearbeiten")
+  await expect(dialog.getByText("Synchronisiert mit Spiele")).toBeVisible()
+  await dialog.getByRole("button", { name: "Alle Berechtigungen" }).click()
+  await dialog.getByRole("combobox", { name: "Mitglieder bannen" }).click()
+  await page.getByRole("option", { name: "Admin" }).click()
+  await dialog.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect(dialog.getByText("Eigene Berechtigungen")).toBeVisible()
+  await expect.poll(async () => (await levelsOf(valorantId))?.ban).toBe(100)
+  await page.keyboard.press("Escape")
+
+  dialog = await editPermissions("Spiele", "Kategorie bearbeiten")
+  await dialog.getByRole("switch", { name: "Nur Moderatoren dürfen schreiben" }).click()
+  await dialog.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect(page.getByText("Gespeichert. Aktualisierte synchronisierte Räume: 1.")).toBeVisible()
+  await expect.poll(async () => (await levelsOf(minecraftId))?.events_default).toBe(0)
+  expect(await levelsOf(valorantId)).toMatchObject({ events_default: 50, ban: 100 })
+  await page.keyboard.press("Escape")
+
+  // Syncing takes over the category's permissions again.
+  dialog = await editPermissions("valorant", "Kanal bearbeiten")
+  await dialog.getByRole("button", { name: "Mit Spiele synchronisieren" }).click()
+  await expect(dialog.getByText("Synchronisiert mit Spiele")).toBeVisible()
+  await expect.poll(async () => await levelsOf(valorantId)).toMatchObject({ events_default: 0, ban: 50 })
+})
+
 test('v11 moderators create categories and plain or encrypted channels with their inherited role', async ({ browser, request }) => {
   const alice = await registerUser('owner')
   const bob = await registerUser('moderator')

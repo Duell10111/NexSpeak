@@ -176,8 +176,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Configurable global call shortcuts for mute, deafen, disconnect and stopping screen sharing (#35)
 - Push-to-talk hook subscribes only to the events its binding needs, at the OS level (#74)
 - [x] Share system audio with the screen on macOS, with a remembered audio sharing toggle (#36)
-- Custom, stackable roles (#32) and granular permissions with category/channel overrides (#33),
-  designed together on top of power levels
+- [x] Granular permissions with category/channel overrides on top of power levels (#33)
+- Custom, stackable roles (#32), extending the roles of the permission editor
 - Milestone "Mobile Alpha" after a successful crypto spike
 
 ### Milestone "0.4 – Everyday"
