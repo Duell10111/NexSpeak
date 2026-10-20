@@ -10,6 +10,8 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
 - **Files:** attach them with the clip, drag and drop them into the chat, or paste them. Up to 100 MB;
   in encrypted channels files are encrypted too.
 - **Emoji:** the emoji button in the message field, or reactions on messages.
+- **Reactions:** choose **Add reaction**, then an emoji. The picker stays next to the message while
+  you move the pointer to it. Escape closes it without adding a reaction.
 - A message that failed to send can be **resent** or **discarded**.
 
 ## Formatting
