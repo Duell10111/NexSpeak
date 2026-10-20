@@ -94,3 +94,9 @@ When the headers in `security-headers.json` change, update these examples as wel
 
 `NEXT_PUBLIC_LIVEKIT_SERVICE_URL` (see `apps/web/.env.example`) is baked in at build time. Other
 values require a new build.
+
+## Planned voice moderation
+
+Server mute, call-only disconnect and moving participants are not available yet. Their server
+requirements and the pending companion-service decision are documented in
+[Voice moderation: implementation prerequisites](voice-moderation-design.md).
