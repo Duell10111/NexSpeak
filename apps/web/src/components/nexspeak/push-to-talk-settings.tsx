@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Keyboard } from "lucide-react"
 import type { PushToTalkStatus } from "@nexspeak/core/desktop-bridge"
+import { CALL_SHORTCUT_ACTIONS, conflictsWithPushToTalk } from "@nexspeak/core/global-shortcuts"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
@@ -17,7 +18,7 @@ interface KeyboardLayoutApi {
 }
 
 /** The browser's keyboard layout (Chromium only), so keys are labelled as printed. */
-function useKeyboardLayout(): ReadonlyMap<string, string> | undefined {
+export function useKeyboardLayout(): ReadonlyMap<string, string> | undefined {
   const [layout, setLayout] = useState<ReadonlyMap<string, string>>()
   useEffect(() => {
     const keyboard = (navigator as Navigator & { keyboard?: KeyboardLayoutApi }).keyboard
@@ -44,6 +45,8 @@ function useDesktopPushToTalkStatus(enabled: boolean) {
 function useKeyCapture(isCapturing: boolean, onDone: (key: string | null) => void) {
   useEffect(() => {
     if (!isCapturing) return
+    const bridge = desktopBridge()
+    bridge?.setCallShortcutsSuspended(true)
     // Capture phase on window: runs before the dialog's own Escape handling.
     const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault()
@@ -57,28 +60,56 @@ function useKeyCapture(isCapturing: boolean, onDone: (key: string | null) => voi
       event.stopPropagation()
       onDone(key)
     }
+    const onBlur = () => onDone(null)
     window.addEventListener("keydown", onKeyDown, true)
     window.addEventListener("mousedown", onMouseDown, true)
+    window.addEventListener("blur", onBlur)
     return () => {
       window.removeEventListener("keydown", onKeyDown, true)
       window.removeEventListener("mousedown", onMouseDown, true)
+      window.removeEventListener("blur", onBlur)
+      bridge?.setCallShortcutsSuspended(false)
     }
   }, [isCapturing, onDone])
 }
 
-export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
+function conflictsWithCallShortcut(key: string, callShortcuts: AudioSettings["callShortcuts"]): boolean {
+  return CALL_SHORTCUT_ACTIONS.some((action) => {
+    const binding = callShortcuts[action]
+    return Boolean(binding && conflictsWithPushToTalk(binding, key))
+  })
+}
+
+export function PushToTalkSettings({ settings, isCapturing, setIsCapturing, captureDisabled }: {
+  settings: AudioSettings
+  isCapturing: boolean
+  setIsCapturing: (active: boolean) => void
+  captureDisabled: boolean
+}) {
   const { t } = useTranslation()
   const layout = useKeyboardLayout()
-  const [isCapturing, setIsCapturing] = useState(false)
+  // The last key rejected for overlapping a call shortcut; the warning disappears once it no longer does.
+  const [rejectedKey, setRejectedKey] = useState<string | null>(null)
   const isPushToTalk = settings.inputMode === "push-to-talk"
   const isDesktop = Boolean(desktopBridge())
   const { status, requestPermission } = useDesktopPushToTalkStatus(isDesktop && isPushToTalk)
 
+  // Read through a ref, so a settings change during capture does not restart it (see useKeyCapture).
+  const callShortcutsRef = useRef(settings.callShortcuts)
+  useEffect(() => {
+    callShortcutsRef.current = settings.callShortcuts
+  })
   const finishCapture = useCallback((key: string | null) => {
     setIsCapturing(false)
+    if (key && conflictsWithCallShortcut(key, callShortcutsRef.current)) {
+      setRejectedKey(key)
+      return
+    }
+    setRejectedKey(null)
     if (key) saveAudioSettings({ pushToTalkKey: key })
-  }, [])
+  }, [setIsCapturing])
   useKeyCapture(isCapturing, finishCapture)
+  const hasConflict = !isCapturing && rejectedKey !== null && conflictsWithCallShortcut(rejectedKey, settings.callShortcuts)
 
   const key = settings.pushToTalkKey
   const mouseButton = key ? mouseButtonNumber(key) : null
@@ -106,6 +137,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
             type="button"
             role="radio"
             aria-checked={settings.inputMode === mode.value}
+            disabled={isCapturing || captureDisabled}
             onClick={() => saveAudioSettings({ inputMode: mode.value })}
             className={cn(
               "rounded-md border px-3 py-2 text-sm transition-colors",
@@ -121,6 +153,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
 
       {isPushToTalk && (
         <div className="space-y-4 rounded-md bg-muted/40 p-3">
+          {hasConflict && <p className="text-xs text-destructive" role="alert">{t("settings.shortcutConflict")}</p>}
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t("settings.pttKey")}</p>
@@ -135,7 +168,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
               size="sm"
               variant="outline"
               onClick={() => setIsCapturing(true)}
-              disabled={isCapturing}
+              disabled={isCapturing || captureDisabled}
               className="shrink-0"
             >
               {key ? t("settings.pttChangeKey") : t("settings.pttSetKey")}

@@ -13,6 +13,7 @@ test("push to talk is set up in the settings", async ({ browser }) => {
 
   await page.getByRole("button", { name: "Einstellungen" }).click()
   const dialog = page.getByRole("dialog", { name: "Einstellungen" })
+  await expect(dialog.getByRole("region", { name: "Globale Anruf-Tastenkürzel" })).toHaveCount(0)
   await dialog.getByRole("radio", { name: "Push-to-Talk" }).click()
   await expect(dialog.getByText("Keine Taste festgelegt")).toBeVisible()
   await expect(dialog.getByText("Im Browser funktioniert Push-to-Talk nur")).toBeVisible()

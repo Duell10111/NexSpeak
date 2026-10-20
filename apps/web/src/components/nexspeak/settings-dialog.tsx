@@ -20,8 +20,8 @@ import { ExternalLink, Headphones, Languages, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
 import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
-import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
 import { SoundCueSettings } from "@/components/nexspeak/sound-cue-settings"
+import { CallInputSettings } from "@/components/nexspeak/call-shortcut-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
 import { AboutPanel } from "@/components/nexspeak/about-panel"
@@ -258,7 +258,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
               <MicrophoneTest deviceId={settings.inputDeviceId} />
             </div>
 
-            <PushToTalkSettings settings={settings} />
+            <CallInputSettings settings={settings} />
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
