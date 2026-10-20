@@ -189,6 +189,7 @@ export class AudioProcessingChain {
       this.tail.disconnect()
       this.tail.connect(this.gate)
       this.gate.connect(this.output)
+      this.onGateChange?.(false)
     } else if (this.gate) {
       this.tail.disconnect()
       this.gate.port.onmessage = null
@@ -217,13 +218,15 @@ export class CallAudioProcessor implements TrackProcessor<Track.Kind.Audio, Audi
   processedTrack?: MediaStreamTrack
   /** The unprocessed microphone track (push to talk gates this one). */
   inputTrack?: MediaStreamTrack
+  /** Null when sensitivity is off; otherwise the actual gate state, without an SFU round trip. */
+  gateOpen: boolean | null = null
 
   private context?: AudioContext
   private source?: MediaStreamAudioSourceNode
   private chain?: AudioProcessingChain
   private destination?: MediaStreamAudioDestinationNode
 
-  constructor(private options: AudioProcessingOptions) {}
+  constructor(private options: AudioProcessingOptions, private readonly onGateChange?: () => void) {}
 
   async init({ track }: AudioProcessorOptions): Promise<void> {
     const { context, source } = openProcessingSource(track)
@@ -232,6 +235,11 @@ export class CallAudioProcessor implements TrackProcessor<Track.Kind.Audio, Audi
     this.inputTrack = track
     this.destination = context.createMediaStreamDestination()
     this.chain = await AudioProcessingChain.create(context, this.destination, this.options)
+    this.gateOpen = this.options.voiceGateDb === null ? null : false
+    this.chain.onGateChange = (open) => {
+      this.gateOpen = open
+      this.onGateChange?.()
+    }
     source.connect(this.chain.input)
     this.processedTrack = this.destination.stream.getAudioTracks()[0]
   }
@@ -250,6 +258,7 @@ export class CallAudioProcessor implements TrackProcessor<Track.Kind.Audio, Audi
     if (!this.chain || this.chain.needsRebuild(options)) return false
     this.options = options
     await this.chain.setVoiceGate(options.voiceGateDb)
+    this.gateOpen = options.voiceGateDb === null ? null : (this.gateOpen ?? false)
     return true
   }
 

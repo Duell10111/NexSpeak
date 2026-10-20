@@ -11,6 +11,27 @@ function tiles(page: Page) {
   return page.getByTestId("call-tile")
 }
 
+/** Sustained, audible input: the default fake mic's brief beeps can miss the SFU's activity window. */
+async function continuousMicrophone(page: Page) {
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext()
+      const source = context.createOscillator()
+      const gain = context.createGain()
+      const output = context.createMediaStreamDestination()
+      source.frequency.value = 440
+      gain.gain.value = 0.1
+      source.connect(gain).connect(output)
+      source.start()
+      await context.resume()
+      const track = output.stream.getAudioTracks()[0]
+      const stop = track.stop.bind(track)
+      track.stop = () => { stop(); void context.close() }
+      return output.stream
+    }
+  })
+}
+
 for (const encrypted of [false, true]) {
   test(`voice call via MatrixRTC + LiveKit (${encrypted ? "E2EE" : "unencrypted"})`, async ({ browser }) => {
     const alice = await registerUser("alice")
@@ -20,12 +41,16 @@ for (const encrypted of [false, true]) {
 
     const alicePage = await newPage(browser)
     const bobPage = await newPage(browser)
+    await continuousMicrophone(alicePage)
     await login(alicePage, alice)
     await login(bobPage, bob)
     await openRoom(alicePage, roomName)
     await openRoom(bobPage, roomName)
 
     await joinVoice(alicePage)
+    // The local speaking indicator must also work before anyone else joins.
+    const localSpeaking = tiles(alicePage).filter({ hasText: alice.username }).locator(".ring-nx-online")
+    await expect.poll(() => localSpeaking.count(), { timeout: 20_000, intervals: [50] }).toBe(1)
     // Bob sees the running call in the room list before joining.
     await expect(bobPage.getByText(alice.username).first()).toBeVisible()
     const duration = bobPage.getByLabel(/^Anruf läuft seit /)
@@ -47,6 +72,8 @@ for (const encrypted of [false, true]) {
 
     // With E2EE, frames must actually decrypt: wait for the remote mic to produce audio levels.
     await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 30_000 }).toBeGreaterThan(5)
+    const remoteSpeaking = tiles(bobPage).filter({ hasText: alice.username }).locator(".ring-nx-online")
+    await expect.poll(() => remoteSpeaking.count(), { timeout: 20_000, intervals: [50] }).toBe(1)
 
     // Connection details (Discord's ping popover) read the live WebRTC stats.
     await bobPage.getByRole("button", { name: "Verbindungsdetails" }).click()
@@ -59,6 +86,8 @@ for (const encrypted of [false, true]) {
     // Mute shows up for the other participant.
     await alicePage.getByRole("button", { name: "Mikrofon stummschalten" }).last().click()
     await expect(tiles(bobPage).filter({ hasText: alice.username }).getByLabel("Stummgeschaltet")).toBeVisible()
+    await expect(localSpeaking).toHaveCount(0)
+    await expect(remoteSpeaking).toHaveCount(0)
     // ... and in the voice channel's member list in the sidebar.
     await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`).getByLabel("Stummgeschaltet")).toBeVisible()
 

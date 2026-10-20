@@ -23,6 +23,14 @@ Others don't hear you
   your voice is above the threshold; move it further left if not. With push to talk, check that a key
   is set. On macOS, the key only works in games with the accessibility permission.
 
+Other apps become quieter when you join a call
+: On Windows, the system can lower other apps when it detects communication activity. Check
+  **Sound Control Panel → Communications → Do nothing**; see Microsoft's
+  [default ducking documentation](https://learn.microsoft.com/en-us/windows/win32/coreaudio/stream-attenuation).
+  This is a system-wide preference. If the sound also changes quality when using a Bluetooth headset,
+  compare with a separate microphone or a wired headset to check whether opening the headset
+  microphone triggers a device mode switch.
+
 "You joined this call on another device."
 : You are in the same call with another device or app (e.g. the nightly and the stable app). Leave it
   there.

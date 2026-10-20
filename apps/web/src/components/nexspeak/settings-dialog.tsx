@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { toast } from "sonner"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +13,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
 import { ExternalLink, Headphones, Languages, LogOut, Mic } from "lucide-react"
 import { useMatrix } from "@/components/matrix-provider"
@@ -30,22 +28,14 @@ import { DesktopAutostartSetting } from "@/components/nexspeak/desktop-settings"
 import { SystemAudioSetting } from "@/components/nexspeak/system-audio-setting"
 import { IgnoredUsersList } from "@/components/nexspeak/ignored-users"
 import { useTranslation } from "@/hooks/useTranslation"
-import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
+import { LOCALE_NAMES, LOCALES, type Locale } from "@nexspeak/i18n"
 import { VoiceProcessingSettings } from "@/components/nexspeak/voice-processing-settings"
+import { MicrophoneTest } from "@/components/nexspeak/microphone-test"
 import {
-  AudioProcessingChain,
-  captureConstraints,
-  needsAudioGraph,
-  openProcessingSource,
-} from "@nexspeak/core/audio-processing"
-import {
-  audioProcessingOptions,
   getDefaultAudioSettings,
   loadAudioSettings,
-  MIN_INPUT_SENSITIVITY_DB,
   saveAudioSettings,
   subscribeAudioSettings,
-  type AudioSettings,
 } from "@/lib/audio-settings"
 
 export type SettingsTab = "profile" | "audio" | "video" | "notifications" | "security" | "account" | "about"
@@ -59,7 +49,6 @@ interface SettingsDialogProps {
 
 // Radix Select doesn't allow an empty string as item value.
 const DEFAULT_DEVICE = "__default__"
-const MIC_TEST_DURATION_MS = 5000
 
 function useAudioDevices(open: boolean) {
   const [devices, setDevices] = useState<{ inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }>({
@@ -103,122 +92,6 @@ function useAudioDevices(open: boolean) {
   }, [open])
 
   return { ...devices, permissionError }
-}
-
-/** Level in dBFS as a share of the input sensitivity scale. */
-function levelPercent(db: number): number {
-  return Math.min(100, Math.max(0, ((db - MIN_INPUT_SENSITIVITY_DB) / -MIN_INPUT_SENSITIVITY_DB) * 100))
-}
-
-/** Records with the current processing, so the level and the voice gate look like in a call. */
-function MicrophoneTest({ settings }: { settings: AudioSettings }) {
-  const { t } = useTranslation()
-  const [level, setLevel] = useState<number | null>(null)
-  const [threshold, setThreshold] = useState<number | null>(null)
-  const [gateOpen, setGateOpen] = useState(false)
-  const stopRef = useRef<(() => void) | null>(null)
-
-  useEffect(() => () => stopRef.current?.(), [])
-
-  const start = async () => {
-    if (stopRef.current) return
-    const processing = audioProcessingOptions(settings)
-    let stopped = false
-    let stream: MediaStream | undefined
-    let context: AudioContext | undefined
-    let chain: AudioProcessingChain | null = null
-    let frame = 0
-    let timeout: ReturnType<typeof setTimeout> | undefined
-    // Register before the first await: unmounts and failed or delayed worklet loads must release
-    // everything acquired so far. Late results call stop again to release their resources too.
-    const stop = () => {
-      stopped = true
-      clearTimeout(timeout)
-      cancelAnimationFrame(frame)
-      chain?.destroy()
-      chain = null
-      stream?.getTracks().forEach((track) => track.stop())
-      stream = undefined
-      void context?.close().catch(() => {})
-      context = undefined
-      if (stopRef.current === stop) {
-        stopRef.current = null
-        setLevel(null)
-      }
-    }
-    stopRef.current = stop
-    setThreshold(processing.voiceGateDb)
-    setGateOpen(false)
-    setLevel(0)
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          ...(settings.inputDeviceId ? { deviceId: { exact: settings.inputDeviceId } } : {}),
-          ...captureConstraints(processing),
-        },
-      })
-      if (stopped) { stop(); return }
-      const opened = openProcessingSource(stream.getAudioTracks()[0])
-      context = opened.context
-      const source = opened.source
-      const analyser = context.createAnalyser()
-      analyser.fftSize = 1024
-      if (needsAudioGraph(processing)) {
-        // A MediaStream destination pulls the chain like a call does, without playing it back.
-        chain = await AudioProcessingChain.create(context, context.createMediaStreamDestination(), processing)
-        if (stopped) { stop(); return }
-        chain.onGateChange = setGateOpen
-        source.connect(chain.input)
-        chain.beforeGate.connect(analyser)
-      } else {
-        source.connect(analyser)
-      }
-      const buffer = new Float32Array(analyser.fftSize)
-
-      const tick = () => {
-        analyser.getFloatTimeDomainData(buffer)
-        let sum = 0
-        for (const sample of buffer) sum += sample * sample
-        setLevel(levelPercent(20 * Math.log10(Math.sqrt(sum / buffer.length) || 1e-10)))
-        frame = requestAnimationFrame(tick)
-      }
-      tick()
-
-      timeout = setTimeout(stop, MIC_TEST_DURATION_MS)
-    } catch (error) {
-      const wasStopped = stopped
-      stop()
-      if (wasStopped) return
-      console.error("Failed to test microphone:", error)
-      toast.error(translate("settings.micOpenFailed"))
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <Button size="sm" variant="outline" onClick={() => void start()} disabled={level !== null} className="w-full">
-        {level !== null ? t("settings.speakNow") : t("settings.testMic")}
-      </Button>
-      {level !== null && (
-        <>
-          <div className="relative">
-            <Progress value={level} aria-label={t("settings.micLevel")} />
-            {threshold !== null && (
-              <div
-                className="absolute -top-1 -bottom-1 w-0.5 rounded bg-foreground"
-                style={{ left: `${levelPercent(threshold)}%` }}
-              />
-            )}
-          </div>
-          {threshold !== null && (
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {gateOpen ? t("settings.micTransmitting") : t("settings.micNotTransmitting")}
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  )
 }
 
 function playTestTone(volume: number, outputDeviceId: string) {

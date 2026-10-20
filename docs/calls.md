@@ -20,6 +20,9 @@ Element Call. In encrypted channels the audio and video are end-to-end encrypted
 
 The call view shows everyone as tiles with a speaking indicator. **Focus** a camera or screen share
 to show it large, use **Full screen**, and **Show chat** to write next to the call.
+With **Input sensitivity** enabled, your own indicator follows your microphone's transmission gate.
+Other participants' indicators use the call server's activity detection and bridge brief pauses to
+reduce flicker. Very quiet speech can be audible without meeting the server's activity threshold.
 
 ## Volume of each person
 

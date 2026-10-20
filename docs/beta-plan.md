@@ -167,6 +167,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)
 - Custom status text and "Do not disturb" (#45)
 - [x] Better noise suppression and voice activity detection (#41)
+- [x] Reliable speaking feedback and live microphone sensitivity testing (#94)
+- [ ] Investigate attenuation of other PC audio on the first call join (#94)
 - [x] Camera selection and camera preview (#43)
 - [x] Pop out streams and video into an always-on-top window, reusing the existing track (#47)
 - [ ] Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33;
