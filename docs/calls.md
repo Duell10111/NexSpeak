@@ -64,6 +64,21 @@ the preview to save your resources."), so the preview costs no graphics card tim
 choice is remembered on this device. While NexSpeak isn't the focused window (for example while you
 play), or is minimized or hidden, the preview is always paused. Your viewers aren't affected.
 
+### Pop out a video or stream
+
+On a camera or a stream you are watching, choose **Pop out** from the tile's controls or
+right-click menu. Your own stream can also be popped out while its preview is paused.
+The video opens in an always-on-top Picture-in-Picture window; resize or move it while playing.
+The main tile shows **Return to call** instead of rendering the video twice. Audio and call
+controls stay in NexSpeak.
+
+Choose **Return to call** or close the small window to put the video back. Stopping the video,
+stopping watching, or leaving the call closes the window. Only one video can be popped out at a
+time; choosing another returns the previous one. Browser support varies: the action appears only
+when Picture-in-Picture is available. Chromium browsers use Document Picture-in-Picture with a
+**Return to call** button; other supporting browsers and the desktop app use native video
+Picture-in-Picture controls.
+
 ### Watching a stream
 
 Streams of others aren't downloaded until you choose to watch them: their tile shows **Live** and a

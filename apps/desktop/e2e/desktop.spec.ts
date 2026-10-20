@@ -98,6 +98,63 @@ test("login, encrypted chat and an E2EE voice call", async () => {
   await expect(page.locator('[data-testid="call-tile"][data-connecting]')).toHaveCount(0, { timeout: 30_000 })
 })
 
+test("native camera PiP reuses the video, survives navigation and closes with its call", async () => {
+  const alice = await registerUser("alice")
+  const roomName = `Desktop PiP ${Date.now().toString(36)}`
+  const chatName = `Other chat ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [], encrypted: true })
+  await createRoom(alice, { name: chatName, members: [] })
+  await login(page, alice, "app://nexspeak/login")
+  await openRoom(page, roomName)
+  await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
+  await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeVisible()
+  await page.getByRole("button", { name: "Kamera einschalten" }).last().click()
+  const video = page.locator('[data-testid="call-tile"] video')
+  await expect(video).toBeVisible()
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(2)
+  const original = await video.elementHandle()
+  const source = await video.evaluateHandle((element: HTMLVideoElement) => element.srcObject)
+  await page.getByRole("button", { name: "In eigenem Fenster öffnen" }).click()
+  await expect.poll(() => page.evaluate(() => !!document.pictureInPictureElement)).toBe(true)
+  expect(await page.evaluate((element) => document.pictureInPictureElement === element, original)).toBe(true)
+  expect(await page.evaluate((stream) => document.pictureInPictureElement?.srcObject === stream, source)).toBe(true)
+  await expect(page.locator("video")).toHaveCount(1)
+  await expect.poll(() => original!.evaluate((element: HTMLVideoElement) => element.clientWidth)).toBeGreaterThan(0)
+  expect(await original!.evaluate((element: HTMLVideoElement) => getComputedStyle(element).opacity)).toBe("0")
+
+  // The native surface keeps decoding even with the renderer's main window hidden.
+  const frames = await original!.evaluate((element: HTMLVideoElement) => element.getVideoPlaybackQuality().totalVideoFrames)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide())
+  try {
+    await expect.poll(() => original!.evaluate((element: HTMLVideoElement) => element.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(frames)
+    expect(await page.evaluate(() => !!document.pictureInPictureElement)).toBe(true)
+  } finally {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show())
+  }
+
+  await openRoom(page, chatName)
+  expect(await page.evaluate((element) => document.pictureInPictureElement === element, original)).toBe(true)
+  await openRoom(page, roomName)
+  await page.evaluate(() => document.exitPictureInPicture())
+  await expect.poll(() => page.evaluate(() => document.pictureInPictureElement === null)).toBe(true)
+  await expect(video).toBeVisible()
+  expect(await video.evaluate((element, previous) => element === previous, original)).toBe(true)
+
+  await page.getByRole("button", { name: "In eigenem Fenster öffnen" }).click()
+  await expect.poll(() => page.evaluate(() => !!document.pictureInPictureElement)).toBe(true)
+  await page.getByRole("button", { name: "Kamera ausschalten" }).last().click()
+  await expect.poll(() => page.evaluate(() => document.pictureInPictureElement === null)).toBe(true)
+  await expect(page.locator("video")).toHaveCount(0)
+
+  await page.getByRole("button", { name: "Kamera einschalten" }).last().click()
+  await expect(video).toBeVisible()
+  await page.getByRole("button", { name: "In eigenem Fenster öffnen" }).click()
+  await expect.poll(() => page.evaluate(() => !!document.pictureInPictureElement)).toBe(true)
+  await page.getByRole("button", { name: "Anruf verlassen" }).click()
+  await expect.poll(() => page.evaluate(() => document.pictureInPictureElement === null)).toBe(true)
+  await expect(page.locator("video")).toHaveCount(0)
+})
+
 test("the screen picker answers the main process", async () => {
   const alice = await registerUser("alice")
   await login(page, alice, "app://nexspeak/login")

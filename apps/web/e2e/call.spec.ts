@@ -378,3 +378,93 @@ test("leaving a room during a call ends the call for the others too", async ({ b
   await expect(tiles(bobPage)).toHaveCount(1, { timeout: 20_000 })
   await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`).getByText(alice.username)).toHaveCount(0)
 })
+
+test("an E2EE stream pops out using the same video across call layouts and channel navigation", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Pop-out ${Date.now().toString(36)}`
+  const otherRoom = `Other ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob], encrypted: true })
+  await createRoom(bob, { name: otherRoom, members: [] })
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, roomName)
+  await joinVoice(alicePage)
+  await joinVoice(bobPage)
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+
+  await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+  await alicePage.getByRole("dialog", { name: "Bildschirm teilen" }).getByRole("button", { name: "Live gehen" }).click()
+  await tiles(bobPage).getByRole("button", { name: "Stream ansehen", exact: true }).click()
+  const stream = tiles(bobPage).filter({ hasText: alice.username }).filter({ hasText: "Live" })
+  await expect(stream.locator("video")).toHaveJSProperty("readyState", 4, { timeout: 30_000 })
+  await stream.locator("video").evaluate((video) => {
+    ;(window as unknown as { __popoutVideo: HTMLVideoElement }).__popoutVideo = video as HTMLVideoElement
+  })
+  type PipWindow = Window & {
+    documentPictureInPicture: { window: Window | null }
+    __popoutVideo: HTMLVideoElement
+  }
+  const pipState = () => bobPage.evaluate(() => {
+    const main = window as unknown as PipWindow
+    const pip = main.documentPictureInPicture.window
+    const video = pip?.document.querySelector("video")
+    return {
+      open: !!pip && !pip.closed,
+      sameVideo: video === main.__popoutVideo,
+      videos: pip?.document.querySelectorAll("video").length ?? 0,
+      frames: video?.getVideoPlaybackQuality().totalVideoFrames ?? 0,
+      width: video?.clientWidth ?? 0,
+      windowWidth: pip?.innerWidth ?? 0,
+    }
+  })
+  const openPip = async () => {
+    await stream.getByRole("button", { name: "In eigenem Fenster öffnen" }).click()
+    await expect.poll(pipState).toMatchObject({ open: true, sameVideo: true, videos: 1 })
+    await expect(stream.getByRole("button", { name: "Zurück zum Anruf", exact: true }).first()).toBeVisible()
+    await expect(stream.locator("video")).toHaveCount(0)
+  }
+  await openPip()
+  const before = (await pipState()).frames
+  await expect.poll(async () => (await pipState()).frames).toBeGreaterThan(before)
+
+  // LiveKit observes the actual PiP viewport; headless Chromium may ignore resizeTo.
+  await bobPage.evaluate(() => (window as unknown as PipWindow).documentPictureInPicture.window!.resizeTo(400, 250))
+  await expect.poll(async () => {
+    const state = await pipState()
+    return state.width > 0 && state.width === state.windowWidth
+  }).toBe(true)
+
+  await stream.getByRole("button", { name: "Fokus beenden", exact: true }).click()
+  await expect.poll(pipState).toMatchObject({ open: true, sameVideo: true })
+  await openRoom(bobPage, otherRoom)
+  const afterNavigation = (await pipState()).frames
+  await expect.poll(async () => (await pipState()).frames).toBeGreaterThan(afterNavigation)
+  await openRoom(bobPage, roomName)
+  await expect.poll(pipState).toMatchObject({ open: true, sameVideo: true })
+
+  // Native close and the explicit return button both restore the same element.
+  await bobPage.evaluate(() => (window as unknown as PipWindow).documentPictureInPicture.window!.close())
+  await expect(stream.locator("video")).toHaveCount(1)
+  await expect.poll(() => stream.locator("video").evaluate((video) => video === (window as unknown as PipWindow).__popoutVideo)).toBe(true)
+  await openPip()
+  await bobPage.evaluate(() => (window as unknown as PipWindow).documentPictureInPicture.window!.document.querySelector("button")!.click())
+  await expect(stream.locator("video")).toHaveCount(1)
+
+  await openPip()
+  await alicePage.getByRole("button", { name: "Stream-Einstellungen", exact: true }).click()
+  await alicePage.getByRole("menuitem", { name: "Stream beenden", exact: true }).click()
+  await expect.poll(async () => (await pipState()).open).toBe(false)
+
+  // Camera tiles offer the same action; leaving the call closes their PiP too.
+  await alicePage.getByRole("button", { name: "Kamera einschalten", exact: true }).last().click()
+  const camera = tiles(bobPage).filter({ hasText: alice.username })
+  await expect(camera.locator("video")).toHaveJSProperty("readyState", 4, { timeout: 30_000 })
+  await camera.getByRole("button", { name: "In eigenem Fenster öffnen" }).click()
+  await expect.poll(async () => (await pipState()).open).toBe(true)
+  await bobPage.getByRole("button", { name: "Anruf verlassen", exact: true }).last().click()
+  await expect.poll(async () => (await pipState()).open).toBe(false)
+})

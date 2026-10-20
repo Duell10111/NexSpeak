@@ -23,6 +23,7 @@ import {
   loadAudioSettings,
   subscribeAudioSettings,
 } from "@/lib/audio-settings"
+import { VideoPopout } from "@/lib/video-popout"
 import { desktopBridge } from "@/lib/desktop"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
 import {
@@ -47,6 +48,8 @@ interface CallContextValue {
   callInfoByRoom: Record<string, RoomCallInfo>
   /** Our own call, if any. */
   call: CallSnapshot | null
+  /** Keeps the one existing video element alive while browsing other channels. */
+  videoPopout: VideoPopout
   /** Room we are currently connecting to. */
   joiningRoomId: string
   isInCallInActiveChannel: boolean
@@ -148,6 +151,12 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     session ? session.getSnapshot : nullSnapshot,
     nullSnapshot,
   )
+
+  const [videoPopout] = useState(() => new VideoPopout())
+  useEffect(() => {
+    videoPopout.retain(call?.videoFeeds ?? [])
+  }, [call, videoPopout])
+  useEffect(() => () => videoPopout.destroy(), [videoPopout])
 
   const updateVoicePrefs = useCallback((next: VoicePrefs) => {
     voicePrefsRef.current = next
@@ -423,6 +432,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     () => ({
       callInfoByRoom,
       call,
+      videoPopout,
       joiningRoomId,
       isInCallInActiveChannel: Boolean(call && call.roomId === activeChannelId),
       isMicMuted: call ? call.isMicMuted : voicePrefs.muted,
@@ -448,6 +458,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       voicePrefs,
       callInfoByRoom,
       call,
+      videoPopout,
       joiningRoomId,
       activeChannelId,
       joinCall,
