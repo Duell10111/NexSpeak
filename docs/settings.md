@@ -119,6 +119,17 @@ between voice activity and push to talk can unexpectedly change when the microph
 These are candidates for future work. Channel navigation and the quick switcher belong to app
 navigation rather than system-wide call bindings (quick switcher: #44).
 
+## Video
+
+Choose **Camera** to remember the device used for previews and calls. Changing it also switches an
+active call camera. If the selected camera is disconnected, NexSpeak falls back to **System default**.
+Before camera permission is granted, device names may be hidden.
+
+**Start camera preview** requests camera access and displays the selected camera without joining a
+call. **Stop camera preview**, closing Settings or switching to another tab releases the preview
+immediately. An active call keeps its own camera track. NexSpeak never opens the camera just to
+list devices, and the preview is off each time you open Settings.
+
 ## Notifications
 
 **Show notifications** and **Show message content**; in the browser, **Allow in browser** first.

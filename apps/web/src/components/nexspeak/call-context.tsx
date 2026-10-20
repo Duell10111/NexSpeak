@@ -23,6 +23,9 @@ import {
   loadAudioSettings,
   subscribeAudioSettings,
 } from "@/lib/audio-settings"
+import { VideoPopout } from "@/lib/video-popout"
+import { defaultCameraDevice, loadCameraDevice, subscribeCameraDevice } from "@/lib/camera-settings"
+import { useCameraDevices } from "@/hooks/useCameraDevices"
 import { desktopBridge } from "@/lib/desktop"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
 import {
@@ -47,6 +50,8 @@ interface CallContextValue {
   callInfoByRoom: Record<string, RoomCallInfo>
   /** Our own call, if any. */
   call: CallSnapshot | null
+  /** Keeps the one existing video element alive while browsing other channels. */
+  videoPopout: VideoPopout
   /** Room we are currently connecting to. */
   joiningRoomId: string
   isInCallInActiveChannel: boolean
@@ -141,6 +146,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const abandonedJoinRef = useRef("")
   const callInfoByRoom = useRtcCallInfo(client)
   const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
+  const cameraDevice = useSyncExternalStore(subscribeCameraDevice, loadCameraDevice, defaultCameraDevice)
   usePushToTalk(session, audioSettings)
 
   const call = useSyncExternalStore(
@@ -148,6 +154,15 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     session ? session.getSnapshot : nullSnapshot,
     nullSnapshot,
   )
+
+  const [videoPopout] = useState(() => new VideoPopout())
+  useEffect(() => {
+    videoPopout.retain(call?.videoFeeds ?? [])
+  }, [call, videoPopout])
+  useEffect(() => () => videoPopout.destroy(), [videoPopout])
+
+  // Device changes are observed only during a call; enumeration never opens the camera.
+  useCameraDevices(session !== null, call?.isCameraOn)
 
   const updateVoicePrefs = useCallback((next: VoicePrefs) => {
     voicePrefsRef.current = next
@@ -185,6 +200,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
         const sounds = createCallSoundPlayer()
         const next = await CallSession.start(client, roomId, {
           inputDeviceId: settings.inputDeviceId,
+          cameraDeviceId: loadCameraDevice(),
           outputDeviceId: settings.outputDeviceId,
           outputVolume: settings.outputVolume / 100,
           startMuted: voicePrefsRef.current.muted,
@@ -403,6 +419,13 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     })
   }, [session, audioSettings.outputDeviceId])
 
+  useEffect(() => {
+    if (!session) return
+    session.setDevice("videoinput", cameraDevice).catch((error: unknown) => {
+      reportError(error, t("call.error.cameraToggleFailed"))
+    })
+  }, [session, cameraDevice])
+
   const { noiseSuppression, echoCancellation, autoGainControl, voiceGateDb } = audioProcessingOptions(audioSettings)
   useEffect(() => {
     if (!session) return
@@ -423,6 +446,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     () => ({
       callInfoByRoom,
       call,
+      videoPopout,
       joiningRoomId,
       isInCallInActiveChannel: Boolean(call && call.roomId === activeChannelId),
       isMicMuted: call ? call.isMicMuted : voicePrefs.muted,
@@ -448,6 +472,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       voicePrefs,
       callInfoByRoom,
       call,
+      videoPopout,
       joiningRoomId,
       activeChannelId,
       joinCall,

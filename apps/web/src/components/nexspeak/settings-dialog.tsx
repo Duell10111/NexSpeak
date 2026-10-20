@@ -24,6 +24,7 @@ import { SoundCueSettings } from "@/components/nexspeak/sound-cue-settings"
 import { CallInputSettings } from "@/components/nexspeak/call-shortcut-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
+import { CameraSettings } from "@/components/nexspeak/camera-settings"
 import { AboutPanel } from "@/components/nexspeak/about-panel"
 import { DesktopAutostartSetting } from "@/components/nexspeak/desktop-settings"
 import { SystemAudioSetting } from "@/components/nexspeak/system-audio-setting"
@@ -47,7 +48,7 @@ import {
   type AudioSettings,
 } from "@/lib/audio-settings"
 
-export type SettingsTab = "profile" | "audio" | "notifications" | "security" | "account" | "about"
+export type SettingsTab = "profile" | "audio" | "video" | "notifications" | "security" | "account" | "about"
 
 interface SettingsDialogProps {
   open: boolean
@@ -239,12 +240,17 @@ function playTestTone(volume: number, outputDeviceId: string) {
   oscillator.onended = () => void audioContext.close()
 }
 
-export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: SettingsDialogProps) {
+export function SettingsDialog(props: SettingsDialogProps) {
+  return <SettingsDialogContent key={`${props.open}:${props.initialTab}`} {...props} />
+}
+
+function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: SettingsDialogProps) {
   const { t, locale, setLocale } = useTranslation()
   const { session, logout } = useMatrix()
   const { status: securityStatus } = useSecurity()
   const settings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
-  const { inputs, outputs, permissionError } = useAudioDevices(open)
+  const [activeTab, setActiveTab] = useState(initialTab)
+  const { inputs, outputs, permissionError } = useAudioDevices(open && activeTab === "audio")
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const supportsOutputSelection = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype
 
@@ -269,10 +275,11 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
         {/* Remounted per opening and requested tab (the menus' "Check for updates…" switches to About
             while it is open), so it starts at the requested tab. min-w-0: unbreakable
             content must not widen the dialog's grid column. */}
-        <Tabs key={`${open}:${initialTab}`} defaultValue={initialTab} className="w-full min-w-0">
+        <Tabs key={`${open}:${initialTab}`} defaultValue={initialTab} onValueChange={(value) => setActiveTab(value as SettingsTab)} className="w-full min-w-0">
           <TabsList className="grid h-auto w-full grid-cols-3">
             <TabsTrigger value="profile">{t("settings.profile")}</TabsTrigger>
             <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>
+            <TabsTrigger value="video">{t("settings.video")}</TabsTrigger>
             <TabsTrigger value="notifications">{t("settings.notifications")}</TabsTrigger>
             <TabsTrigger value="security">{t("settings.security")}</TabsTrigger>
             <TabsTrigger value="account">{t("settings.account")}</TabsTrigger>
@@ -281,6 +288,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
 
           <TabsContent value="profile">
             <ProfilePanel />
+          </TabsContent>
+
+          <TabsContent value="video">
+            <CameraSettings />
           </TabsContent>
 
           <TabsContent value="about">
