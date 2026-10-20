@@ -384,7 +384,7 @@ function MoreActions({
   }
 
   return (
-    <DropdownMenu modal={false} onOpenChange={onOpenChange}>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.moreActions")}>
           <MoreHorizontal className="h-4 w-4" />
