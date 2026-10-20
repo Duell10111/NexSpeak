@@ -337,6 +337,9 @@ export const de = {
 
   'stream.resolution': 'Auflösung',
   'stream.framerate': 'Bildrate',
+  'stream.shareAudio': 'Systemaudio teilen',
+  'stream.shareAudioHintDesktop': 'Ton anderer Apps beim Start einer Bildschirmfreigabe teilen. Gilt ab der nächsten Freigabe.',
+  'stream.shareAudioHintBrowser': 'Ton beim Start einer Bildschirmfreigabe anfordern. Verfügbarkeit hängt vom Browser und der Quelle ab; ggf. im Browser-Dialog bestätigen. Gilt ab der nächsten Freigabe.',
   'stream.source': 'Quelle',
   'stream.goLive': 'Live gehen',
   'stream.pickSource': 'Was möchtest du teilen?',

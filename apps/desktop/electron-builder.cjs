@@ -68,6 +68,7 @@ module.exports = {
     extendInfo: {
       NSMicrophoneUsageDescription: `${productName} needs the microphone for voice channels.`,
       NSCameraUsageDescription: `${productName} needs the camera for video in voice channels.`,
+      NSAudioCaptureUsageDescription: `${productName} needs system audio access to share sound with your screen.`,
     },
   },
   win: {

@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { release, tmpdir } from "node:os"
 import { join } from "node:path"
 import { _electron as electron, chromium, expect, test, type ElectronApplication, type Page } from "@playwright/test"
+import { supportsSystemAudio } from "../src/display-media"
 import {
   createLoginToken,
   createRoom,
@@ -55,6 +56,7 @@ test("serves the web build from app:// as a locked-down, secure origin", async (
     const worker = await fetch("/livekit-e2ee-worker.mjs")
     return {
       bridge: typeof window.nexspeak?.onChooseDisplaySource,
+      systemAudio: window.nexspeak?.supportsSystemAudio,
       secureContext: isSecureContext,
       nodeInRenderer: typeof (window as { require?: unknown }).require !== "undefined",
       workerType: worker.headers.get("content-type"),
@@ -68,6 +70,7 @@ test("serves the web build from app:// as a locked-down, secure origin", async (
   })
   expect(info).toEqual({
     bridge: "function",
+    systemAudio: supportsSystemAudio(process.platform, release()),
     secureContext: true,
     nodeInRenderer: false,
     workerType: "text/javascript; charset=utf-8",
@@ -99,7 +102,7 @@ test("the screen picker answers the main process", async () => {
   const alice = await registerUser("alice")
   await login(page, alice, "app://nexspeak/login")
 
-  // What the main process sends when getDisplayMedia needs our picker (Windows, Linux on X11).
+  // What the main process sends when getDisplayMedia needs our picker (macOS, Windows, X11).
   const thumbnail =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
   const chosen = app.evaluate(

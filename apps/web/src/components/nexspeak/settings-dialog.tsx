@@ -25,6 +25,7 @@ import { NotificationSettingsPanel } from "@/components/nexspeak/notification-se
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
 import { AboutPanel } from "@/components/nexspeak/about-panel"
 import { DesktopAutostartSetting } from "@/components/nexspeak/desktop-settings"
+import { SystemAudioSetting } from "@/components/nexspeak/system-audio-setting"
 import { IgnoredUsersList } from "@/components/nexspeak/ignored-users"
 import { useTranslation } from "@/hooks/useTranslation"
 import { LOCALE_NAMES, LOCALES, t as translate, type Locale } from "@nexspeak/i18n"
@@ -310,6 +311,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "audio" }: Set
                 className="w-full"
               />
             </div>
+            <SystemAudioSetting />
           </TabsContent>
 
           <TabsContent value="account" className="space-y-4">

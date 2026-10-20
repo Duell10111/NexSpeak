@@ -18,6 +18,7 @@ import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { t } from "@nexspeak/i18n"
 import { CallPermissionError, enableCallsInRoom } from "@nexspeak/core/matrix/rtc"
 import { getDefaultAudioSettings, loadAudioSettings, subscribeAudioSettings } from "@/lib/audio-settings"
+import { desktopBridge } from "@/lib/desktop"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
 import {
   DEFAULT_SCREENSHARE_QUALITY,
@@ -277,7 +278,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       const current = sessionRef.current
       if (!current) return
       try {
-        await current.setScreenShareEnabled(true, quality)
+        const bridge = desktopBridge()
+        const shareAudio = loadAudioSettings().shareSystemAudio && (!bridge || bridge.supportsSystemAudio)
+        await current.setScreenShareEnabled(true, quality, shareAudio)
       } catch (error) {
         // Closing the browser's picker is not an error worth reporting.
         if (error instanceof DOMException && error.name === "NotAllowedError") return

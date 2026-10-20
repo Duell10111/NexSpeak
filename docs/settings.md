@@ -14,6 +14,9 @@ depends on your homeserver.
 - **Input device** and **Output device**, **Call volume**, **Play test tone** and **Test
   microphone** with a level meter. Some browsers can't choose the output device.
 - **Input mode**: **Voice activity** or **Push to talk**.
+- **Share system audio**: include sound when starting a screen share. The choice is remembered and
+  applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
+  depends on the browser and capture source. See [Calls and screen sharing](calls.md).
 
 ### Push to talk
 

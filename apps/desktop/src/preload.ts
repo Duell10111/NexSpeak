@@ -38,6 +38,7 @@ function argument(prefix: string): string | undefined {
 
 const bridge: DesktopBridge = {
   platform: process.platform as DesktopBridge["platform"],
+  supportsSystemAudio: argument("--nexspeak-system-audio=") === "true",
   appVersion: argument(APP_VERSION_ARG) ?? "",
   channel: argument(CHANNEL_ARG) === "nightly" ? "nightly" : "stable",
   deepLinkScheme: argument(DEEP_LINK_SCHEME_ARG) ?? "nexspeak",
