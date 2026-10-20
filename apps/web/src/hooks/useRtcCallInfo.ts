@@ -23,6 +23,8 @@ export interface RoomCallMember {
 export interface RoomCallInfo {
   /** One entry per user, even when they joined with several devices. */
   members: RoomCallMember[]
+  /** Oldest current membership's creation time, in milliseconds since the epoch. */
+  startedTs?: number
 }
 
 /**
@@ -54,7 +56,13 @@ function readCallInfo(sessions: MatrixRTCSession[]): Record<string, RoomCallInfo
         avatarMxc: member?.getMxcAvatarUrl() || undefined,
       })
     })
-    result[room.roomId] = { members: Array.from(members.values()).sort((a, b) => a.name.localeCompare(b.name)) }
+    // Session memberships keep created_ts across renewals. For the experimental sticky
+    // "rtc" kind the SDK still returns the latest event time (CallMembership.createdTs TODO).
+    // NexSpeak does not enable unstableSendStickyEvents when joining calls.
+    result[room.roomId] = {
+      members: Array.from(members.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      startedTs: session.getOldestMembership()?.createdTs(),
+    }
   })
   return result
 }
