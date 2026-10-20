@@ -7,6 +7,15 @@
 import { EventType, Preset, Visibility, type ICreateRoomOpts, type MatrixClient, type Room } from 'matrix-js-sdk'
 import { shouldUseHydraForRoomVersion } from 'matrix-js-sdk/lib/utils/roomVersion.js'
 import { CALL_MEMBER_EVENT_TYPE } from './rtc'
+import {
+  applyPermissionLevels,
+  changedPermissions,
+  forbiddenPermissionChange,
+  readPermissionLevels,
+  samePermissionLevels,
+  type PermissionLevels,
+  type PermissionRole,
+} from './permissions'
 import { planMove, sortSpaceChildren, isValidOrder, type SpaceChildLink } from './space-order'
 
 const SPACE_CHILD = 'm.space.child'
@@ -139,14 +148,19 @@ async function unlinkChild(client: MatrixClient, parentId: string, roomId: strin
 /**
  * Move a channel or category to a new position: before `beforeRoomId` in `toParentId`
  * (null: at the end). Moving between parents links first and unlinks afterwards, so the
- * channel never disappears in between.
+ * channel never disappears in between. Like Discord, a channel that followed the permissions
+ * of its old parent follows the new one; custom permissions stay.
  */
 export async function moveChild(
   client: MatrixClient,
-  options: { roomId: string; fromParentId: string; toParentId: string; beforeRoomId: string | null },
+  options: { roomId: string; fromParentId: string; toParentId: string; beforeRoomId: string | null; syncPermissions?: boolean },
 ): Promise<void> {
-  const { roomId, fromParentId, toParentId, beforeRoomId } = options
+  const { roomId, fromParentId, toParentId, beforeRoomId, syncPermissions = true } = options
   if (roomId === beforeRoomId) return
+  const room = client.getRoom(roomId)
+  const followedParent =
+    syncPermissions && fromParentId !== toParentId &&
+    samePermissionLevels(readRoomPermissions(room), readRoomPermissions(client.getRoom(fromParentId)))
   const target = client.getRoom(toParentId)
   const siblings = getChildLinks(target)
   const viaOf = (id: string) =>
@@ -166,10 +180,20 @@ export async function moveChild(
       console.info('Could not update the parent of the moved room:', error)
     }
   }
+
+  const changes = followedParent ? changedPermissions(readRoomPermissions(room), readRoomPermissions(client.getRoom(toParentId))) : {}
+  if (Object.keys(changes).length) {
+    // The move itself succeeded; without the permission the channel just keeps its own.
+    try {
+      await sendState(client, roomId, EventType.RoomPowerLevels, applyPermissionLevels(powerLevels(room), changes))
+    } catch (error) {
+      console.info('Could not sync the permissions of the moved room:', error)
+    }
+  }
 }
 
-/** Room version and power levels for a new channel or category of a server. */
-function inheritedRoomOptions(client: MatrixClient, serverId: string) {
+/** Room version and power levels for a new channel or category in `parentId` of a server. */
+function inheritedRoomOptions(client: MatrixClient, serverId: string, parentId: string) {
   // Roles are server-wide on Discord: carry the server's admins and moderators over.
   const server = client.getRoom(serverId)
   const users = { ...(powerLevels(server).users ?? {}) } as Record<string, number>
@@ -185,17 +209,23 @@ function inheritedRoomOptions(client: MatrixClient, serverId: string) {
     // The new room uses the same version, so we become its creator, and v12+ rejects listing creators.
     delete users[client.getUserId() ?? '']
   }
+  // New rooms follow the permissions of their category (or the server), like on Discord.
+  const template = defaultPowerLevels()
+  const parent = client.getRoom(parentId)
+  const changes = parent?.currentState.getStateEvents(EventType.RoomPowerLevels, '')
+    ? changedPermissions(readPermissionLevels(template), readRoomPermissions(parent))
+    : {}
   return {
     room_version: version || undefined,
-    power_level_content_override: { ...defaultPowerLevels(), users },
+    power_level_content_override: { ...(applyPermissionLevels(template, changes) as ReturnType<typeof defaultPowerLevels>), users },
   }
 }
 
 /** Finish the initial state before restoring a pre-v12 creator's inherited role. */
-async function createServerChild(client: MatrixClient, serverId: string, options: ICreateRoomOpts): Promise<string> {
+async function createServerChild(client: MatrixClient, serverId: string, parentId: string, options: ICreateRoomOpts): Promise<string> {
   const userId = client.getUserId()
   if (!userId) throw new Error('Not logged in')
-  const inherited = inheritedRoomOptions(client, serverId)
+  const inherited = inheritedRoomOptions(client, serverId, parentId)
   const levels = inherited.power_level_content_override
   const creatorLevel = levels.users[userId] ?? levels.users_default
   const restoreRole = inherited.room_version && !shouldUseHydraForRoomVersion(inherited.room_version) && creatorLevel < ROLE_LEVELS.admin
@@ -287,7 +317,7 @@ export async function createChannel(
     initialState.push({ type: EventType.RoomEncryption, state_key: '', content: { algorithm: 'm.megolm.v1.aes-sha2' } })
   }
 
-  const roomId = await createServerChild(client, serverId, {
+  const roomId = await createServerChild(client, serverId, parentId, {
     name,
     topic: topic || undefined,
     preset: Preset.PrivateChat,
@@ -302,7 +332,7 @@ export async function createChannel(
 export async function createCategory(client: MatrixClient, options: { serverId: string; name: string }): Promise<string> {
   const { serverId, name } = options
   const via = [ownServerName(client)]
-  const roomId = await createServerChild(client, serverId, {
+  const roomId = await createServerChild(client, serverId, serverId, {
     name,
     preset: Preset.PrivateChat,
     visibility: Visibility.Private,
@@ -349,48 +379,95 @@ export async function saveRoomDetails(client: MatrixClient, roomId: string, next
   if (next.topic.trim() !== current.topic) await client.setRoomTopic(roomId, next.topic.trim())
 }
 
-export interface ChannelPermissions {
-  isPrivate: boolean
-  moderatorsOnlyWrite: boolean
-  everyoneCanCall: boolean
+export const PERMISSION_ROLES: Array<PermissionRole & { id: ServerRole }> = [
+  { id: 'admin', level: ROLE_LEVELS.admin },
+  { id: 'moderator', level: ROLE_LEVELS.moderator },
+  { id: 'member', level: ROLE_LEVELS.member },
+]
+
+// Nobody calls in a space itself. Spaces of other clients (and Synapse's defaults) don't list
+// call events, which would otherwise read as "moderators only" and be passed on to new channels.
+const SPACE_UNSET_PERMISSIONS = { joinCalls: ROLE_LEVELS.member }
+
+export function readRoomPermissions(room: Room | null | undefined): PermissionLevels {
+  return readPermissionLevels(powerLevels(room), room?.isSpaceRoom() ? SPACE_UNSET_PERMISSIONS : {})
 }
 
-export function readChannelPermissions(room: Room | null | undefined): ChannelPermissions {
-  const levels = powerLevels(room)
-  const events = (levels.events ?? {}) as Record<string, number>
-  const usersDefault = (levels.users_default as number | undefined) ?? 0
-  const eventsDefault = (levels.events_default as number | undefined) ?? 0
-  const messageLevel = events[EventType.RoomMessage] ?? eventsDefault
-  const callLevel = events[CALL_MEMBER_EVENT_TYPE] ?? (levels.state_default as number | undefined) ?? 50
+export function isPrivateChannel(room: Room | null | undefined): boolean {
+  return room?.getJoinRule() === 'invite'
+}
+
+export interface PermissionParent {
+  /** The category, or the server for categories and channels without a category. */
+  roomId: string
+  /** All thresholds equal the parent's, so saving the parent updates this room too. */
+  synced: boolean
+}
+
+/** Null for the server itself, which has no parent. */
+export function readPermissionParent(client: MatrixClient, serverId: string, roomId: string): PermissionParent | null {
+  if (roomId === serverId) return null
+  const parentId = findParentId(client, serverId, roomId)
+  if (!parentId) return null
   return {
-    isPrivate: room?.getJoinRule() === 'invite',
-    moderatorsOnlyWrite: messageLevel > usersDefault,
-    everyoneCanCall: callLevel <= usersDefault,
+    roomId: parentId,
+    synced: samePermissionLevels(readRoomPermissions(client.getRoom(roomId)), readRoomPermissions(client.getRoom(parentId))),
   }
 }
 
-export async function saveChannelPermissions(
-  client: MatrixClient,
-  options: { roomId: string; serverId: string; permissions: ChannelPermissions },
-): Promise<void> {
-  const { roomId, serverId, permissions } = options
-  const room = client.getRoom(roomId)
-  const current = readChannelPermissions(room)
+/** Rooms below a server or category that still follow it, at any depth. */
+function permissionFollowers(client: MatrixClient, spaceId: string): string[] {
+  const followers: string[] = []
+  const visited = new Set([spaceId])
+  const walk = (parentId: string, levels: PermissionLevels) => {
+    for (const roomId of getOrderedChildIds(client.getRoom(parentId))) {
+      const room = client.getRoom(roomId)
+      if (!room || visited.has(roomId)) continue
+      visited.add(roomId)
+      if (!samePermissionLevels(readRoomPermissions(room), levels)) continue
+      followers.push(roomId)
+      if (room.isSpaceRoom()) walk(roomId, levels)
+    }
+  }
+  walk(spaceId, readRoomPermissions(client.getRoom(spaceId)))
+  return followers
+}
 
-  if (permissions.isPrivate !== current.isPrivate) {
-    await sendState(client, roomId, EventType.RoomJoinRules, permissions.isPrivate ? { join_rule: 'invite' } : openToServer(serverId))
+/**
+ * Saves the permissions of a server, category or channel: one power level event for the room
+ * and one for each room that followed it so far (custom rooms are left alone). Rooms we may
+ * not change are skipped and counted as failed.
+ */
+export async function savePermissions(
+  client: MatrixClient,
+  options: { serverId: string; roomId: string; levels: PermissionLevels; isPrivate?: boolean },
+): Promise<{ followers: number; failed: number }> {
+  const { serverId, roomId, levels, isPrivate } = options
+  const room = client.getRoom(roomId)
+  if (isPrivate !== undefined && !room?.isSpaceRoom() && isPrivate !== isPrivateChannel(room)) {
+    await sendState(client, roomId, EventType.RoomJoinRules, isPrivate ? { join_rule: 'invite' } : openToServer(serverId))
   }
-  if (permissions.moderatorsOnlyWrite !== current.moderatorsOnlyWrite || permissions.everyoneCanCall !== current.everyoneCanCall) {
-    const levels = powerLevels(room)
-    const events = { ...((levels.events ?? {}) as Record<string, number>) }
-    const writeLevel = permissions.moderatorsOnlyWrite ? ROLE_LEVELS.moderator : ROLE_LEVELS.member
-    const callLevel = permissions.everyoneCanCall ? ROLE_LEVELS.member : ROLE_LEVELS.moderator
-    // Messages, reactions and attachments all count as writing.
-    events[EventType.RoomMessage] = writeLevel
-    events[EventType.Reaction] = writeLevel
-    events[CALL_MEMBER_EVENT_TYPE] = callLevel
-    await sendState(client, roomId, EventType.RoomPowerLevels, { ...levels, events_default: writeLevel, events })
+  const changes = changedPermissions(readRoomPermissions(room), levels)
+  if (!Object.keys(changes).length) return { followers: 0, failed: 0 }
+  const ownLevel = room?.getMember(client.getUserId() ?? '')?.powerLevel ?? ROLE_LEVELS.member
+  if (forbiddenPermissionChange(readRoomPermissions(room), changes, ownLevel)) {
+    throw new Error('Cannot change a permission above your own power level')
   }
+
+  // Collect before writing: afterwards the room no longer matches its followers.
+  const followers = room?.isSpaceRoom() ? permissionFollowers(client, roomId) : []
+  await sendState(client, roomId, EventType.RoomPowerLevels, applyPermissionLevels(powerLevels(room), changes))
+  const failed = await forEachRoom(followers, (followerId) =>
+    sendState(client, followerId, EventType.RoomPowerLevels, applyPermissionLevels(powerLevels(client.getRoom(followerId)), changes)),
+  )
+  return { followers: followers.length - failed, failed }
+}
+
+/** Like Discord's "Sync permissions": take over the parent's thresholds (and pass them on). */
+export async function syncPermissionsWithParent(client: MatrixClient, serverId: string, roomId: string) {
+  const parent = readPermissionParent(client, serverId, roomId)
+  if (!parent) throw new Error('The server has no parent to sync with')
+  return savePermissions(client, { serverId, roomId, levels: readRoomPermissions(client.getRoom(parent.roomId)) })
 }
 
 /** Runs an action on many rooms; rooms where it fails (no permission, not a member) are skipped. */
@@ -523,7 +600,8 @@ export async function deleteCategory(
 ): Promise<void> {
   const { serverId, categoryId, reason } = options
   for (const roomId of getOrderedChildIds(client.getRoom(categoryId))) {
-    await moveChild(client, { roomId, fromParentId: categoryId, toParentId: serverId, beforeRoomId: null })
+    // Like on Discord the channels keep their permissions; syncing them would cost an event each.
+    await moveChild(client, { roomId, fromParentId: categoryId, toParentId: serverId, beforeRoomId: null, syncPermissions: false })
   }
   await deleteChannel(client, { parentId: serverId, roomId: categoryId, reason })
 }

@@ -43,8 +43,9 @@ The menu behind the server name (top of the channel list) has **Invite people**,
 settings**, **Notifications for all channels** and **Leave server**.
 
 **Server settings**
-: **Overview**: name, description and icon. **Members**: change someone's role, **Kick** them
-  (they can come back with a new invite) or **Ban** them (they can't join again).
+: **Overview**: name, description and icon. **Permissions**: the server's default
+  [permissions](#permissions). **Members**: change someone's role, **Kick** them (they can come
+  back with a new invite) or **Ban** them (they can't join again).
 
   Admins can choose **Repair permissions** in **Overview** for servers with older channels or
   categories. This restores admin-only access to role settings, history visibility, encryption,
@@ -61,10 +62,9 @@ settings**, **Notifications for all channels** and **Leave server**.
   - **Private channel**: only members you add can see and join it.
   - **End-to-end encrypted**: can't be turned off later; new members can't read older messages.
 
-**Channel settings**
-: Name, topic and category, **Only moderators can send messages** (announcement channels) and
-  **Everyone can join the voice channel** (otherwise only moderators and admins can start and join
-  calls).
+**Channel settings** / **Category settings**
+: **Overview**: name and topic (and the icon of a channel). **Permissions**: see
+  [Permissions](#permissions).
 
 **Categories**
 : Create, rename, reorder (**Move up** / **Move down**) and delete them. Deleting a category keeps its
@@ -86,3 +86,45 @@ What each role may do follows the Matrix power levels of the rooms; by default:
 | Member | Write, react and join calls (where allowed) |
 
 Roles apply to the whole server, in all of its channels.
+
+## Permissions
+
+The **Permissions** tab exists in the server settings and in the settings of every category and
+channel. Matrix compares each permission with a role's power level, so you choose the lowest role
+that may do something: that role and every role above it have the permission.
+
+At the top are shortcuts for the most common settings: **Private channel** (channels only), **Only
+moderators can send messages** (announcement channels) and **Everyone can join the voice channel**
+(otherwise only moderators and admins can start and join calls). **All permissions** lists every
+permission:
+
+| Permission | Default |
+|---|---|
+| Send messages and reactions | Member |
+| Join the voice channel | Member |
+| Mention @room | Moderator |
+| Invite people | Member |
+| Pin messages | Moderator |
+| Edit name, topic and icon | Moderator |
+| Delete messages of others | Moderator |
+| Kick members | Moderator |
+| Ban members | Moderator |
+
+A level that matches no role (set by another client, for example) shows as **Custom (level …)**
+until you pick a role. You can't give a permission to roles above your own or change a permission
+that is above your own role. The editor never changes who may change roles and permissions.
+
+**Synced with the category**
+: Like on Discord, a channel follows the permissions of its category, and a category or a channel
+  without a category follows the server. The tab shows **Synced with …** while all permissions
+  match. Saving the category (or the server's defaults) then updates every synced channel as well;
+  the confirmation shows how many. Change a channel on its own and it shows **Custom
+  permissions**: later changes to the category no longer apply to it. **Sync with …** takes over
+  the category's permissions again.
+
+  New channels start with the permissions of their category. A synced channel moved to another
+  category follows the new one; a channel with custom permissions keeps them. Deleting a category
+  keeps the permissions of its channels.
+
+Matrix has no inheritance, so each synced room gets its own update (one per room). Element shows
+the same permissions in a room's **Roles & Permissions** settings.

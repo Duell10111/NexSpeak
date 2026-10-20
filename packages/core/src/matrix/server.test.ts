@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MatrixClient } from 'matrix-js-sdk'
-import { canRepairServerPermissions, createCategory, createChannel, createServer, repairServerPermissions } from './server'
+import {
+  canRepairServerPermissions,
+  createCategory,
+  createChannel,
+  createServer,
+  moveChild,
+  readPermissionParent,
+  readRoomPermissions,
+  repairServerPermissions,
+  savePermissions,
+  syncPermissionsWithParent,
+} from './server'
+import { readPermissionLevels } from './permissions'
 import { CALL_MEMBER_EVENT_TYPE } from './rtc'
 
 const USER = '@alice:example.org'
@@ -12,6 +24,11 @@ const ADMIN_EVENTS = {
   'm.room.encryption': 100,
   'm.room.tombstone': 100,
   'm.room.server_acl': 100,
+}
+const DEFAULT_LEVELS = {
+  users_default: 0, events_default: 0, state_default: 50,
+  ban: 50, kick: 50, redact: 50, invite: 0,
+  events: { ...ADMIN_EVENTS, [CALL_MEMBER_EVENT_TYPE]: 0 },
 }
 
 function setup() {
@@ -138,9 +155,10 @@ describe.each(['channel', 'category'] as const)('create %s', (kind) => {
   function setupServer(version: string, users: Record<string, number>) {
     const { fake, client } = setup()
     const create = { getSender: () => OWNER, getContent: () => ({ additional_creators: ['@co:example.org'] }) }
-    const levels = { getContent: () => ({ users }) }
+    const levels = { getContent: () => ({ ...DEFAULT_LEVELS, users }) }
     const server = {
       getVersion: () => version,
+      isSpaceRoom: () => true,
       currentState: {
         getStateEvents: (type: string) =>
           type === 'm.room.create' ? create : type === 'm.room.power_levels' ? levels : [],
@@ -347,5 +365,147 @@ describe('repairServerPermissions', () => {
     expect(canRepairServerPermissions(client, SERVER)).toBe(true)
     fake.getUserId.mockReturnValue(null)
     expect(canRepairServerPermissions(client, SERVER)).toBe(false)
+  })
+})
+
+describe('category and channel permissions', () => {
+  const CATEGORY = '!category:example.org'
+  const SYNCED = '!synced:example.org'
+  const CUSTOM = '!custom:example.org'
+  const TOP = '!top:example.org'
+  const OTHER = '!other:example.org'
+  type Levels = Record<string, unknown>
+
+  /** Server → [category → [synced, custom], top-level channel, other category → []]. */
+  function setupTree(ownLevel = 100) {
+    const children: Record<string, string[]> = { [SERVER]: [CATEGORY, TOP, OTHER], [CATEGORY]: [SYNCED, CUSTOM], [OTHER]: [] }
+    const levels: Record<string, Levels> = Object.fromEntries(
+      [SERVER, CATEGORY, SYNCED, CUSTOM, TOP, OTHER].map((id) => [id, structuredClone({ ...DEFAULT_LEVELS, users: { [USER]: 100 } })]),
+    )
+    levels[CUSTOM] = { ...levels[CUSTOM], kick: 100 }
+    const rooms = Object.fromEntries(Object.keys(levels).map((id) => [id, {
+      roomId: id,
+      isSpaceRoom: () => id in children,
+      getMember: () => ({ powerLevel: ownLevel }),
+      getJoinRule: () => 'restricted',
+      getVersion: () => '11',
+      currentState: {
+        getStateEvents: (type: string) => {
+          if (type === 'm.room.power_levels') return { getContent: () => levels[id] }
+          if (type !== 'm.space.child') return null
+          return (children[id] ?? []).map((child) => ({
+            getContent: () => ({ via: ['example.org'] }), getStateKey: () => child, getTs: () => 0,
+          }))
+        },
+      },
+    }]))
+    const fake = {
+      getUserId: vi.fn(() => USER),
+      getDomain: vi.fn(() => 'example.org'),
+      getRoom: vi.fn((id: string) => rooms[id] ?? null),
+      createRoom: vi.fn().mockResolvedValue({ room_id: '!new:example.org' }),
+      sendStateEvent: vi.fn(async (id: string, type: string, content: Levels, stateKey: string) => {
+        if (type === 'm.room.power_levels') levels[id] = content
+        if (type === 'm.space.child') {
+          const list = children[id].filter((child) => child !== stateKey)
+          children[id] = Object.keys(content).length ? [...list, stateKey] : list
+        }
+      }),
+    }
+    const client = fake as unknown as MatrixClient
+    const powerLevelWrites = () => fake.sendStateEvent.mock.calls.filter(([, type]) => type === 'm.room.power_levels').map(([id]) => id)
+    return { fake, client, levels, rooms, powerLevelWrites }
+  }
+
+  it('reports whether a room follows its category or the server', () => {
+    const { client } = setupTree()
+    expect(readPermissionParent(client, SERVER, SYNCED)).toEqual({ roomId: CATEGORY, synced: true })
+    expect(readPermissionParent(client, SERVER, CUSTOM)).toEqual({ roomId: CATEGORY, synced: false })
+    expect(readPermissionParent(client, SERVER, CATEGORY)).toEqual({ roomId: SERVER, synced: true })
+    expect(readPermissionParent(client, SERVER, SERVER)).toBeNull()
+  })
+
+  it('writes one event per room into the category and its synced channels only', async () => {
+    const { client, rooms, levels, powerLevelWrites } = setupTree()
+    const next = { ...readRoomPermissions(rooms[CATEGORY] as never), sendMessages: 50, ban: 100 }
+    await expect(savePermissions(client, { serverId: SERVER, roomId: CATEGORY, levels: next })).resolves.toEqual({ followers: 1, failed: 0 })
+    expect(powerLevelWrites()).toEqual([CATEGORY, SYNCED])
+    expect(readRoomPermissions(rooms[SYNCED] as never)).toEqual(next)
+    expect(levels[CUSTOM]).toMatchObject({ kick: 100, ban: 50 })
+    expect(levels[SYNCED]).toMatchObject({ users: { [USER]: 100 }, events: { ...ADMIN_EVENTS, 'm.room.message': 50 } })
+  })
+
+  it('passes server defaults on to synced categories and their synced channels', async () => {
+    const { client, rooms, powerLevelWrites } = setupTree()
+    const next = { ...readRoomPermissions(rooms[SERVER] as never), invite: 50 }
+    await expect(savePermissions(client, { serverId: SERVER, roomId: SERVER, levels: next })).resolves.toEqual({ followers: 4, failed: 0 })
+    const [first, ...followers] = powerLevelWrites()
+    expect(first).toBe(SERVER)
+    expect(followers.sort()).toEqual([CATEGORY, SYNCED, TOP, OTHER].sort())
+  })
+
+  it('sends nothing without changes and refuses thresholds above the own level', async () => {
+    const { fake, client, rooms } = setupTree(50)
+    const current = readRoomPermissions(rooms[CATEGORY] as never)
+    await expect(savePermissions(client, { serverId: SERVER, roomId: CATEGORY, levels: current })).resolves.toEqual({ followers: 0, failed: 0 })
+    await expect(savePermissions(client, { serverId: SERVER, roomId: CATEGORY, levels: { ...current, kick: 100 } })).rejects.toThrow('above your own')
+    expect(fake.sendStateEvent).not.toHaveBeenCalled()
+  })
+
+  it('counts followers it may not change and continues', async () => {
+    const { fake, client, rooms } = setupTree()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    fake.sendStateEvent.mockImplementation(async (id: string) => {
+      if (id === CATEGORY) throw new Error('Forbidden')
+    })
+    try {
+      const next = { ...readRoomPermissions(rooms[SERVER] as never), invite: 50 }
+      await expect(savePermissions(client, { serverId: SERVER, roomId: SERVER, levels: next })).resolves.toEqual({ followers: 3, failed: 1 })
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  it('syncs a custom channel with its category', async () => {
+    const { client, rooms, powerLevelWrites } = setupTree()
+    await syncPermissionsWithParent(client, SERVER, CUSTOM)
+    expect(powerLevelWrites()).toEqual([CUSTOM])
+    expect(readRoomPermissions(rooms[CUSTOM] as never)).toEqual(readRoomPermissions(rooms[CATEGORY] as never))
+  })
+
+  it('makes a synced channel follow its new category when moved, but keeps custom ones', async () => {
+    const { client, levels, powerLevelWrites } = setupTree()
+    levels[OTHER] = { ...levels[OTHER], redact: 0 }
+    await moveChild(client, { roomId: SYNCED, fromParentId: CATEGORY, toParentId: OTHER, beforeRoomId: null })
+    await moveChild(client, { roomId: CUSTOM, fromParentId: CATEGORY, toParentId: OTHER, beforeRoomId: null })
+    expect(powerLevelWrites()).toEqual([SYNCED])
+    expect(levels[SYNCED]).toMatchObject({ redact: 0 })
+    expect(levels[CUSTOM]).toMatchObject({ redact: 50, kick: 100 })
+  })
+
+  it('does not sync when reordering within a category or when asked not to', async () => {
+    const { client, levels, powerLevelWrites } = setupTree()
+    levels[OTHER] = { ...levels[OTHER], redact: 0 }
+    await moveChild(client, { roomId: SYNCED, fromParentId: CATEGORY, toParentId: CATEGORY, beforeRoomId: CUSTOM })
+    await moveChild(client, { roomId: SYNCED, fromParentId: CATEGORY, toParentId: OTHER, beforeRoomId: null, syncPermissions: false })
+    expect(powerLevelWrites()).toEqual([])
+  })
+
+  it('reads calls in spaces without an explicit level as open to members', () => {
+    const { client, levels, rooms } = setupTree()
+    levels[SERVER] = { state_default: 50 }
+    levels[TOP] = { state_default: 50 }
+    expect(readRoomPermissions(rooms[SERVER] as never).joinCalls).toBe(0)
+    expect(readRoomPermissions(rooms[TOP] as never).joinCalls).toBe(50)
+    expect(readPermissionParent(client, SERVER, TOP)?.synced).toBe(false)
+  })
+
+  it('creates channels with the permissions of their category', async () => {
+    const { fake, client, levels } = setupTree()
+    levels[CATEGORY] = { ...levels[CATEGORY], events_default: 50, events: { ...ADMIN_EVENTS, [CALL_MEMBER_EVENT_TYPE]: 50, 'm.room.message': 50 } }
+    await createChannel(client, { serverId: SERVER, parentId: CATEGORY, name: 'news', isPrivate: false, encrypted: false })
+    const [request] = fake.createRoom.mock.calls[0]
+    expect(readPermissionLevels(request.power_level_content_override)).toMatchObject({ sendMessages: 50, joinCalls: 50 })
+    expect(request.power_level_content_override.events).toMatchObject(ADMIN_EVENTS)
   })
 })

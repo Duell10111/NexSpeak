@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { RoomMemberEvent, RoomStateEvent, type MatrixClient, type RoomMember } from "matrix-js-sdk"
 import { toast } from "sonner"
-import { ImagePlus, Trash2 } from "lucide-react"
+import { ChevronDown, ImagePlus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -44,19 +44,29 @@ import {
   canRepairServerPermissions,
   createCategory,
   createChannel,
+  isPrivateChannel,
   kickFromServer,
-  readChannelPermissions,
+  PERMISSION_ROLES,
+  readPermissionParent,
   readRoomDetails,
+  readRoomPermissions,
   repairServerPermissions,
   roleForLevel,
   ROLE_LEVELS,
-  saveChannelPermissions,
+  savePermissions,
   saveRoomDetails,
   setRoomIcon,
   setServerRole,
-  type ChannelPermissions,
+  syncPermissionsWithParent,
   type ServerRole,
 } from "@nexspeak/core/matrix/server"
+import {
+  PERMISSION_KEYS,
+  roleForThreshold,
+  samePermissionLevels,
+  type PermissionKey,
+  type PermissionLevels,
+} from "@nexspeak/core/matrix/permissions"
 
 const ICON_TYPES = "image/png,image/jpeg,image/gif,image/webp"
 
@@ -495,55 +505,170 @@ export function CreateCategoryDialog({
   )
 }
 
-function PermissionsForm({ roomId, serverId }: { roomId: string; serverId: string }) {
+const CUSTOM_LEVEL = "custom"
+
+/** One threshold: "from role X upwards". Levels that match no role stay visible as "custom". */
+function PermissionSelect({
+  permission,
+  value,
+  ownLevel,
+  disabled,
+  onChange,
+}: {
+  permission: PermissionKey
+  value: number
+  ownLevel: number
+  disabled: boolean
+  onChange: (level: number) => void
+}) {
+  const { t } = useTranslation()
+  const role = roleForThreshold(value, PERMISSION_ROLES)
+  const label = t(`manage.permission.${permission}`)
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <Label className="font-normal">{label}</Label>
+      <Select
+        value={role?.id ?? CUSTOM_LEVEL}
+        onValueChange={(id) => {
+          const next = PERMISSION_ROLES.find((option) => option.id === id)
+          if (next) onChange(next.level)
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger className="h-8 w-40 shrink-0" aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {!role && (
+            <SelectItem value={CUSTOM_LEVEL} disabled>
+              {t("manage.permissionCustomLevel", { level: value })}
+            </SelectItem>
+          )}
+          {PERMISSION_ROLES.map((option) => (
+            <SelectItem key={option.id} value={option.id} disabled={option.level > ownLevel}>
+              {t(`role.${option.id}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+/** Permissions of the server (defaults), a category or a channel. */
+function PermissionsForm({ roomId, serverId, scope }: { roomId: string; serverId: string; scope: "server" | "category" | "channel" }) {
   const { t } = useTranslation()
   const { client } = useMatrixClient()
   const room = client?.getRoom(roomId)
-  const [permissions, setPermissions] = useState<ChannelPermissions>(() => readChannelPermissions(room))
+  const original = readRoomPermissions(room)
+  const [levels, setLevels] = useState<PermissionLevels>(original)
+  const [isPrivate, setIsPrivate] = useState(() => isPrivateChannel(room))
+  const [showAll, setShowAll] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const original = readChannelPermissions(room)
   const editable = Boolean(client && canManageRoles(client, roomId))
-  const isDirty = (Object.keys(permissions) as Array<keyof ChannelPermissions>).some((key) => permissions[key] !== original[key])
+  const ownLevel = room?.getMember(client?.getUserId() ?? "")?.powerLevel ?? ROLE_LEVELS.member
+  const parent = client ? readPermissionParent(client, serverId, roomId) : null
+  const parentName = parent ? (client?.getRoom(parent.roomId)?.name ?? "") : ""
+  const isDirty = !samePermissionLevels(levels, original) || (scope === "channel" && isPrivate !== isPrivateChannel(room))
+  const update = (changes: Partial<PermissionLevels>) => setLevels({ ...levels, ...changes })
+  const mayChange = (key: PermissionKey, level: number) => editable && original[key] <= ownLevel && level <= ownLevel
 
-  const save = async () => {
+  const run = async (action: () => Promise<{ followers: number; failed: number }>, next: PermissionLevels) => {
     if (!client) return
     setIsSaving(true)
     try {
-      await saveChannelPermissions(client, { roomId, serverId, permissions })
-      toast.success(t("manage.saved"))
+      const { followers, failed } = await action()
+      setLevels(next)
+      if (failed) toast.warning(t("manage.savedPartial", { updated: followers, failed }))
+      else toast.success(followers ? t("manage.savedFollowers", { count: followers }) : t("manage.saved"))
     } catch (error) {
       toast.error(describeMatrixError(error, t("manage.saveFailed")))
     } finally {
       setIsSaving(false)
     }
   }
+  const save = () =>
+    run(() => savePermissions(client!, { serverId, roomId, levels, isPrivate: scope === "channel" ? isPrivate : undefined }), levels)
+  const sync = () =>
+    run(() => syncPermissionsWithParent(client!, serverId, roomId), readRoomPermissions(client?.getRoom(parent?.roomId ?? "")))
 
   return (
     <div className="space-y-5">
-      <SwitchRow
-        id="perm-private"
-        label={t("manage.privateChannel")}
-        description={t("manage.privateChannelDescription")}
-        checked={permissions.isPrivate}
-        disabled={!editable}
-        onChange={(isPrivate) => setPermissions({ ...permissions, isPrivate })}
-      />
+      {scope === "server" ? (
+        <p className="text-xs text-muted-foreground">{t("manage.serverPermissionsDescription")}</p>
+      ) : (
+        parent && (
+          <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">
+                {parent.synced ? t("manage.syncedWith", { name: parentName }) : t("manage.customPermissions")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t(parent.synced ? "manage.syncedWithDescription" : "manage.customPermissionsDescription", { name: parentName })}
+              </p>
+            </div>
+            {!parent.synced && editable && (
+              <Button size="sm" variant="outline" className="shrink-0" onClick={() => void sync()} disabled={isSaving}>
+                {t("manage.syncPermissions", { name: parentName })}
+              </Button>
+            )}
+          </div>
+        )
+      )}
+      {scope === "channel" && (
+        <SwitchRow
+          id="perm-private"
+          label={t("manage.privateChannel")}
+          description={t("manage.privateChannelDescription")}
+          checked={isPrivate}
+          disabled={!editable}
+          onChange={setIsPrivate}
+        />
+      )}
+      {/* Shortcuts for the most common thresholds; they edit the same values as the list below. */}
       <SwitchRow
         id="perm-write"
         label={t("manage.moderatorsOnlyWrite")}
         description={t("manage.moderatorsOnlyWriteDescription")}
-        checked={permissions.moderatorsOnlyWrite}
-        disabled={!editable}
-        onChange={(moderatorsOnlyWrite) => setPermissions({ ...permissions, moderatorsOnlyWrite })}
+        checked={levels.sendMessages > ROLE_LEVELS.member}
+        disabled={!mayChange("sendMessages", ROLE_LEVELS.moderator)}
+        onChange={(checked) => update({ sendMessages: checked ? ROLE_LEVELS.moderator : ROLE_LEVELS.member })}
       />
       <SwitchRow
         id="perm-call"
         label={t("manage.everyoneCanCall")}
         description={t("manage.everyoneCanCallDescription")}
-        checked={permissions.everyoneCanCall}
-        disabled={!editable}
-        onChange={(everyoneCanCall) => setPermissions({ ...permissions, everyoneCanCall })}
+        checked={levels.joinCalls <= ROLE_LEVELS.member}
+        disabled={!mayChange("joinCalls", ROLE_LEVELS.moderator)}
+        onChange={(checked) => update({ joinCalls: checked ? ROLE_LEVELS.member : ROLE_LEVELS.moderator })}
       />
+      <div className="space-y-3 border-t border-border pt-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2"
+          aria-expanded={showAll}
+          onClick={() => setShowAll(!showAll)}
+        >
+          <ChevronDown className={cn("mr-1 h-4 w-4 transition-transform", !showAll && "-rotate-90")} />
+          {t("manage.allPermissions")}
+        </Button>
+        {showAll && (
+          <>
+            <p className="text-xs text-muted-foreground">{t("manage.permissionsHint")}</p>
+            {PERMISSION_KEYS.map((key) => (
+              <PermissionSelect
+                key={key}
+                permission={key}
+                value={levels[key]}
+                ownLevel={ownLevel}
+                disabled={!mayChange(key, levels[key])}
+                onChange={(level) => update({ [key]: level })}
+              />
+            ))}
+          </>
+        )}
+      </div>
       {editable ? (
         <div className="flex justify-end">
           <Button onClick={() => void save()} disabled={!isDirty || isSaving}>
@@ -581,16 +706,16 @@ export function ChannelSettingsDialog({
 
   return (
     <Dialog open={Boolean(roomId)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isCategory ? t("manage.categorySettings") : t("manage.channelSettings")}</DialogTitle>
           <DialogDescription>{name}</DialogDescription>
         </DialogHeader>
         {roomId && (
           <Tabs defaultValue="overview" key={roomId}>
-            <TabsList className={cn("grid w-full", isCategory ? "grid-cols-1" : "grid-cols-2")}>
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="overview">{t("manage.overview")}</TabsTrigger>
-              {!isCategory && <TabsTrigger value="permissions">{t("manage.permissions")}</TabsTrigger>}
+              <TabsTrigger value="permissions">{t("manage.permissions")}</TabsTrigger>
             </TabsList>
             <TabsContent value="overview" className="space-y-6 pt-2">
               {!isCategory && <IconPicker roomId={roomId} name={name} rounded={false} disabled={!canEdit} />}
@@ -604,11 +729,9 @@ export function ChannelSettingsDialog({
                 </div>
               )}
             </TabsContent>
-            {!isCategory && (
-              <TabsContent value="permissions" className="pt-2">
-                <PermissionsForm roomId={roomId} serverId={serverId} />
-              </TabsContent>
-            )}
+            <TabsContent value="permissions" className="pt-2">
+              <PermissionsForm roomId={roomId} serverId={serverId} scope={isCategory ? "category" : "channel"} />
+            </TabsContent>
           </Tabs>
         )}
       </DialogContent>
@@ -795,8 +918,9 @@ export function ServerSettingsDialog({
         </DialogHeader>
         {open && (
           <Tabs defaultValue="overview">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="overview">{t("manage.overview")}</TabsTrigger>
+              <TabsTrigger value="permissions">{t("manage.permissions")}</TabsTrigger>
               <TabsTrigger value="members">{t("members.title")}</TabsTrigger>
             </TabsList>
             <TabsContent value="overview" className="space-y-6 pt-2">
@@ -805,6 +929,9 @@ export function ServerSettingsDialog({
               {client && canRepairServerPermissions(client, serverId) && (
                 <RepairPermissions isRepairing={isRepairing} onRepair={() => void repair()} />
               )}
+            </TabsContent>
+            <TabsContent value="permissions" className="pt-2">
+              <PermissionsForm roomId={serverId} serverId={serverId} scope="server" />
             </TabsContent>
             <TabsContent value="members" className="pt-2">
               <MembersTab serverId={serverId} />
