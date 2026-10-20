@@ -286,8 +286,9 @@ export class CallSession {
     setLogLevel(isDebugEnabled() ? LogLevel.debug : LogLevel.warn)
 
     const rtcSession = client.matrixRTC.getRoomSession(room)
+    await rtcSession.initialMembershipCalculated
     const ownServiceUrl = await discoverLivekitServiceUrl(client)
-    const serviceUrl = selectActiveServiceUrl(rtcSession.memberships, rtcSession.getOldestMembership(), ownServiceUrl)
+    const serviceUrl = selectActiveServiceUrl(rtcSession.memberships, ownServiceUrl)
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
     const sfu = await getSfuConfig(client, serviceUrl, roomId)
     debug('got SFU config', sfu.url)
@@ -322,7 +323,7 @@ export class CallSession {
     const ownIdentity = `${userId}:${client.getDeviceId() ?? ''}`
     const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio)
     try {
-      await session.connect(serviceUrl, sfu)
+      await session.connect(serviceUrl, sfu, userId, client.getDeviceId() ?? '')
     } catch (error) {
       await session.leave()
       throw error
@@ -330,15 +331,14 @@ export class CallSession {
     return session
   }
 
-  private async connect(serviceUrl: string, sfu: { url: string; jwt: string }): Promise<void> {
+  private async connect(serviceUrl: string, sfu: { url: string; jwt: string }, userId: string, deviceId: string): Promise<void> {
     this.attachListeners()
 
     if (this.keyProvider) await this.livekitRoom.setE2EEEnabled(true)
     debug('joining MatrixRTC session, e2ee:', this.isEncrypted)
 
-    this.rtcSession.joinRoomSession([ownLivekitTransport(serviceUrl, this.roomId)], undefined, {
+    this.rtcSession.join({ userId, deviceId, memberId: this.ownIdentity }, [ownLivekitTransport(serviceUrl, this.roomId)], {
       manageMediaKeys: this.isEncrypted,
-      useExperimentalToDeviceTransport: true,
       callIntent: 'audio',
     })
 
@@ -974,7 +974,7 @@ export class CallSession {
 
     await Promise.allSettled([
       this.livekitRoom.disconnect(),
-      this.rtcSession.isJoined() ? this.rtcSession.leaveRoomSession(LEAVE_TIMEOUT_MS) : Promise.resolve(true),
+      this.rtcSession.isJoined() ? this.rtcSession.leave(LEAVE_TIMEOUT_MS) : Promise.resolve(true),
     ])
 
     this.audioElements.forEach((element) => element.remove())

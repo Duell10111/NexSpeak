@@ -26,6 +26,18 @@ AGPL on its own.
   need the end-to-end tests (`npm run test:e2e:docker`). CI runs all of these on every pull request
   (`.github/workflows/ci.yml`, `.github/workflows/e2e.yml`).
 
+## Dependency updates
+
+Use stable releases and keep shared Matrix/LiveKit versions aligned between web and core, and
+Next.js aligned with `eslint-config-next`. Node types follow the project's Node 24 runtime.
+TypeScript stays on 6.0.3 until typescript-eslint supports the TypeScript 7 API; ESLint stays on
+9.39.5 until the React, accessibility and import plugins used by Next.js support ESLint 10.
+Electron Builder and Updater publish newer stable maintenance releases under their `v26` npm tag.
+
+Check `npm ls --all` for peer conflicts and run `npm audit --omit=dev` separately from the full
+audit. The full audit can still report unresolved upstream issues in build and lint dependencies;
+do not use `npm audit fix --force` to downgrade Next.js or the desktop packager.
+
 ## License
 
 NexSpeak is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).

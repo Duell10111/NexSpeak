@@ -366,14 +366,12 @@ function MoreActions({
   isPinned,
   canPin,
   actions,
-  onOpenChange,
 }: {
   message: MatrixMessage
   isOwn: boolean
   isPinned: boolean
   canPin: boolean
   actions: MessageActions
-  onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
   const copyText = () => {
@@ -384,7 +382,7 @@ function MoreActions({
   }
 
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.moreActions")}>
           <MoreHorizontal className="h-4 w-4" />
@@ -429,7 +427,6 @@ export const MessageItem = memo(function MessageItem({
 }: MessageItemProps) {
   const { t, intl } = useTranslation()
   const { client } = useMatrixClient()
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const isSent = message.status === "sent"
   const isInteractive = isSent && !["redacted", "decrypting", "undecryptable"].includes(message.kind)
   const canEdit = isOwn && isInteractive && ["text", "emote"].includes(message.kind)
@@ -458,11 +455,8 @@ export const MessageItem = memo(function MessageItem({
     >
       {isInteractive && !isEditing && (
         <div
-          className={cn(
-            "absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex",
-            // The open menu is portaled; keep its button (the anchor) visible meanwhile.
-            isMenuOpen && "flex",
-          )}
+          // Popups are portaled outside the row; their open triggers must keep their anchors visible.
+          className="absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex has-[[data-state=open]]:flex"
         >
           <EmojiPicker onSelect={react}>
             <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.addReaction")}>
@@ -496,7 +490,6 @@ export const MessageItem = memo(function MessageItem({
             isPinned={isPinned}
             canPin={canPin}
             actions={actions}
-            onOpenChange={setIsMenuOpen}
           />
         </div>
       )}

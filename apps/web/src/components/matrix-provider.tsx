@@ -26,7 +26,7 @@ import {
   updateSessionTokens,
   type MatrixSession,
 } from '@nexspeak/core/matrix/storage'
-import { completeOidcLogin, createTokenRefresher, revokeOidcTokens } from '@nexspeak/core/matrix/oidc'
+import { completeOidcLogin } from '@nexspeak/core/matrix/oidc'
 import {
   createMatrixClient,
   createUnauthenticatedMatrixClient,
@@ -82,7 +82,8 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
       return createMatrixClient({
         ...session,
         refreshToken: oidc?.refreshToken,
-        tokenRefreshFunction: oidc ? createTokenRefresher(oidc, session.deviceId, updateSessionTokens) : undefined,
+        oauthClientId: oidc?.clientId,
+        onTokenRefresh: updateSessionTokens,
       })
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,15 +221,10 @@ export function MatrixAuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const current = getMatrixClient()
-    const oidc = loadSession()?.oidc
     if (current) {
       try {
-        if (oidc) {
-          // OIDC sessions end at the issuer; revoking the tokens also removes the device.
-          await revokeOidcTokens(oidc, current.getAccessToken() ?? '', current.getRefreshToken() ?? oidc.refreshToken)
-        } else {
-          await current.logout(true)
-        }
+        // The SDK revokes OAuth tokens at the issuer, or uses /logout for classic sessions.
+        await current.logout(true)
       } catch (error) {
         // Continue with local cleanup even if the server request fails.
         console.warn('Error logging out from homeserver:', error)

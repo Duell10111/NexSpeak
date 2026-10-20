@@ -29,6 +29,9 @@ itself afterwards.
 No account yet? Choose **Create one** below the login form, or **Create account** on homeservers
 with the new login.
 
+For **Continue with {server}**, finish signing in in the same browser tab within 15 minutes. If
+the login expires, start again from NexSpeak's login page.
+
 ## First steps
 
 - **Set up encryption:** open **Settings → Security** and create a recovery key, or verify this

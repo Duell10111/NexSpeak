@@ -3,7 +3,7 @@
  * on the new OIDC auth (MAS, e.g. matrix.org) offer the same flow through their compatibility layer.
  */
 
-import type { OidcClientConfig } from 'matrix-js-sdk'
+import type { ValidatedAuthMetadata } from 'matrix-js-sdk'
 import { createUnauthenticatedMatrixClient } from './client'
 import { fetchOidcConfig } from './oidc'
 
@@ -17,7 +17,7 @@ export interface LoginOptions {
   /** Present when the homeserver offers SSO; empty list = one generic "SSO" button. */
   sso: IdentityProvider[] | null
   /** Native OIDC (next-gen auth): preferred over the SSO compatibility flow where possible. */
-  oidc: OidcClientConfig | null
+  oidc: ValidatedAuthMetadata | null
 }
 
 interface SsoFlow {
