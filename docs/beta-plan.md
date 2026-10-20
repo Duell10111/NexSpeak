@@ -168,7 +168,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Custom status text and "Do not disturb" (#45)
 - [x] Better noise suppression and voice activity detection (#41)
 - Camera selection and camera preview (#43)
-- Pop out streams and video into an always-on-top window, reusing the existing track (#47)
+- [x] Pop out streams and video into an always-on-top window, reusing the existing track (#47)
 - [ ] Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33;
   blocked on server enforcement and the companion-service decision (#49), see
   [implementation prerequisites](voice-moderation-design.md)
