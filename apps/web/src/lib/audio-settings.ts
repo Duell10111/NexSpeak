@@ -2,6 +2,8 @@
  * Audio device and input mode preferences, persisted per browser.
  */
 
+import { emptyCallShortcutBindings, parseCallShortcutBindings, type CallShortcutBindings } from '@nexspeak/core/global-shortcuts'
+
 export type InputMode = 'voice-activity' | 'push-to-talk'
 /** Sound cues in calls: our own join/leave, others joining/leaving, screen shares starting/stopping. */
 export type SoundCueGroup = 'own' | 'others' | 'screenshare'
@@ -23,6 +25,7 @@ export interface AudioSettings {
   /** Turns all sound cues off at once; soundCueGroups picks individual ones. */
   soundCues: boolean
   soundCueGroups: Record<SoundCueGroup, boolean>
+  callShortcuts: CallShortcutBindings
 }
 
 const STORAGE_KEY = 'nexspeak_audio_settings'
@@ -36,6 +39,7 @@ const DEFAULT_SETTINGS: AudioSettings = {
   pushToTalkReleaseDelayMs: 100,
   soundCues: true,
   soundCueGroups: { own: true, others: true, screenshare: true },
+  callShortcuts: emptyCallShortcutBindings(),
 }
 export const MAX_PUSH_TO_TALK_RELEASE_DELAY_MS = 1000
 const listeners = new Set<() => void>()
@@ -58,6 +62,7 @@ export function loadAudioSettings(): AudioSettings {
       shareSystemAudio: typeof parsed.shareSystemAudio === 'boolean' ? parsed.shareSystemAudio : true,
       inputMode: parsed.inputMode === 'push-to-talk' ? 'push-to-talk' : 'voice-activity',
       pushToTalkKey: typeof parsed.pushToTalkKey === 'string' ? parsed.pushToTalkKey : null,
+      callShortcuts: parseCallShortcutBindings(parsed.callShortcuts),
       pushToTalkReleaseDelayMs:
         typeof parsed.pushToTalkReleaseDelayMs === 'number'
           ? Math.min(MAX_PUSH_TO_TALK_RELEASE_DELAY_MS, Math.max(0, parsed.pushToTalkReleaseDelayMs))

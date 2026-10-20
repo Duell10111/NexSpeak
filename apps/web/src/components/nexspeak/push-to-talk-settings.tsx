@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Keyboard } from "lucide-react"
 import type { PushToTalkStatus } from "@nexspeak/core/desktop-bridge"
+import { CALL_SHORTCUT_ACTIONS, conflictsWithPushToTalk } from "@nexspeak/core/global-shortcuts"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
@@ -44,6 +45,8 @@ function useDesktopPushToTalkStatus(enabled: boolean) {
 function useKeyCapture(isCapturing: boolean, onDone: (key: string | null) => void) {
   useEffect(() => {
     if (!isCapturing) return
+    const bridge = desktopBridge()
+    bridge?.setCallShortcutsSuspended(true)
     // Capture phase on window: runs before the dialog's own Escape handling.
     const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault()
@@ -57,27 +60,44 @@ function useKeyCapture(isCapturing: boolean, onDone: (key: string | null) => voi
       event.stopPropagation()
       onDone(key)
     }
+    const onBlur = () => onDone(null)
     window.addEventListener("keydown", onKeyDown, true)
     window.addEventListener("mousedown", onMouseDown, true)
+    window.addEventListener("blur", onBlur)
     return () => {
       window.removeEventListener("keydown", onKeyDown, true)
       window.removeEventListener("mousedown", onMouseDown, true)
+      window.removeEventListener("blur", onBlur)
+      bridge?.setCallShortcutsSuspended(false)
     }
   }, [isCapturing, onDone])
 }
 
-export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
+export function PushToTalkSettings({ settings, isCapturing, setIsCapturing, captureDisabled }: {
+  settings: AudioSettings
+  isCapturing: boolean
+  setIsCapturing: (active: boolean) => void
+  captureDisabled: boolean
+}) {
   const { t } = useTranslation()
   const layout = useKeyboardLayout()
-  const [isCapturing, setIsCapturing] = useState(false)
+  const [hasConflict, setHasConflict] = useState(false)
   const isPushToTalk = settings.inputMode === "push-to-talk"
   const isDesktop = Boolean(desktopBridge())
   const { status, requestPermission } = useDesktopPushToTalkStatus(isDesktop && isPushToTalk)
 
   const finishCapture = useCallback((key: string | null) => {
     setIsCapturing(false)
+    if (key && CALL_SHORTCUT_ACTIONS.some((action) => {
+      const binding = settings.callShortcuts[action]
+      return binding && conflictsWithPushToTalk(binding, key)
+    })) {
+      setHasConflict(true)
+      return
+    }
+    setHasConflict(false)
     if (key) saveAudioSettings({ pushToTalkKey: key })
-  }, [])
+  }, [settings.callShortcuts, setIsCapturing])
   useKeyCapture(isCapturing, finishCapture)
 
   const key = settings.pushToTalkKey
@@ -106,6 +126,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
             type="button"
             role="radio"
             aria-checked={settings.inputMode === mode.value}
+            disabled={isCapturing || captureDisabled}
             onClick={() => saveAudioSettings({ inputMode: mode.value })}
             className={cn(
               "rounded-md border px-3 py-2 text-sm transition-colors",
@@ -121,6 +142,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
 
       {isPushToTalk && (
         <div className="space-y-4 rounded-md bg-muted/40 p-3">
+          {hasConflict && <p className="text-xs text-destructive" role="alert">{t("settings.shortcutConflict")}</p>}
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t("settings.pttKey")}</p>
@@ -135,7 +157,7 @@ export function PushToTalkSettings({ settings }: { settings: AudioSettings }) {
               size="sm"
               variant="outline"
               onClick={() => setIsCapturing(true)}
-              disabled={isCapturing}
+              disabled={isCapturing || captureDisabled}
               className="shrink-0"
             >
               {key ? t("settings.pttChangeKey") : t("settings.pttSetKey")}

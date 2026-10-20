@@ -24,6 +24,7 @@ import { APP_ID, CHANNEL, DEEP_LINK_SCHEME, PRODUCT_NAME } from "./channel"
 import { registerDeepLinks, setupDeepLinks } from "./deep-links"
 import { originOf } from "./origin"
 import { screenShareAudioDevice, supportsSystemAudio } from "./display-media"
+import { setupGlobalShortcuts } from "./global-shortcuts"
 import { setupPushToTalk, stopPushToTalk } from "./push-to-talk"
 import { createTray, setTrayUpdate, trayLabels } from "./tray"
 import { setupUpdater, setUpdaterInCall } from "./updater"
@@ -70,6 +71,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let mainWindow: BrowserWindow | undefined
+let callShortcuts: ReturnType<typeof setupGlobalShortcuts> | undefined
 /** Closing the window only hides it; set once the app really quits (tray menu, Cmd+Q, updates). */
 let isQuitting = false
 /** Autostarted at login: the first window stays hidden in the tray until the user opens it. */
@@ -88,6 +90,7 @@ app.on("before-quit", () => {
 })
 
 app.on("will-quit", stopPushToTalk)
+app.on("will-quit", () => callShortcuts?.reset())
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit()
@@ -103,7 +106,8 @@ function start() {
   serveWebBuild(securityHeaders)
   restrictPermissions(session.defaultSession)
   handleDisplayMedia(session.defaultSession)
-  const appContents = () => mainWindow?.webContents
+  const appContents = () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined
+  callShortcuts = setupGlobalShortcuts(appContents)
   setupDeepLinks({ webContents: appContents, showWindow })
   startHidden = wasOpenedAtLogin()
   mainWindow = createWindow()
@@ -120,7 +124,10 @@ function start() {
     webContents: appContents,
     showWindow,
     checkForUpdates: updater.checkFromMenu,
-    onVoiceState: (state) => setUpdaterInCall(state?.inCall ?? false),
+    onVoiceState: (state) => {
+      setUpdaterInCall(state?.inCall ?? false)
+      callShortcuts?.setInCall(state?.inCall ?? false)
+    },
   })
   setupPushToTalk(appContents)
   setupAutostart(appContents)
@@ -301,6 +308,9 @@ function createWindow() {
   window.once("ready-to-show", () => {
     if (!startHidden) window.show()
   })
+  window.webContents.on("did-start-loading", () => callShortcuts?.reset())
+  window.webContents.on("render-process-gone", () => callShortcuts?.reset())
+  window.webContents.on("destroyed", () => callShortcuts?.reset())
   // Like Discord: closing keeps the app (and a running call) alive in the tray.
   window.on("close", (event) => {
     if (isQuitting) return

@@ -3,6 +3,7 @@
 // file has no other runtime imports.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
 import type { DesktopBridge, DisplaySource, TrayCommand, UpdateStatus } from "@nexspeak/core/desktop-bridge" with { "resolution-mode": "import" }
+import type { CallShortcutAction, CallShortcutStatuses } from "@nexspeak/core/global-shortcuts" with { "resolution-mode": "import" }
 
 // Same names as in main.ts.
 const IPC_CHOOSE_DISPLAY_SOURCE = "nexspeak:choose-display-source"
@@ -83,6 +84,29 @@ const bridge: DesktopBridge = {
   },
   showWindow() {
     ipcRenderer.send(IPC_SHOW_WINDOW)
+  },
+  setCallShortcuts(bindings, pushToTalkKey) {
+    return ipcRenderer.invoke("nexspeak:call-shortcuts-set", bindings, pushToTalkKey)
+  },
+  setCallShortcutsSuspended(suspended) {
+    ipcRenderer.send("nexspeak:call-shortcuts-suspended", suspended)
+  },
+  onCallShortcut(handler) {
+    const listener = (_event: IpcRendererEvent, action: CallShortcutAction) => handler(action)
+    ipcRenderer.on("nexspeak:call-shortcut", listener)
+    return () => { ipcRenderer.off("nexspeak:call-shortcut", listener) }
+  },
+  onCallShortcutStatus(handler) {
+    let active = true
+    const listener = (_event: IpcRendererEvent, statuses: CallShortcutStatuses) => handler(statuses)
+    ipcRenderer.on("nexspeak:call-shortcut-status", listener)
+    void ipcRenderer.invoke("nexspeak:call-shortcut-status-get").then((statuses: CallShortcutStatuses | null) => {
+      if (active && statuses) handler(statuses)
+    })
+    return () => {
+      active = false
+      ipcRenderer.off("nexspeak:call-shortcut-status", listener)
+    }
   },
   setBadgeCount(count) {
     ipcRenderer.send(IPC_BADGE_COUNT, count)

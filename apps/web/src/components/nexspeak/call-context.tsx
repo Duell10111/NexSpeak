@@ -332,6 +332,24 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [updateVoicePrefs])
 
+  useEffect(() => {
+    const bridge = desktopBridge()
+    if (!bridge) return
+    void bridge.setCallShortcuts(audioSettings.callShortcuts, audioSettings.inputMode === "push-to-talk" ? audioSettings.pushToTalkKey : null)
+  }, [audioSettings.callShortcuts, audioSettings.inputMode, audioSettings.pushToTalkKey])
+
+  useEffect(() => {
+    if (!session) return
+    return desktopBridge()?.onCallShortcut((action) => {
+      if (action === "toggle-mute") void toggleMicrophone()
+      else if (action === "toggle-deafen") toggleDeafen()
+      else if (action === "leave-call") leaveCall()
+      else if (action === "stop-screen-share" && session.getSnapshot().isScreensharing) {
+        session.setScreenShareEnabled(false).catch((error: unknown) => reportError(error, t("call.error.screenshareStopFailed")))
+      }
+    })
+  }, [session, toggleMicrophone, toggleDeafen, leaveCall])
+
   const setParticipantVolume = useCallback((identity: string, volume: number) => {
     sessionRef.current?.setParticipantVolume(identity, volume)
   }, [])
