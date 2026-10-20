@@ -36,6 +36,7 @@ troubleshooting
 :maxdepth: 2
 
 hosting
+voice-moderation-design
 ```
 
 ```{toctree}
