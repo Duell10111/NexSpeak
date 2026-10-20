@@ -83,9 +83,25 @@ test("enhanced suppression and the voice gate process the microphone in a call",
   const aliceTile = bobPage.getByTestId("call-tile").filter({ hasText: alice.username })
   await expect(aliceTile.getByLabel("Stummgeschaltet")).toHaveCount(0)
 
-  // Switching to RNNoise replaces the processor; with the gate off everything is sent again.
-  await dialog.getByRole("combobox", { name: "Rauschunterdrückung" }).click()
-  await alicePage.getByRole("option", { name: "Verbessert (RNNoise)" }).click()
+  // LiveKit restores the raw track during replacement. A slow RNNoise load must not bypass the gate.
+  let releaseBinary!: () => void
+  const binaryHeld = new Promise<void>((resolve) => { releaseBinary = resolve })
+  await alicePage.route("**/audio-processing/rnnoise*.wasm", async (route) => {
+    await binaryHeld
+    await route.continue()
+  })
+  const binaryRequested = alicePage.waitForRequest(/\/audio-processing\/rnnoise.*\.wasm/)
+  try {
+    await dialog.getByRole("combobox", { name: "Rauschunterdrückung" }).click()
+    await alicePage.getByRole("option", { name: "Verbessert (RNNoise)" }).click()
+    await binaryRequested
+    expect(await remoteAudioLevel(bobPage)).toBeLessThanOrEqual(2)
+    await expect(aliceTile.getByLabel("Stummgeschaltet")).toHaveCount(0)
+  } finally {
+    releaseBinary()
+  }
+
+  // With the gate off everything is sent again, including after the sender resumes.
   await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
 
@@ -93,6 +109,72 @@ test("enhanced suppression and the voice gate process the microphone in a call",
   await dialog.getByRole("switch", { name: "Echounterdrückung" }).click()
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
 })
+
+type MicrophoneTestWindow = typeof window & {
+  microphoneTestStreams: MediaStream[]
+  microphoneTestContexts: AudioContext[]
+}
+
+for (const outcome of ["load failure", "close while loading"] as const) {
+  test(`microphone test releases its resources on ${outcome}`, async ({ browser }) => {
+    const user = await registerUser("mic-cleanup")
+    const page = await newPage(browser)
+    await page.addInitScript(() => {
+      const scope = window as MicrophoneTestWindow
+      scope.microphoneTestStreams = []
+      scope.microphoneTestContexts = []
+      const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+      navigator.mediaDevices.getUserMedia = async (constraints) => {
+        const stream = await getUserMedia(constraints)
+        scope.microphoneTestStreams.push(stream)
+        return stream
+      }
+      const Context = window.AudioContext
+      window.AudioContext = class extends Context {
+        constructor(options?: AudioContextOptions) {
+          super(options)
+          scope.microphoneTestContexts.push(this)
+        }
+      }
+    })
+    await login(page, user)
+    await page.getByRole("button", { name: "Einstellungen" }).click()
+    const dialog = page.getByRole("dialog", { name: "Einstellungen" })
+    await dialog.getByRole("combobox", { name: "Rauschunterdrückung" }).click()
+    await page.getByRole("option", { name: "Verbessert (RNNoise)" }).click()
+
+    let releaseBinary!: () => void
+    const binaryHeld = new Promise<void>((resolve) => { releaseBinary = resolve })
+    await page.route("**/audio-processing/rnnoise*.wasm", async (route) => {
+      if (outcome === "close while loading") await binaryHeld
+      await route.abort()
+    })
+    const binaryRequested = page.waitForRequest(/\/audio-processing\/rnnoise.*\.wasm/)
+    try {
+      await dialog.getByRole("button", { name: "Mikrofon testen" }).click()
+      await binaryRequested
+      if (outcome === "load failure") {
+        await expect(page.getByText("Mikrofon konnte nicht geöffnet werden. Bitte prüfe die Berechtigungen.")).toBeVisible()
+        await expect(dialog.getByRole("button", { name: "Mikrofon testen" })).toBeEnabled()
+      } else {
+        await expect(dialog.getByRole("button", { name: "Sprich jetzt…" })).toBeDisabled()
+      }
+      await page.keyboard.press("Escape")
+      await expect(dialog).not.toBeVisible()
+      // Check while the download is still pending: closing must release resources immediately.
+      await expect.poll(() => page.evaluate(() => {
+        const scope = window as MicrophoneTestWindow
+        return {
+          captured: scope.microphoneTestStreams.length > 0 && scope.microphoneTestContexts.length > 0,
+          liveTracks: scope.microphoneTestStreams.flatMap((stream) => stream.getTracks()).filter((track) => track.readyState === "live").length,
+          openContexts: scope.microphoneTestContexts.filter((context) => context.state !== "closed").length,
+        }
+      })).toEqual({ captured: true, liveTracks: 0, openContexts: 0 })
+    } finally {
+      releaseBinary()
+    }
+  })
+}
 
 test("push to talk gates the microphone in front of RNNoise", async ({ browser }) => {
   const alice = await registerUser("alice")

@@ -119,32 +119,60 @@ function MicrophoneTest({ settings }: { settings: AudioSettings }) {
   useEffect(() => () => stopRef.current?.(), [])
 
   const start = async () => {
+    if (stopRef.current) return
     const processing = audioProcessingOptions(settings)
+    let stopped = false
+    let stream: MediaStream | undefined
+    let context: AudioContext | undefined
+    let chain: AudioProcessingChain | null = null
+    let frame = 0
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    // Register before the first await: unmounts and failed or delayed worklet loads must release
+    // everything acquired so far. Late results call stop again to release their resources too.
+    const stop = () => {
+      stopped = true
+      clearTimeout(timeout)
+      cancelAnimationFrame(frame)
+      chain?.destroy()
+      chain = null
+      stream?.getTracks().forEach((track) => track.stop())
+      stream = undefined
+      void context?.close().catch(() => {})
+      context = undefined
+      if (stopRef.current === stop) {
+        stopRef.current = null
+        setLevel(null)
+      }
+    }
+    stopRef.current = stop
+    setThreshold(processing.voiceGateDb)
+    setGateOpen(false)
+    setLevel(0)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           ...(settings.inputDeviceId ? { deviceId: { exact: settings.inputDeviceId } } : {}),
           ...captureConstraints(processing),
         },
       })
-      const { context, source } = openProcessingSource(stream.getAudioTracks()[0])
+      if (stopped) { stop(); return }
+      const opened = openProcessingSource(stream.getAudioTracks()[0])
+      context = opened.context
+      const source = opened.source
       const analyser = context.createAnalyser()
       analyser.fftSize = 1024
-      let chain: AudioProcessingChain | null = null
       if (needsAudioGraph(processing)) {
         // A MediaStream destination pulls the chain like a call does, without playing it back.
         chain = await AudioProcessingChain.create(context, context.createMediaStreamDestination(), processing)
+        if (stopped) { stop(); return }
         chain.onGateChange = setGateOpen
         source.connect(chain.input)
         chain.beforeGate.connect(analyser)
       } else {
         source.connect(analyser)
       }
-      setThreshold(processing.voiceGateDb)
-      setGateOpen(false)
       const buffer = new Float32Array(analyser.fftSize)
 
-      let frame = 0
       const tick = () => {
         analyser.getFloatTimeDomainData(buffer)
         let sum = 0
@@ -154,17 +182,11 @@ function MicrophoneTest({ settings }: { settings: AudioSettings }) {
       }
       tick()
 
-      const timeout = setTimeout(() => stopRef.current?.(), MIC_TEST_DURATION_MS)
-      stopRef.current = () => {
-        clearTimeout(timeout)
-        cancelAnimationFrame(frame)
-        chain?.destroy()
-        stream.getTracks().forEach((track) => track.stop())
-        void context.close()
-        stopRef.current = null
-        setLevel(null)
-      }
+      timeout = setTimeout(stop, MIC_TEST_DURATION_MS)
     } catch (error) {
+      const wasStopped = stopped
+      stop()
+      if (wasStopped) return
       console.error("Failed to test microphone:", error)
       toast.error(translate("settings.micOpenFailed"))
     }

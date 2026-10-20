@@ -17,7 +17,7 @@ depends on your homeserver.
 - **Voice processing**: noise suppression, echo cancellation and automatic gain control, see
   [below](#voice-processing).
 - **Test microphone** records for five seconds with your current input mode and voice processing and
-  shows the level.
+  shows the level. Closing the settings or a processing error releases the microphone immediately.
 - **Sound cues in calls**: short sounds when you join or leave, when others join or leave, and when
   a stream starts or stops. Turn them all off, or each one (**When you join or leave**, **When
   others join or leave**, **When a stream starts or stops**). They play on the output device at the
@@ -45,6 +45,7 @@ you back.
 **Echo cancellation** and **Automatic gain control** are on by default; turn echo cancellation off
 only with headphones. Changes also apply to a running call; switching echo cancellation or gain
 control reopens the microphone for a moment.
+Transmission pauses while a voice processor is replaced, including while RNNoise loads.
 
 Enhanced suppression and input sensitivity only run during a call (and the microphone test), on the
 browser's audio thread, and pause while you are muted. Measured cost (Apple M1 Max, one 48 kHz

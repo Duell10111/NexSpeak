@@ -741,17 +741,41 @@ export class CallSession {
     return this.processingQueue
   }
 
+  private async replaceAudioProcessor(track: LocalAudioTrack, processor: CallAudioProcessor | null): Promise<void> {
+    const sender = track.sender
+    const parameters = sender?.getParameters()
+    const active = parameters?.encodings.map((encoding) => encoding.active)
+    // LiveKit temporarily restores and enables the raw track when removing a processor. Pause
+    // the encodings rather than pauseUpstream(), which that same operation automatically resumes.
+    if (sender && parameters) {
+      parameters.encodings.forEach((encoding) => { encoding.active = false })
+      await sender.setParameters(parameters)
+    }
+    try {
+      if (processor) await track.setProcessor(processor)
+      else await track.stopProcessor()
+    } finally {
+      // Reapply push to talk before the sender can transmit either the raw or processed track.
+      this.applyTransmitGate()
+      if (sender && active && !this.isLeaving) {
+        const current = sender.getParameters()
+        current.encodings.forEach((encoding, index) => { encoding.active = active[index] })
+        await sender.setParameters(current)
+      }
+    }
+  }
+
   private async applyAudioProcessing(): Promise<void> {
     const track = this.microphoneTrack()
     try {
       if (!track || this.isLeaving) return
       const current = this.microphoneProcessor()
       if (!needsAudioGraph(this.processing)) {
-        if (current) await track.stopProcessor()
+        if (current) await this.replaceAudioProcessor(track, null)
       } else if (!current || !(await current.update(this.processing))) {
         const processor = new CallAudioProcessor(this.processing)
         try {
-          await track.setProcessor(processor)
+          await this.replaceAudioProcessor(track, processor)
         } catch (error) {
           await processor.destroy()
           throw error

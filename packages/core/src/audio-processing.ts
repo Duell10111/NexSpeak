@@ -94,7 +94,12 @@ export function openProcessingSource(track: MediaStreamTrack): {
   } catch {
     void context.close()
     const fallback = new AudioContext({ latencyHint: 'interactive' })
-    return { context: fallback, source: fallback.createMediaStreamSource(new MediaStream([track])) }
+    try {
+      return { context: fallback, source: fallback.createMediaStreamSource(new MediaStream([track])) }
+    } catch (error) {
+      void fallback.close()
+      throw error
+    }
   }
 }
 
