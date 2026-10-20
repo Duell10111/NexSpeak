@@ -6,7 +6,7 @@
 
 'use client'
 
-import { createClient, PendingEventOrdering, type TokenRefreshFunction } from 'matrix-js-sdk'
+import { createClient, PendingEventOrdering, type TokenRefreshCallback } from 'matrix-js-sdk'
 import { secretStorageCallbacks } from './secret-storage'
 import { applyStoredPresence } from './profile'
 import type { MatrixClient } from 'matrix-js-sdk'
@@ -18,7 +18,8 @@ export interface MatrixClientConfig {
   deviceId: string
   /** OIDC sessions: the SDK refreshes expired access tokens with these. */
   refreshToken?: string
-  tokenRefreshFunction?: TokenRefreshFunction
+  oauthClientId?: string
+  onTokenRefresh?: TokenRefreshCallback
 }
 
 let matrixClientInstance: MatrixClient | null = null
@@ -54,7 +55,8 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
     accessToken: config.accessToken,
     deviceId: config.deviceId,
     refreshToken: config.refreshToken,
-    tokenRefreshFunction: config.tokenRefreshFunction,
+    oauthClientId: config.oauthClientId,
+    onTokenRefresh: config.onTokenRefresh,
     timelineSupport: true,
     cryptoCallbacks: secretStorageCallbacks,
   })

@@ -61,7 +61,7 @@ function readCallInfo(sessions: MatrixRTCSession[]): Record<string, RoomCallInfo
     // NexSpeak does not enable unstableSendStickyEvents when joining calls.
     result[room.roomId] = {
       members: Array.from(members.values()).sort((a, b) => a.name.localeCompare(b.name)),
-      startedTs: session.getOldestMembership()?.createdTs(),
+      startedTs: session.memberships[0]?.createdTs(),
     }
   })
   return result

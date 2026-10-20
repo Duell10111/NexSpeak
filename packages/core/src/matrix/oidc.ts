@@ -7,27 +7,15 @@
  * SSO compatibility layer in the browser instead (see sso.ts), which OIDC homeservers offer too.
  */
 
-import {
-  completeAuthorizationCodeGrant,
-  createClient,
-  generateOidcAuthorizationUrl,
-  OidcTokenRefresher,
-  registerOidcClient,
-  type AccessTokens,
-  type OidcClientConfig,
-} from 'matrix-js-sdk'
+import { createClient, OAuth2, type ValidatedAuthMetadata } from 'matrix-js-sdk'
 import { createUnauthenticatedMatrixClient } from './client'
 
-/** The ID token's claims (oidc-client-ts type, not re-exported by the SDK). */
-type IdTokenClaims = Awaited<ReturnType<typeof completeAuthorizationCodeGrant>>['idTokenClaims']
-
-/** What a session needs to refresh its tokens and to revoke them on logout. */
+/** Persistent metadata for sessions authenticated through Matrix's delegated OAuth flow. */
 export interface OidcSessionInfo {
   issuer: string
   clientId: string
   redirectUri: string
   refreshToken?: string
-  idTokenClaims: IdTokenClaims
   /** Where people manage their account (password, sessions); offered in the settings. */
   accountManagementUrl?: string
 }
@@ -41,7 +29,7 @@ export interface OidcLoginResult {
 }
 
 /** The homeserver's OIDC configuration, or null when it uses the classic login API. */
-export async function fetchOidcConfig(homeserverUrl: string): Promise<OidcClientConfig | null> {
+export async function fetchOidcConfig(homeserverUrl: string): Promise<ValidatedAuthMetadata | null> {
   try {
     return await createUnauthenticatedMatrixClient(homeserverUrl).getAuthMetadata()
   } catch {
@@ -49,7 +37,7 @@ export async function fetchOidcConfig(homeserverUrl: string): Promise<OidcClient
   }
 }
 
-export function supportsRegistration(config: OidcClientConfig): boolean {
+export function supportsRegistration(config: ValidatedAuthMetadata): boolean {
   return Boolean(config.prompt_values_supported?.includes('create'))
 }
 
@@ -77,17 +65,14 @@ function isLoopback(origin: string): boolean {
  * web clients; on a loopback address (local development) the app registers like a native app
  * instead, which may redirect to http://localhost (RFC 8252), with the project as client URI.
  */
-export function clientMetadataFor(origin: string, redirectUri: string): Parameters<typeof registerOidcClient>[1] {
+export function clientMetadataFor(origin: string, redirectUri: string): Parameters<typeof OAuth2.registerClient>[1] {
   const loopback = isLoopback(origin)
   return {
-    clientName: 'NexSpeak',
-    clientUri: loopback ? PROJECT_URL : origin,
-    logoUri: loopback ? undefined : `${origin}/icon-192.png`,
-    applicationType: loopback ? 'native' : 'web',
-    redirectUris: [redirectUri],
-    contacts: undefined,
-    tosUri: undefined,
-    policyUri: undefined,
+    client_name: 'NexSpeak',
+    client_uri: loopback ? PROJECT_URL : origin,
+    logo_uri: loopback ? undefined : `${origin}/icon-192.png`,
+    application_type: loopback ? 'native' : 'web',
+    redirect_uris: [redirectUri],
   }
 }
 
@@ -95,11 +80,11 @@ export function clientMetadataFor(origin: string, redirectUri: string): Paramete
  * Our client id at this issuer. Registrations are per issuer and redirect URI and can be reused,
  * so register once and remember it.
  */
-async function clientIdFor(config: OidcClientConfig, redirectUri: string, origin: string): Promise<string> {
+async function clientIdFor(config: ValidatedAuthMetadata, redirectUri: string, origin: string): Promise<string> {
   const key = `${config.issuer}|${redirectUri}`
   const known = loadClientIds()[key]
   if (known) return known
-  const clientId = await registerOidcClient(config, clientMetadataFor(origin, redirectUri))
+  const clientId = await OAuth2.registerClient(config, clientMetadataFor(origin, redirectUri))
   try {
     localStorage.setItem(CLIENT_IDS_KEY, JSON.stringify({ ...loadClientIds(), [key]: clientId }))
   } catch {
@@ -109,95 +94,78 @@ async function clientIdFor(config: OidcClientConfig, redirectUri: string, origin
 }
 
 /**
- * The URL to send the browser to. The SDK keeps the PKCE verifier and nonce in sessionStorage
- * until the redirect comes back.
+ * The URL to send the browser to. Keep the SDK's PKCE context in this tab until the redirect.
  */
 export async function startOidcLogin(options: {
   homeserverUrl: string
-  config: OidcClientConfig
+  config: ValidatedAuthMetadata
   /** The app's origin, e.g. https://nexspeak.example.org */
   origin: string
   register?: boolean
 }): Promise<string> {
   const redirectUri = `${options.origin}/login`
   const clientId = await clientIdFor(options.config, redirectUri, options.origin)
-  return generateOidcAuthorizationUrl({
-    metadata: options.config,
-    clientId,
+  const oauth = new OAuth2(options.config, { clientId })
+  const state = crypto.randomUUID()
+  const url = await oauth.generateAuthorizationCodeGrantUrl(
+    state, redirectUri, 'query', options.register ? 'create' : undefined,
+  )
+  // A single pending login per tab; a fresh attempt also discards an abandoned verifier.
+  sessionStorage.setItem(PENDING_LOGIN_KEY, JSON.stringify({
+    state,
+    context: oauth.context,
     homeserverUrl: options.homeserverUrl,
     redirectUri,
-    nonce: crypto.randomUUID(),
-    prompt: options.register ? 'create' : undefined,
-  })
+    issuer: options.config.issuer,
+    startedAt: Date.now(),
+  } satisfies PendingLogin))
+  return url
+}
+
+const PENDING_LOGIN_KEY = 'nexspeak_oauth_pending'
+const PENDING_LOGIN_MAX_AGE_MS = 15 * 60_000
+
+interface PendingLogin {
+  state: string
+  context: OAuth2['context']
+  homeserverUrl: string
+  redirectUri: string
+  issuer: string
+  startedAt: number
 }
 
 /** Back from the issuer with ?code=…&state=…: exchange the code for tokens. */
 export async function completeOidcLogin(code: string, state: string, origin: string): Promise<OidcLoginResult> {
-  const { tokenResponse, homeserverUrl, idTokenClaims, oidcClientSettings } = await completeAuthorizationCodeGrant(code, state)
+  const raw = sessionStorage.getItem(PENDING_LOGIN_KEY)
+  const pending = raw ? JSON.parse(raw) as PendingLogin : null
+  if (!pending || pending.state !== state || pending.redirectUri !== `${origin}/login` ||
+      !Number.isFinite(pending.startedAt) || Date.now() - pending.startedAt > PENDING_LOGIN_MAX_AGE_MS) {
+    throw new Error('The OAuth login is missing, expired or does not match this tab.')
+  }
+  // Consume before the first request so a callback cannot be exchanged twice.
+  sessionStorage.removeItem(PENDING_LOGIN_KEY)
+  const { homeserverUrl, redirectUri, context } = pending
   const config = await fetchOidcConfig(homeserverUrl)
+  if (!config || config.issuer !== pending.issuer) throw new Error('The OAuth issuer changed during login.')
+  const tokenResponse = await new OAuth2(config, context).completeAuthorizationCodeGrant(code, redirectUri)
   // The device id was part of the requested scope; whoami confirms it with the user id.
   const { user_id: userId, device_id: deviceId } = await createClient({
     baseUrl: homeserverUrl,
     accessToken: tokenResponse.access_token,
   }).whoami()
-  if (!deviceId) throw new Error('The homeserver did not return a device id for the OIDC session.')
+  if (!deviceId || deviceId !== context.deviceId) throw new Error('The homeserver returned an unexpected OAuth device id.')
   return {
     homeserverUrl,
     userId,
     deviceId,
     accessToken: tokenResponse.access_token,
     oidc: {
-      issuer: oidcClientSettings.issuer,
-      clientId: oidcClientSettings.clientId,
-      redirectUri: `${origin}/login`,
+      issuer: config.issuer,
+      clientId: context.clientId,
+      redirectUri,
       refreshToken: tokenResponse.refresh_token,
-      idTokenClaims,
-      accountManagementUrl: config?.account_management_uri,
+      accountManagementUrl: config.account_management_uri,
     },
-  }
-}
-
-/**
- * The SDK calls this when the access token expired; `persist` stores the new tokens, so a reload
- * keeps the session.
- */
-export function createTokenRefresher(
-  oidc: OidcSessionInfo,
-  deviceId: string,
-  persist: (tokens: AccessTokens) => void,
-): (refreshToken: string) => Promise<AccessTokens> {
-  class PersistingRefresher extends OidcTokenRefresher {
-    protected async persistTokens(tokens: { accessToken: string; refreshToken?: string }): Promise<void> {
-      persist(tokens)
-    }
-  }
-  const refresher = new PersistingRefresher(oidc.issuer, oidc.clientId, oidc.redirectUri, deviceId, oidc.idTokenClaims)
-  return (refreshToken) => refresher.doRefreshAccessToken(refreshToken)
-}
-
-/** Logout: revoke both tokens at the issuer (the C-S /logout doesn't apply to OIDC sessions). */
-export async function revokeOidcTokens(oidc: OidcSessionInfo, accessToken: string, refreshToken?: string): Promise<void> {
-  const config = await fetchOidcConfigByIssuer(oidc.issuer)
-  const endpoint = config?.revocation_endpoint
-  if (!endpoint) return
-  const revoke = (token: string, hint: string) =>
-    fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ token, token_type_hint: hint, client_id: oidc.clientId }),
-    })
-  await Promise.all([
-    revoke(accessToken, 'access_token'),
-    ...(refreshToken ? [revoke(refreshToken, 'refresh_token')] : []),
-  ])
-}
-
-async function fetchOidcConfigByIssuer(issuer: string): Promise<{ revocation_endpoint?: string } | null> {
-  try {
-    const response = await fetch(new URL('.well-known/openid-configuration', issuer.endsWith('/') ? issuer : `${issuer}/`))
-    return response.ok ? ((await response.json()) as { revocation_endpoint?: string }) : null
-  } catch {
-    return null
   }
 }
 

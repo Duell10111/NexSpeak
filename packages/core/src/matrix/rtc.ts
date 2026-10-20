@@ -60,16 +60,16 @@ export async function discoverLivekitServiceUrl(client: MatrixClient): Promise<s
 }
 
 /**
- * The SFU everybody in the call has to use: the one of the oldest membership
- * ("oldest_membership" focus selection), or our own when we start the call.
+ * Reuse the service advertised by the oldest member, or our own for a new call.
+ * MatrixRTC keeps memberships sorted oldest first.
  */
 export function selectActiveServiceUrl(
   memberships: CallMembership[],
-  oldest: CallMembership | undefined,
   ownServiceUrl: string,
 ): string {
+  const oldest = memberships[0]
   if (!oldest) return ownServiceUrl
-  const transport = memberships.length > 0 ? oldest.getTransport(oldest) : undefined
+  const transport = oldest.getTransport()
   return isLivekitServiceTransport(transport) ? transport.livekit_service_url : ownServiceUrl
 }
 

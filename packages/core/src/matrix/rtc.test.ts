@@ -24,17 +24,17 @@ describe("selectActiveServiceUrl", () => {
     ({ getTransport: () => transport }) as unknown as CallMembership
 
   it("uses our own service when nobody is in the call", () => {
-    expect(selectActiveServiceUrl([], undefined, "https://own")).toBe("https://own")
+    expect(selectActiveServiceUrl([], "https://own")).toBe("https://own")
   })
 
   it("joins the SFU of the oldest member", () => {
     const oldest = membershipWith({ type: "livekit", livekit_service_url: "https://theirs" })
-    expect(selectActiveServiceUrl([oldest], oldest, "https://own")).toBe("https://theirs")
+    expect(selectActiveServiceUrl([oldest], "https://own")).toBe("https://theirs")
   })
 
   it("falls back to our own service for non-LiveKit transports", () => {
     const oldest = membershipWith({ type: "something-else" })
-    expect(selectActiveServiceUrl([oldest], oldest, "https://own")).toBe("https://own")
+    expect(selectActiveServiceUrl([oldest], "https://own")).toBe("https://own")
   })
 })
 

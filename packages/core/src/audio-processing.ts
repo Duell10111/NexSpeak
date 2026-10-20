@@ -40,7 +40,7 @@ const RNNOISE_SAMPLE_RATE = 48_000
 /** getUserMedia constraints; the browser's suppression is off whenever RNNoise replaces it. */
 export function captureConstraints(
   options: AudioProcessingOptions,
-): Pick<MediaTrackConstraints, 'echoCancellation' | 'noiseSuppression' | 'autoGainControl'> {
+): { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean } {
   return {
     echoCancellation: options.echoCancellation,
     noiseSuppression: options.noiseSuppression === 'browser',

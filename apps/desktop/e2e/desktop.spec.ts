@@ -437,7 +437,9 @@ test("the SSO login returns through nexspeak://sso", async () => {
     HOMESERVER_URL,
   )
   await openDeepLink(`nexspeak://sso?loginToken=${encodeURIComponent(await createLoginToken(alice))}`)
-  await expect(page.getByRole("log").or(page.getByText("Wähle einen Raum aus."))).toBeVisible({ timeout: 60_000 })
+  // A new account lands on Friends; it has no room timeline to assert against.
+  await expect(page.getByRole("button", { name: "Profil und Status" })).toContainText(alice.username, { timeout: 60_000 })
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("nexspeak_matrix_session") ?? "null")?.userId)).toBe(alice.userId)
   expect(await page.evaluate(() => localStorage.getItem("nexspeak_sso_pending"))).toBeNull()
 })
 

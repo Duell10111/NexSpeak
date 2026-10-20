@@ -49,6 +49,9 @@ test("screenshare is encoded in hardware, also for odd window sizes", async ({ b
   await dialog.getByRole("radio", { name: "60 FPS" }).click()
   await dialog.getByRole("button", { name: "Live gehen" }).click()
 
+  // Dynacast only enables the full-resolution encoder once someone watches the stream.
+  await bobPage.getByTestId("call-tile").getByRole("button", { name: "Stream ansehen" }).click()
+
   await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
   const encoder = alicePage.getByTestId("encoder-status")
   await expect(encoder).toContainText("H264 · Hardware", { timeout: 30_000 })
