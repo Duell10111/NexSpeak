@@ -171,6 +171,8 @@ function toConnectionQuality(quality: ConnectionQuality): CallConnectionQuality 
 }
 
 export interface CallAudioOptions {
+  /** Remembered camera; no video is captured until explicitly enabled. */
+  cameraDeviceId?: string
   inputDeviceId: string
   outputDeviceId: string
   /** 0..1 */
@@ -226,6 +228,8 @@ export class CallSession {
   /** Holds the microphone back until its processor is in place, so nothing unprocessed goes out. */
   private processingPending = false
   private processingQueue: Promise<void> = Promise.resolve()
+  /** Serialize camera switches and toggles so a late capture cannot override a newer choice. */
+  private cameraQueue: Promise<void> = Promise.resolve()
   /** Per-participant playback volume (0..1) and local mutes, by identity. */
   private readonly participantVolumes = new Map<string, number>()
   private readonly locallyMuted = new Set<string>()
@@ -308,6 +312,9 @@ export class CallSession {
         // One extra camera layer instead of LiveKit's two: every layer is a separate encoder
         // (and hardware encoder session).
         videoSimulcastLayers: [VideoPresets.h360],
+      },
+      videoCaptureDefaults: {
+        deviceId: audio.cameraDeviceId ? { ideal: audio.cameraDeviceId } : undefined,
       },
       audioCaptureDefaults: {
         // A preference, not a requirement: a remembered device may be unplugged by now.
@@ -813,11 +820,23 @@ export class CallSession {
     input.enabled = !this.processingPending && (!this.pushToTalk || this.pushToTalkPressed)
   }
 
-  async setCameraEnabled(enabled: boolean): Promise<void> {
-    if (enabled) await this.waitForOwnKey()
-    if (this.isLeaving) return
-    await this.livekitRoom.localParticipant.setCameraEnabled(enabled)
-    this.changed()
+  setCameraEnabled(enabled: boolean): Promise<void> {
+    return this.queueCameraChange(async () => {
+      if (enabled) await this.waitForOwnKey()
+      if (this.isLeaving) return
+      const publication = await this.livekitRoom.localParticipant.setCameraEnabled(enabled)
+      // A permission prompt may resolve after disconnect has already disposed the room.
+      if (this.isLeaving) { publication?.track?.stop(); return }
+      this.changed()
+    })
+  }
+
+  private queueCameraChange(change: () => Promise<void>): Promise<void> {
+    const pending = this.cameraQueue.then(() => {
+      if (!this.isLeaving) return change()
+    })
+    this.cameraQueue = pending.catch(() => {})
+    return pending
   }
 
   async setScreenShareEnabled(enabled: boolean, quality?: ScreenShareQuality, shareAudio = true): Promise<void> {
@@ -947,7 +966,20 @@ export class CallSession {
     this.applyRemoteVolume()
   }
 
-  async setDevice(kind: 'audioinput' | 'audiooutput', deviceId: string): Promise<void> {
+  async setDevice(kind: 'audioinput' | 'audiooutput' | 'videoinput', deviceId: string): Promise<void> {
+    if (kind === 'videoinput') {
+      return this.queueCameraChange(async () => {
+        const target = deviceId || 'default'
+        if (this.livekitRoom.getActiveDevice(kind) === target) return
+        const track = this.livekitRoom.localParticipant.getTrackPublication(Track.Source.Camera)?.videoTrack
+        try {
+          await this.livekitRoom.switchActiveDevice(kind, target, false)
+        } finally {
+          // A restarted capture can arrive after disconnect stopped the previous one.
+          if (this.isLeaving) track?.stop()
+        }
+      })
+    }
     const target = deviceId || 'default'
     if (this.livekitRoom.getActiveDevice(kind) === target) return
     // Not exact: LiveKit would otherwise keep requiring this device, and every later unmute

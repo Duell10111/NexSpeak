@@ -24,6 +24,8 @@ import {
   subscribeAudioSettings,
 } from "@/lib/audio-settings"
 import { VideoPopout } from "@/lib/video-popout"
+import { defaultCameraDevice, loadCameraDevice, subscribeCameraDevice } from "@/lib/camera-settings"
+import { useCameraDevices } from "@/hooks/useCameraDevices"
 import { desktopBridge } from "@/lib/desktop"
 import { useRtcCallInfo, type RoomCallInfo } from "@/hooks/useRtcCallInfo"
 import {
@@ -144,6 +146,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   const abandonedJoinRef = useRef("")
   const callInfoByRoom = useRtcCallInfo(client)
   const audioSettings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
+  const cameraDevice = useSyncExternalStore(subscribeCameraDevice, loadCameraDevice, defaultCameraDevice)
   usePushToTalk(session, audioSettings)
 
   const call = useSyncExternalStore(
@@ -157,6 +160,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     videoPopout.retain(call?.videoFeeds ?? [])
   }, [call, videoPopout])
   useEffect(() => () => videoPopout.destroy(), [videoPopout])
+
+  // Device changes are observed only during a call; enumeration never opens the camera.
+  useCameraDevices(session !== null, call?.isCameraOn)
 
   const updateVoicePrefs = useCallback((next: VoicePrefs) => {
     voicePrefsRef.current = next
@@ -194,6 +200,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
         const sounds = createCallSoundPlayer()
         const next = await CallSession.start(client, roomId, {
           inputDeviceId: settings.inputDeviceId,
+          cameraDeviceId: loadCameraDevice(),
           outputDeviceId: settings.outputDeviceId,
           outputVolume: settings.outputVolume / 100,
           startMuted: voicePrefsRef.current.muted,
@@ -411,6 +418,13 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       console.warn("Failed to switch audio output:", error)
     })
   }, [session, audioSettings.outputDeviceId])
+
+  useEffect(() => {
+    if (!session) return
+    session.setDevice("videoinput", cameraDevice).catch((error: unknown) => {
+      reportError(error, t("call.error.cameraToggleFailed"))
+    })
+  }, [session, cameraDevice])
 
   const { noiseSuppression, echoCancellation, autoGainControl, voiceGateDb } = audioProcessingOptions(audioSettings)
   useEffect(() => {

@@ -28,7 +28,12 @@ you**). This doesn't affect what others hear.
 
 ## Camera and screen sharing
 
-**Video** turns your camera on and off. **Screen** opens the stream settings:
+**Video** turns your camera on and off. Choose a camera or test it in **Settings → Video**. The
+selection is remembered and changing it switches the camera during a call without turning it off.
+If the camera is disconnected, NexSpeak uses **System default**. Closing a settings preview does
+not turn off the call camera.
+
+**Screen** opens the stream settings:
 
 **Resolution** and **Frame rate**
 : Up to the source resolution and 60 FPS. Pick 60 FPS for games; for text and code, 15 FPS at a high
