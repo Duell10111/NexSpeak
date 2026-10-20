@@ -169,6 +169,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Pop out streams and video into an always-on-top window, reusing the existing track (#47)
 - Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33
 - [x] Sound cues for join, leave and screensharing, can be turned off (#22)
+- Stream viewers: who is watching your stream, and sound cues when someone starts or stops watching (#79)
 - Soundboard like Discord: server sounds played on each client, can be turned off (#26)
 - Call duration next to active voice channels in the sidebar (#29)
 - Incoming-call prompt with join/decline for direct calls (#34)
