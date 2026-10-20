@@ -89,6 +89,8 @@ export function RolePicker({ serverId, userId, name, className }: { serverId: st
               checked={assigned.includes(role.id)}
               disabled={role.level > ownLevel || isSaving}
               onCheckedChange={(checked) => void toggle(role.id, checked)}
+              // Stay open to tick several roles in a row.
+              onSelect={(event) => event.preventDefault()}
             >
               <RoleDot color={role.color} className="mr-2" />
               {roleLabel(role, t)}

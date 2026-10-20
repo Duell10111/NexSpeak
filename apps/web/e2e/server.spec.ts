@@ -533,7 +533,10 @@ test("custom roles: create, assign several, group in the member list and use in 
   await page.getByRole("menuitemcheckbox", { name: "Eventteam" }).click()
   await expect(page.getByText(`Rollen von ${bob.username} aktualisiert.`)).toBeVisible()
   await expect.poll(async () => (await levelsOf(spaceId))?.users[bob.userId]).toBe(25)
+  // The menu stays open for more roles; Escape closes only the menu.
   await page.keyboard.press("Escape")
+  await expect(page.getByRole("menu")).toBeHidden()
+  await expect(dialog).toBeVisible()
 
   // Permissions offer the new role.
   await dialog.getByRole("tab", { name: "Berechtigungen" }).click()
@@ -609,7 +612,10 @@ test("server icon, description and roles", async ({ browser }) => {
   await dialog.getByRole("button", { name: `Rollen von ${bob.username}` }).click()
   await page.getByRole("menuitemcheckbox", { name: "Moderator" }).click()
   await expect(page.getByText(`Rollen von ${bob.username} aktualisiert.`)).toBeVisible()
+  // The menu stays open for more roles; Escape closes only the menu.
   await page.keyboard.press("Escape")
+  await expect(page.getByRole("menu")).toBeHidden()
+  await expect(dialog).toBeVisible()
   const levels = await getState<{ users: Record<string, number> }>(alice, spaceId, "m.room.power_levels")
   expect(levels?.users[bob.userId]).toBe(50)
 
