@@ -708,7 +708,7 @@ function ScreenshareControl() {
     )
   }
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>

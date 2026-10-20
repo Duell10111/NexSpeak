@@ -6,10 +6,16 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
+/**
+ * Not modal by default: a modal menu blocks pointer events on <body>, and Radix doesn't restore
+ * them if a dialog opened from the menu closes before the menu's exit animation has finished,
+ * which left the whole page unclickable.
+ */
 function ContextMenu({
+  modal = false,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
-  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
+  return <ContextMenuPrimitive.Root data-slot="context-menu" modal={modal} {...props} />
 }
 
 function ContextMenuTrigger({
