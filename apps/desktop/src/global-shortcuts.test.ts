@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { WebContents } from "electron"
 import { globalShortcut } from "electron"
-import { setupGlobalShortcuts } from "./global-shortcuts"
+import { CALL_SHORTCUT_ACTIONS, callShortcutConflict, emptyCallShortcutBindings, parseCallShortcutBindings } from "@nexspeak/core/global-shortcuts"
+import { hasConflict, parseBindings, REPEAT_WINDOW_MS, setupGlobalShortcuts } from "./global-shortcuts"
 
 const { handlers, callbacks } = vi.hoisted(() => ({
   handlers: new Map<string, (event: { sender: unknown }, ...args: unknown[]) => unknown>(),
@@ -131,6 +132,23 @@ describe("global call shortcut lifecycle", () => {
     expect(globalShortcut.register).toHaveBeenCalledOnce()
   })
 
+  it("ignores auto-repeat while a toggle is held, but accepts a later press", () => {
+    const now = vi.spyOn(performance, "now").mockReturnValue(1000)
+    configure({ "toggle-mute": mute })
+    shortcuts.setInCall(true)
+    send.mockClear()
+    callbacks.get(mute.accelerator)!()
+    for (const time of [1500, 1530, 1560, 2000]) {
+      now.mockReturnValue(time)
+      callbacks.get(mute.accelerator)!()
+    }
+    expect(send).toHaveBeenCalledOnce()
+    now.mockReturnValue(2000 + REPEAT_WINDOW_MS)
+    callbacks.get(mute.accelerator)!()
+    expect(send).toHaveBeenCalledTimes(2)
+    now.mockRestore()
+  })
+
   it("resets registrations and configuration on reload, renderer crash and quit", () => {
     configure({ "stop-screen-share": mute })
     shortcuts.setInCall(true)
@@ -139,5 +157,39 @@ describe("global call shortcut lifecycle", () => {
     expect(invoke("call-shortcut-status-get")).toMatchObject({ "stop-screen-share": "inactive" })
     shortcuts.setInCall(true)
     expect(globalShortcut.register).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("IPC validation matches the web app's rules", () => {
+  const modifierSets = [[], ["Control"], ["Alt"], ["Shift"], ["Super"], ["Control", "Shift"], ["Alt", "Shift"], ["Control", "Alt", "Shift", "Super"]]
+  const keys = [
+    ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", ...Array.from({ length: 25 }, (_, index) => `F${index + 1}`),
+    "num0", "num9", "Space", "Tab", "Enter", "Backspace", "Delete", "Insert", "Home", "End", "PageUp", "PageDown",
+    "Up", "Down", "Left", "Right", "Plus", "Minus", "=", ",", ".", "/", "Escape", "Numpad1", "a", "F0",
+  ]
+  const accelerators = [
+    ...modifierSets.flatMap((modifiers) => keys.map((key) => [...modifiers, key].join("+"))),
+    "Shift+Control+M", "Ctrl+M", "Control+", "Control+Control+M", "Control++",
+  ]
+
+  it("accepts and rejects the same accelerators as core", () => {
+    for (const accelerator of accelerators) {
+      const value = { "toggle-mute": { code: "KeyM", accelerator } }
+      expect(parseBindings(value), accelerator).toEqual(parseCallShortcutBindings(value))
+    }
+    expect(parseBindings({ "toggle-mute": { code: "1Key", accelerator: "Control+M" } })).toEqual(parseCallShortcutBindings({ "toggle-mute": { code: "1Key", accelerator: "Control+M" } }))
+  })
+
+  it("detects the same conflicts as core", () => {
+    const bindings = emptyCallShortcutBindings()
+    bindings["toggle-mute"] = { code: "KeyM", accelerator: "Control+Shift+M" }
+    const candidates = [bindings["toggle-mute"], { code: "KeyD", accelerator: "Control+Shift+D" }, { code: "KeyM", accelerator: "Alt+M" }, { code: "F5", accelerator: "Super+F5" }]
+    for (const pttKey of [null, "KeyM", "KeyD", "ControlLeft", "ShiftRight", "AltLeft", "MetaRight", "Mouse4"]) {
+      for (const action of CALL_SHORTCUT_ACTIONS) {
+        for (const binding of candidates) {
+          expect(hasConflict(bindings, action, binding, pttKey), `${action} ${binding.accelerator} ${pttKey}`).toBe(callShortcutConflict(bindings, action, binding, pttKey))
+        }
+      }
+    }
   })
 })

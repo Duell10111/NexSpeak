@@ -14,16 +14,30 @@ export function emptyCallShortcutBindings(): CallShortcutBindings {
 }
 
 const MODIFIERS = ["Control", "Alt", "Shift", "Super"]
-const KEY = /^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|Space|Tab|Enter|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Plus|Minus|=|,|\.|\/|;|'|\[|\]|\\|`)$/
+// No punctuation: Electron maps it to US key positions, which differ from the printed key on other layouts.
+// Keep in sync with apps/desktop/src/global-shortcuts.ts (a parity test there checks it).
+const KEY = /^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|num[0-9]|Space|Tab|Enter|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right)$/
+const FUNCTION_KEY = /^F\d+$/
 
-/** A small, canonical subset of accelerators: no aliases that could bypass duplicate detection. */
+/** Physical modifier keys as reported by `KeyboardEvent.code`. */
+export function isModifierCode(code: string): boolean {
+  return /^(Control|Alt|Shift|Meta)(Left|Right)$/.test(code)
+}
+
+/**
+ * A small, canonical subset of accelerators: no aliases that could bypass duplicate detection.
+ * Except for function keys, a binding needs Control, Alt or Super: a global key is taken from every
+ * other app during a call, so a plain letter (or Shift+letter) would break typing everywhere.
+ */
 export function isCallShortcutBinding(value: unknown): value is CallShortcutBinding {
   if (!value || typeof value !== "object") return false
   const { code, accelerator } = value as CallShortcutBinding
   if (typeof code !== "string" || !/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(code) || typeof accelerator !== "string") return false
   const parts = accelerator.split("+")
   const key = parts.pop()!
-  return KEY.test(key) && parts.every((part, index) => MODIFIERS.includes(part) && (index === 0 || MODIFIERS.indexOf(parts[index - 1]) < MODIFIERS.indexOf(part)))
+  return KEY.test(key)
+    && parts.every((part, index) => MODIFIERS.includes(part) && (index === 0 || MODIFIERS.indexOf(parts[index - 1]) < MODIFIERS.indexOf(part)))
+    && (FUNCTION_KEY.test(key) || parts.some((part) => part !== "Shift"))
 }
 
 export function parseCallShortcutBindings(value: unknown): CallShortcutBindings {
@@ -40,8 +54,9 @@ export function parseCallShortcutBindings(value: unknown): CallShortcutBindings 
 export function conflictsWithPushToTalk(binding: CallShortcutBinding, pttKey: string | null): boolean {
   if (!pttKey) return false
   if (binding.code === pttKey) return true
-  const modifier = /^(Control|Alt|Shift|Meta)(Left|Right)$/.exec(pttKey)?.[1]
-  return Boolean(modifier && binding.accelerator.split("+").slice(0, -1).includes(modifier === "Meta" ? "Super" : modifier))
+  if (!isModifierCode(pttKey)) return false
+  const modifier = pttKey.replace(/(Left|Right)$/, "")
+  return Boolean(binding.accelerator.split("+").slice(0, -1).includes(modifier === "Meta" ? "Super" : modifier))
 }
 
 export function callShortcutConflict(bindings: CallShortcutBindings, action: CallShortcutAction, binding: CallShortcutBinding, pttKey: string | null): boolean {

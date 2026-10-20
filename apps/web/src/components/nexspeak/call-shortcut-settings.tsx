@@ -1,13 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { CALL_SHORTCUT_ACTIONS, callShortcutConflict, type CallShortcutAction, type CallShortcutStatuses } from "@nexspeak/core/global-shortcuts"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { CALL_SHORTCUT_ACTIONS, callShortcutConflict, isModifierCode, type CallShortcutAction, type CallShortcutStatuses } from "@nexspeak/core/global-shortcuts"
 import { Button } from "@/components/ui/button"
 import { useTranslation } from "@/hooks/useTranslation"
 import { saveAudioSettings, type AudioSettings } from "@/lib/audio-settings"
 import { desktopBridge } from "@/lib/desktop"
 import { shortcutFromKeyboardEvent, shortcutLabel } from "@/lib/global-shortcuts"
-import { PushToTalkSettings } from "@/components/nexspeak/push-to-talk-settings"
+import { PushToTalkSettings, useKeyboardLayout } from "@/components/nexspeak/push-to-talk-settings"
 
 const ACTION_LABELS = {
   "toggle-mute": "settings.shortcutMute",
@@ -36,6 +36,13 @@ function CallShortcutSettings({ settings, capturing, setCapturing, captureDisabl
   const bridge = desktopBridge()
   const [error, setError] = useState<"conflict" | "unsupported" | null>(null)
   const [statuses, setStatuses] = useState<CallShortcutStatuses | null>(null)
+  const layout = useKeyboardLayout()
+  // Read through a ref: a settings change during capture must not re-run the effect, which would
+  // briefly resume (and re-register) every global key.
+  const settingsRef = useRef(settings)
+  useEffect(() => {
+    settingsRef.current = settings
+  })
 
   useEffect(() => bridge?.onCallShortcutStatus(setStatuses), [bridge])
 
@@ -51,12 +58,13 @@ function CallShortcutSettings({ settings, capturing, setCapturing, captureDisabl
         setCapturing(null)
         return
       }
-      if (/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(event.code)) return
-      const binding = shortcutFromKeyboardEvent(event)
+      if (isModifierCode(event.code)) return
+      const binding = shortcutFromKeyboardEvent(event, bridge.platform)
       if (!binding) {
         setError("unsupported")
         return
       }
+      const settings = settingsRef.current
       if (callShortcutConflict(settings.callShortcuts, capturing, binding, settings.inputMode === "push-to-talk" ? settings.pushToTalkKey : null)) {
         setError("conflict")
         return
@@ -73,7 +81,7 @@ function CallShortcutSettings({ settings, capturing, setCapturing, captureDisabl
       window.removeEventListener("blur", cancel)
       bridge.setCallShortcutsSuspended(false)
     }
-  }, [capturing, bridge, settings.callShortcuts, settings.inputMode, settings.pushToTalkKey, setCapturing])
+  }, [capturing, bridge, setCapturing])
 
   if (!bridge) return null
   return (
@@ -89,7 +97,7 @@ function CallShortcutSettings({ settings, capturing, setCapturing, captureDisabl
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{t(ACTION_LABELS[action])}</p>
                 <p className="break-words text-xs text-muted-foreground" aria-live="polite">
-                  {capturing === action ? t("settings.shortcutPressKeys") : binding ? shortcutLabel(binding, bridge.platform) : t("settings.shortcutUnassigned")}
+                  {capturing === action ? t("settings.shortcutPressKeys") : binding ? shortcutLabel(binding, bridge.platform, layout) : t("settings.shortcutUnassigned")}
                 </p>
               </div>
               <div className="flex gap-2">

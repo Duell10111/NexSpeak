@@ -32,6 +32,7 @@ import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
 import { usePushToTalk } from "@/hooks/usePushToTalk"
 import { createCallSoundPlayer, isCueEnabled } from "@/lib/call-sounds"
+import { emptyCallShortcutBindings } from "@nexspeak/core/global-shortcuts"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@nexspeak/core/matrix/call-session"
@@ -332,11 +333,17 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [updateVoicePrefs])
 
+  // Bindings only reach the main process while a session can handle them: a registered key is
+  // swallowed system-wide, so it must not be taken while joining or after the session is gone.
+  const hasSession = session !== null
   useEffect(() => {
     const bridge = desktopBridge()
     if (!bridge) return
-    void bridge.setCallShortcuts(audioSettings.callShortcuts, audioSettings.inputMode === "push-to-talk" ? audioSettings.pushToTalkKey : null)
-  }, [audioSettings.callShortcuts, audioSettings.inputMode, audioSettings.pushToTalkKey])
+    void bridge.setCallShortcuts(
+      hasSession ? audioSettings.callShortcuts : emptyCallShortcutBindings(),
+      audioSettings.inputMode === "push-to-talk" ? audioSettings.pushToTalkKey : null,
+    )
+  }, [hasSession, audioSettings.callShortcuts, audioSettings.inputMode, audioSettings.pushToTalkKey])
 
   useEffect(() => {
     if (!session) return

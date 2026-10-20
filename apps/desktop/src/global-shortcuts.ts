@@ -2,23 +2,30 @@ import { globalShortcut, ipcMain, type WebContents } from "electron"
 import type { CallShortcutAction, CallShortcutBinding, CallShortcutBindings, CallShortcutStatuses } from "@nexspeak/core/global-shortcuts" with { "resolution-mode": "import" }
 
 // The shell only imports core types: its packaged CommonJS build cannot load core's TS sources.
+// The rules below mirror packages/core/src/global-shortcuts.ts; global-shortcuts.test.ts checks parity.
 const ACTIONS: CallShortcutAction[] = ["toggle-mute", "toggle-deafen", "leave-call", "stop-screen-share"]
 const emptyBindings = (): CallShortcutBindings => ({ "toggle-mute": null, "toggle-deafen": null, "leave-call": null, "stop-screen-share": null })
 
+const ACCELERATOR = /^(Control\+)?(Alt\+)?(Shift\+)?(Super\+)?(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|num[0-9]|Space|Tab|Enter|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right)$/
+/** Function keys may stand alone; anything else needs Control, Alt or Super (not just Shift). */
+const STANDALONE_OR_MODIFIED = /^(?:(?:Shift\+)?F\d+|.*\b(?:Control|Alt|Super)\+.+)$/
+/** Holding a combination auto-repeats on Windows and X11; repeats arrive well within this window. */
+export const REPEAT_WINDOW_MS = 750
+
 /** Validate IPC separately from the UI, including canonical modifier order and supported keys. */
-function parseBindings(value: unknown): CallShortcutBindings {
+export function parseBindings(value: unknown): CallShortcutBindings {
   const result = emptyBindings()
   if (!value || typeof value !== "object") return result
   for (const action of ACTIONS) {
     const binding = (value as Record<string, unknown>)[action] as CallShortcutBinding | undefined
     if (!binding || typeof binding.code !== "string" || !/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(binding.code)) continue
-    if (typeof binding.accelerator !== "string" || !/^(Control\+)?(Alt\+)?(Shift\+)?(Super\+)?(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|Space|Tab|Enter|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Plus|Minus|=|,|\.|\/|;|'|\[|\]|\\|`)$/.test(binding.accelerator)) continue
+    if (typeof binding.accelerator !== "string" || !ACCELERATOR.test(binding.accelerator) || !STANDALONE_OR_MODIFIED.test(binding.accelerator)) continue
     result[action] = { code: binding.code, accelerator: binding.accelerator }
   }
   return result
 }
 
-function hasConflict(bindings: CallShortcutBindings, action: CallShortcutAction, binding: CallShortcutBinding, pttKey: string | null): boolean {
+export function hasConflict(bindings: CallShortcutBindings, action: CallShortcutAction, binding: CallShortcutBinding, pttKey: string | null): boolean {
   if (binding.code === pttKey) return true
   const modifier = /^(Control|Alt|Shift|Meta)(Left|Right)$/.exec(pttKey ?? "")?.[1]
   if (modifier && binding.accelerator.split("+").slice(0, -1).includes(modifier === "Meta" ? "Super" : modifier)) return true
@@ -32,6 +39,7 @@ export function setupGlobalShortcuts(webContents: () => WebContents | undefined)
   let inCall = false
   let suspended = false
   const registered = new Map<CallShortcutAction, string>()
+  const lastPressed = new Map<CallShortcutAction, number>()
   let statuses: CallShortcutStatuses = { "toggle-mute": "inactive", "toggle-deafen": "inactive", "leave-call": "inactive", "stop-screen-share": "inactive" }
   const send = (channel: string, value: unknown) => {
     const contents = webContents()
@@ -57,7 +65,13 @@ export function setupGlobalShortcuts(webContents: () => WebContents | undefined)
       if (accelerator && !registered.has(action)) {
         try {
           if (globalShortcut.register(accelerator, () => {
-            if (inCall && !suspended && registered.get(action) === accelerator) send("nexspeak:call-shortcut", action)
+            if (!inCall || suspended || registered.get(action) !== accelerator) return
+            // Electron reports no key release, so a press within the window of the previous one
+            // (including ignored repeats) counts as the same held key: a toggle must not flap.
+            const now = performance.now()
+            const last = lastPressed.get(action)
+            lastPressed.set(action, now)
+            if (last === undefined || now - last >= REPEAT_WINDOW_MS) send("nexspeak:call-shortcut", action)
           })) registered.set(action, accelerator)
         } catch {
           // Unsupported/reserved keys fail without taking down the app.

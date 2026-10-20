@@ -46,8 +46,9 @@ const webRoot = join(webDir, "out")
 
 // Hardware video encoding (see AGENTS.md). Chromium enables it on macOS and Windows by default;
 // on Linux VA-API encoding has to be switched on. Never disable hardware acceleration.
+// GlobalShortcutsPortal lets globalShortcut (call shortcuts) work on Wayland via the desktop portal.
 if (process.platform === "linux") {
-  app.commandLine.appendSwitch("enable-features", "AcceleratedVideoEncoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL")
+  app.commandLine.appendSwitch("enable-features", "AcceleratedVideoEncoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL,GlobalShortcutsPortal")
 }
 // Use ScreenCaptureKit on macOS 13+, including its own-process audio exclusion. Electron 44's
 // default CoreAudio tap path needs separate audio permission and can silently return dead audio.
@@ -308,7 +309,11 @@ function createWindow() {
   window.once("ready-to-show", () => {
     if (!startHidden) window.show()
   })
-  window.webContents.on("did-start-loading", () => callShortcuts?.reset())
+  // Only a new document (reload, navigation) drops the renderer's state; subframe loads and
+  // in-page navigations must keep the shortcuts, since nothing would send them again.
+  window.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) callShortcuts?.reset()
+  })
   window.webContents.on("render-process-gone", () => callShortcuts?.reset())
   window.webContents.on("destroyed", () => callShortcuts?.reset())
   // Like Discord: closing keeps the app (and a running call) alive in the tray.

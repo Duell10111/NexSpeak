@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Keyboard } from "lucide-react"
 import type { PushToTalkStatus } from "@nexspeak/core/desktop-bridge"
 import { CALL_SHORTCUT_ACTIONS, conflictsWithPushToTalk } from "@nexspeak/core/global-shortcuts"
@@ -18,7 +18,7 @@ interface KeyboardLayoutApi {
 }
 
 /** The browser's keyboard layout (Chromium only), so keys are labelled as printed. */
-function useKeyboardLayout(): ReadonlyMap<string, string> | undefined {
+export function useKeyboardLayout(): ReadonlyMap<string, string> | undefined {
   const [layout, setLayout] = useState<ReadonlyMap<string, string>>()
   useEffect(() => {
     const keyboard = (navigator as Navigator & { keyboard?: KeyboardLayoutApi }).keyboard
@@ -73,6 +73,13 @@ function useKeyCapture(isCapturing: boolean, onDone: (key: string | null) => voi
   }, [isCapturing, onDone])
 }
 
+function conflictsWithCallShortcut(key: string, callShortcuts: AudioSettings["callShortcuts"]): boolean {
+  return CALL_SHORTCUT_ACTIONS.some((action) => {
+    const binding = callShortcuts[action]
+    return Boolean(binding && conflictsWithPushToTalk(binding, key))
+  })
+}
+
 export function PushToTalkSettings({ settings, isCapturing, setIsCapturing, captureDisabled }: {
   settings: AudioSettings
   isCapturing: boolean
@@ -81,24 +88,28 @@ export function PushToTalkSettings({ settings, isCapturing, setIsCapturing, capt
 }) {
   const { t } = useTranslation()
   const layout = useKeyboardLayout()
-  const [hasConflict, setHasConflict] = useState(false)
+  // The last key rejected for overlapping a call shortcut; the warning disappears once it no longer does.
+  const [rejectedKey, setRejectedKey] = useState<string | null>(null)
   const isPushToTalk = settings.inputMode === "push-to-talk"
   const isDesktop = Boolean(desktopBridge())
   const { status, requestPermission } = useDesktopPushToTalkStatus(isDesktop && isPushToTalk)
 
+  // Read through a ref, so a settings change during capture does not restart it (see useKeyCapture).
+  const callShortcutsRef = useRef(settings.callShortcuts)
+  useEffect(() => {
+    callShortcutsRef.current = settings.callShortcuts
+  })
   const finishCapture = useCallback((key: string | null) => {
     setIsCapturing(false)
-    if (key && CALL_SHORTCUT_ACTIONS.some((action) => {
-      const binding = settings.callShortcuts[action]
-      return binding && conflictsWithPushToTalk(binding, key)
-    })) {
-      setHasConflict(true)
+    if (key && conflictsWithCallShortcut(key, callShortcutsRef.current)) {
+      setRejectedKey(key)
       return
     }
-    setHasConflict(false)
+    setRejectedKey(null)
     if (key) saveAudioSettings({ pushToTalkKey: key })
-  }, [settings.callShortcuts, setIsCapturing])
+  }, [setIsCapturing])
   useKeyCapture(isCapturing, finishCapture)
+  const hasConflict = !isCapturing && rejectedKey !== null && conflictsWithCallShortcut(rejectedKey, settings.callShortcuts)
 
   const key = settings.pushToTalkKey
   const mouseButton = key ? mouseButtonNumber(key) : null

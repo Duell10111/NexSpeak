@@ -46,6 +46,11 @@ All bindings start unassigned. They work in other apps, including games, only du
 NexSpeak releases them when the call ends, and temporarily releases them while you record a new
 binding. **Stop screen sharing** only stops an existing share; it never starts one or opens a picker.
 
+A shortcut combines a letter, number, numpad digit or navigation key with Ctrl, Alt or Cmd/Super;
+function keys (F1 to F24) also work alone. During a call the combination is taken from every other
+app, so a single letter would no longer type anywhere. Punctuation keys are not supported, because
+they sit in different places on different keyboard layouts.
+
 Duplicate shortcuts and combinations overlapping the push-to-talk key are rejected. For example,
 if push to talk uses M, Ctrl+Shift+M conflicts too, since holding M would also open the microphone.
 If the operating system or another app reserves a combination, a warning appears during a call;

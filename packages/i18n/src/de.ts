@@ -411,7 +411,7 @@ export const de = {
   'settings.shortcutClear': "Entfernen",
   'settings.shortcutConflict': "Diese Taste überschneidet sich mit einem anderen Tastenkürzel oder der Push-to-Talk-Taste. Wähle eine andere Taste.",
   'settings.shortcutUnavailable': "Dieses Tastenkürzel konnte nicht registriert werden. Es ist möglicherweise vom System oder einer anderen App reserviert. Versuche eine andere Kombination.",
-  'settings.shortcutUnsupported': "Diese Taste wird nicht unterstützt. Verwende Buchstaben, Zahlen, Funktions- oder Navigationstasten, bei Bedarf mit Zusatztasten.",
+  'settings.shortcutUnsupported': "Diese Taste wird nicht unterstützt. Kombiniere einen Buchstaben, eine Zahl, eine Ziffernblock- oder Navigationstaste mit Strg, Alt oder Cmd/Super; Funktionstasten gehen auch allein.",
   'settings.signedInAs': 'Angemeldet als',
   'settings.device': 'Gerät',
   'settings.backupOk':

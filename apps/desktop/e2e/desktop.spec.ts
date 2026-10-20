@@ -282,6 +282,8 @@ test("global shortcuts register only in calls, pause during capture and dispatch
   await page.getByRole("button", { name: "Bildschirm teilen", exact: true }).last().click()
   await page.getByRole("button", { name: "Live gehen" }).click()
   await expect(page.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+  // Presses closer together than REPEAT_WINDOW_MS (750 ms) count as one held key.
+  await page.waitForTimeout(800)
   await fire("Control+Alt+Shift+F9")
   await expect(page.getByRole("button", { name: "Stream-Einstellungen" })).toBeHidden()
 

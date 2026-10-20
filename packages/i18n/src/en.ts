@@ -409,7 +409,7 @@ export const en: Record<MessageKey, string> = {
   'settings.shortcutClear': "Clear",
   'settings.shortcutConflict': "This key conflicts with another shortcut or the push-to-talk key. Choose a different key.",
   'settings.shortcutUnavailable': "This shortcut could not be registered. It may be reserved by the system or another app. Try a different combination.",
-  'settings.shortcutUnsupported': "This key is not supported. Use a letter, number, function key or navigation key, optionally with modifiers.",
+  'settings.shortcutUnsupported': "This key is not supported. Combine a letter, number, numpad digit or navigation key with Ctrl, Alt or Cmd/Super; function keys also work alone.",
   'settings.signedInAs': 'Signed in as',
   'settings.device': 'Device',
   'settings.backupOk': 'Your message keys are backed up. On a new device, restore them with your recovery key.',
