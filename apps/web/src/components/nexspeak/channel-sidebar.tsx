@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react"
 import { useCallContext, type RoomCallInfo } from "@/components/nexspeak/call-context"
+import { CallDuration } from "@/components/nexspeak/call-duration"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useOwnPresence, useOwnProfile } from "@/hooks/useOwnProfile"
 import { useTranslation } from "@/hooks/useTranslation"
@@ -208,6 +209,15 @@ function RoomItem({
           >
             {room.name}
           </span>
+          {hasCall && callInfo?.startedTs !== undefined && Number.isFinite(callInfo.startedTs) && (
+            <CallDuration
+              startedTs={callInfo.startedTs}
+              className={cn(
+                "shrink-0 text-xs text-muted-foreground tabular-nums",
+                !isDirectMessages && "group-hover:invisible group-has-[:focus-visible]:invisible",
+              )}
+            />
+          )}
           {hasUnread && mentionCount > 0 && (
             <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-nx-dnd px-1 text-[11px] font-bold text-white">
               {mentionCount > 99 ? "99+" : mentionCount}
