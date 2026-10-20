@@ -3,6 +3,9 @@
  */
 
 export type InputMode = 'voice-activity' | 'push-to-talk'
+/** Sound cues in calls: our own join/leave, others joining/leaving, screen shares starting/stopping. */
+export type SoundCueGroup = 'own' | 'others' | 'screenshare'
+export const SOUND_CUE_GROUPS: readonly SoundCueGroup[] = ['own', 'others', 'screenshare']
 
 export interface AudioSettings {
   /** Empty string means the system default device. */
@@ -17,6 +20,9 @@ export interface AudioSettings {
   pushToTalkKey: string | null
   /** Keeps transmitting this long after the key is released, so word endings aren't cut off. */
   pushToTalkReleaseDelayMs: number
+  /** Turns all sound cues off at once; soundCueGroups picks individual ones. */
+  soundCues: boolean
+  soundCueGroups: Record<SoundCueGroup, boolean>
 }
 
 const STORAGE_KEY = 'nexspeak_audio_settings'
@@ -28,6 +34,8 @@ const DEFAULT_SETTINGS: AudioSettings = {
   inputMode: 'voice-activity',
   pushToTalkKey: null,
   pushToTalkReleaseDelayMs: 100,
+  soundCues: true,
+  soundCueGroups: { own: true, others: true, screenshare: true },
 }
 export const MAX_PUSH_TO_TALK_RELEASE_DELAY_MS = 1000
 const listeners = new Set<() => void>()
@@ -54,6 +62,12 @@ export function loadAudioSettings(): AudioSettings {
         typeof parsed.pushToTalkReleaseDelayMs === 'number'
           ? Math.min(MAX_PUSH_TO_TALK_RELEASE_DELAY_MS, Math.max(0, parsed.pushToTalkReleaseDelayMs))
           : DEFAULT_SETTINGS.pushToTalkReleaseDelayMs,
+      soundCues: parsed.soundCues !== false,
+      soundCueGroups: {
+        own: parsed.soundCueGroups?.own !== false,
+        others: parsed.soundCueGroups?.others !== false,
+        screenshare: parsed.soundCueGroups?.screenshare !== false,
+      },
     }
   } catch {
     cachedSettings = DEFAULT_SETTINGS

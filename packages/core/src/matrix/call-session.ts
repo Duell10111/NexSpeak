@@ -62,6 +62,8 @@ const LEAVE_TIMEOUT_MS = 5000
 const OWN_KEY_TIMEOUT_MS = 10_000
 // How often a running screenshare checks whether the shared window changed size.
 const SCREENSHARE_SIZE_CHECK_MS = 2_000
+// After a full reconnect LiveKit announces everyone and their tracks again: no sound cues for that.
+const RECONNECT_CUE_QUIET_MS = 2_000
 
 /** Verbose call logging, enabled with localStorage["nexspeak:debug"] = "1". */
 function isDebugEnabled(): boolean {
@@ -116,6 +118,15 @@ function isScreenshareSource(source: Track.Source): boolean {
   return source === Track.Source.ScreenShare || source === Track.Source.ScreenShareAudio
 }
 
+/** Discord-like sound cues; CallSession reports them, the app decides whether and how to play them. */
+export type CallCue =
+  | 'self-join'
+  | 'self-leave'
+  | 'participant-join'
+  | 'participant-leave'
+  | 'screenshare-start'
+  | 'screenshare-stop'
+
 export type CallConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 /** Our connection quality as rated by the SFU. */
 export type CallConnectionQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown'
@@ -160,6 +171,8 @@ export interface CallAudioOptions {
   startDeafened?: boolean
   /** Push-to-talk mode: the microphone only transmits while setPushToTalkPressed(true). */
   pushToTalk?: boolean
+  /** Called for sound cues (never while deafened, nor for the people already there when we join). */
+  onCue?: (cue: CallCue) => void
 }
 
 /** Feeds MatrixRTC media keys into LiveKit's per-participant frame encryption. */
@@ -204,6 +217,9 @@ export class CallSession {
   private readonly audioElements = new Map<string, HTMLMediaElement>()
   private readonly audioContainer: HTMLDivElement
   private isLeaving = false
+  private hasConnected = false
+  private readonly onCue?: (cue: CallCue) => void
+  private cuesQuietUntil = 0
   private readonly cleanups: Array<() => void> = []
 
   /**
@@ -235,6 +251,7 @@ export class CallSession {
     this.isDeafened = audio.startDeafened ?? false
     this.startMuted = audio.startMuted ?? false
     this.pushToTalk = audio.pushToTalk ?? false
+    this.onCue = audio.onCue
     this.audioContainer = document.createElement('div')
     this.audioContainer.hidden = true
     document.body.appendChild(this.audioContainer)
@@ -320,7 +337,9 @@ export class CallSession {
       participant.trackPublications.forEach((publication) => this.subscribeByDefault(publication, participant))
     })
     this.connectionState = 'connected'
+    this.hasConnected = true
     this.changed()
+    this.cue('self-join')
 
     // Publish in the background: in encrypted calls this waits for our media key.
     if (!this.startMuted) void this.publishInitialMicrophone()
@@ -383,6 +402,7 @@ export class CallSession {
       if (state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting) {
         this.connectionState = 'reconnecting'
       } else if (state === ConnectionState.Connected) {
+        if (this.connectionState === 'reconnecting') this.cuesQuietUntil = Date.now() + RECONNECT_CUE_QUIET_MS
         this.connectionState = 'connected'
       }
       this.changed()
@@ -432,6 +452,29 @@ export class CallSession {
     }
     room.on(LivekitRoomEvent.ConnectionQualityChanged, onConnectionQualityChanged)
 
+    // Participants already in the call when we join don't fire ParticipantConnected.
+    const onParticipantConnected = () => this.cue('participant-join')
+    const onParticipantDisconnected = () => this.cue('participant-leave')
+    const onRemoteScreenshareStarted = (publication: RemoteTrackPublication) => {
+      if (publication.source === Track.Source.ScreenShare) this.cue('screenshare-start')
+    }
+    const onRemoteScreenshareStopped = (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+      // A participant who leaves unpublishes everything first; their leave cue is enough.
+      if (publication.source !== Track.Source.ScreenShare) return
+      if (room.remoteParticipants.get(participant.identity) === participant) this.cue('screenshare-stop')
+    }
+    const onLocalScreenshareCue = (publication: LocalTrackPublication, started: boolean) => {
+      if (publication.source === Track.Source.ScreenShare) this.cue(started ? 'screenshare-start' : 'screenshare-stop')
+    }
+    const onLocalScreenshareStarted = (publication: LocalTrackPublication) => onLocalScreenshareCue(publication, true)
+    const onLocalScreenshareStopped = (publication: LocalTrackPublication) => onLocalScreenshareCue(publication, false)
+    room.on(LivekitRoomEvent.ParticipantConnected, onParticipantConnected)
+    room.on(LivekitRoomEvent.ParticipantDisconnected, onParticipantDisconnected)
+    room.on(LivekitRoomEvent.TrackPublished, onRemoteScreenshareStarted)
+    room.on(LivekitRoomEvent.TrackUnpublished, onRemoteScreenshareStopped)
+    room.on(LivekitRoomEvent.LocalTrackPublished, onLocalScreenshareStarted)
+    room.on(LivekitRoomEvent.LocalTrackUnpublished, onLocalScreenshareStopped)
+
     const onKey = (key: Uint8Array<ArrayBuffer>, index: number, _membership: unknown, rtcBackendIdentity: string) => {
       void this.keyProvider?.setMediaKey(key, index, rtcBackendIdentity).then((imported) => {
         if (imported && rtcBackendIdentity === this.ownIdentity) this.resolveOwnKey()
@@ -455,6 +498,12 @@ export class CallSession {
       room.off(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
       room.off(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
       room.off(LivekitRoomEvent.ConnectionQualityChanged, onConnectionQualityChanged)
+      room.off(LivekitRoomEvent.ParticipantConnected, onParticipantConnected)
+      room.off(LivekitRoomEvent.ParticipantDisconnected, onParticipantDisconnected)
+      room.off(LivekitRoomEvent.TrackPublished, onRemoteScreenshareStarted)
+      room.off(LivekitRoomEvent.TrackUnpublished, onRemoteScreenshareStopped)
+      room.off(LivekitRoomEvent.LocalTrackPublished, onLocalScreenshareStarted)
+      room.off(LivekitRoomEvent.LocalTrackUnpublished, onLocalScreenshareStopped)
       this.rtcSession.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipsChanged, changed)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
@@ -479,6 +528,18 @@ export class CallSession {
   private changed(): void {
     this.snapshotDirty = true
     this.listeners.forEach((listener) => listener())
+  }
+
+  /**
+   * Checked a microtask later: on a full reconnect LiveKit first drops every participant (and we
+   * republish our tracks) and only then reports the reconnect.
+   */
+  private cue(cue: CallCue): void {
+    if (!this.onCue) return
+    queueMicrotask(() => {
+      if (this.connectionState !== 'connected' || this.isDeafened || Date.now() < this.cuesQuietUntil) return
+      this.onCue?.(cue)
+    })
   }
 
   private memberName(userId: string): { name: string; avatarMxc?: string } {
@@ -794,6 +855,7 @@ export class CallSession {
     if (this.isLeaving) return
     this.isLeaving = true
     this.connectionState = 'disconnected'
+    if (this.hasConnected && !this.isDeafened) this.onCue?.('self-leave')
 
     this.cleanups.forEach((cleanup) => cleanup())
     this.cleanups.length = 0

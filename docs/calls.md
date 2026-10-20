@@ -11,6 +11,9 @@ Element Call. In encrypted channels the audio and video are end-to-end encrypted
   **Screen** and **Disconnect**.
 - **Mute** and **Deafen** (next to your name) also work before you join.
 - People in a voice channel are listed below it in the channel list.
+- A short sound plays when you join or leave, when someone else joins or leaves, and when someone
+  starts or stops a stream. Turn the sounds off in **Settings** → **Audio** → **Sound cues in
+  calls**, see [Settings](settings.md#audio).
 - Active calls show their duration on the right of the channel entry, as `M:SS` or `H:MM:SS`.
   It uses the oldest current MatrixRTC membership, including calls started in Element Call.
   The duration disappears when everyone leaves; the next call starts fresh.
