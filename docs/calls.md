@@ -11,6 +11,9 @@ Element Call. In encrypted channels the audio and video are end-to-end encrypted
   **Screen** and **Disconnect**.
 - **Mute** and **Deafen** (next to your name) also work before you join.
 - People in a voice channel are listed below it in the channel list.
+- Active calls show their duration on the right of the channel entry, as `M:SS` or `H:MM:SS`.
+  It uses the oldest current MatrixRTC membership, including calls started in Element Call.
+  The duration disappears when everyone leaves; the next call starts fresh.
 
 The call view shows everyone as tiles with a speaking indicator. **Focus** a camera or screen share
 to show it large, use **Full screen**, and **Show chat** to write next to the call.

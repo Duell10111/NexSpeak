@@ -1,6 +1,6 @@
 # Plan: beta release, monorepo, desktop and mobile
 
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 
 Goal: release NexSpeak as a public beta (web and desktop) and structure the repository now so that a
 later mobile app (Expo) can be added without another restructuring.
@@ -170,7 +170,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33
 - Sound cues for join, leave and screensharing, can be turned off (#22)
 - Soundboard like Discord: server sounds played on each client, can be turned off (#26)
-- Call duration next to active voice channels in the sidebar (#29)
+- [x] Call duration next to active voice channels in the sidebar (#29)
 - Incoming-call prompt with join/decline for direct calls (#34)
 - Configurable global shortcuts for mute, deafen and disconnect (#35)
 - Push-to-talk hook subscribes only to the events its binding needs, at the OS level (#74)
