@@ -30,6 +30,7 @@ import type { ConnectionInfo } from "@nexspeak/core/connection-stats"
 import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
 import { usePushToTalk } from "@/hooks/usePushToTalk"
+import { createCallSoundPlayer, isCueEnabled } from "@/lib/call-sounds"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@nexspeak/core/matrix/call-session"
@@ -174,6 +175,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       setJoiningRoomId(roomId)
       try {
         const settings = loadAudioSettings()
+        const sounds = createCallSoundPlayer()
         const next = await CallSession.start(client, roomId, {
           inputDeviceId: settings.inputDeviceId,
           outputDeviceId: settings.outputDeviceId,
@@ -181,6 +183,11 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           startMuted: voicePrefsRef.current.muted,
           startDeafened: voicePrefsRef.current.deafened,
           pushToTalk: settings.inputMode === "push-to-talk",
+          onCue: (cue) => {
+            const current = loadAudioSettings()
+            if (!isCueEnabled(current, cue)) return
+            sounds.play(cue, { volume: current.outputVolume / 100, outputDeviceId: current.outputDeviceId })
+          },
         })
         if (abandonedJoinRef.current === roomId) {
           await next.leave()

@@ -14,6 +14,10 @@ depends on your homeserver.
 - **Input device** and **Output device**, **Call volume**, **Play test tone** and **Test
   microphone** with a level meter. Some browsers can't choose the output device.
 - **Input mode**: **Voice activity** or **Push to talk**.
+- **Sound cues in calls**: short sounds when you join or leave, when others join or leave, and when
+  a stream starts or stops. Turn them all off, or each one (**When you join or leave**, **When
+  others join or leave**, **When a stream starts or stops**). They play on the output device at the
+  call volume, and not while you are deafened.
 
 ### Push to talk
 
