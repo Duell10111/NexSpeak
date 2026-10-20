@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import type { MatrixClient } from "matrix-js-sdk"
 import {
   CryptoEvent,
@@ -164,10 +164,16 @@ export function SecurityProvider({ client, children }: { client: MatrixClient; c
   const [status, setStatus] = useState<SecurityStatus | null>(null)
   const [view, setView] = useState<VerificationView | null>(null)
 
+  const latestRefresh = useRef(0)
+
   const refreshStatus = useCallback(() => {
     if (!client.getCrypto()) return
+    // Crypto events come in bursts; an older read finishing late must not undo a newer one.
+    const refresh = ++latestRefresh.current
     getSecurityStatus(client)
-      .then(setStatus)
+      .then((next) => {
+        if (refresh === latestRefresh.current) setStatus(next)
+      })
       .catch((error: unknown) => console.warn("Failed to read security status:", error))
   }, [client])
 
