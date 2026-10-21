@@ -36,6 +36,9 @@ import {
   CallPermissionError,
   canJoinCalls,
   discoverLivekitServiceUrl,
+  forgetLivekitServiceUrl,
+  forgetOpenIdToken,
+  getOpenIdToken,
   getSfuConfig,
   ownLivekitTransport,
   selectActiveServiceUrl,
@@ -67,6 +70,8 @@ import {
 import { t } from '@nexspeak/i18n'
 import { SoundboardTransport } from '../soundboard-transport'
 import { callSounds, SOUNDBOARD_TOPIC } from './soundboard'
+import { CallTimings } from './call-timings'
+import { localFlag } from '../local-flag'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -79,11 +84,7 @@ const RECONNECT_CUE_QUIET_MS = 2_000
 
 /** Verbose call logging, enabled with localStorage["nexspeak:debug"] = "1". */
 function isDebugEnabled(): boolean {
-  try {
-    return localStorage.getItem('nexspeak:debug') === '1'
-  } catch {
-    return false
-  }
+  return localFlag('nexspeak:debug')
 }
 
 function debug(...args: unknown[]): void {
@@ -232,6 +233,8 @@ export class CallSession {
   /** Holds the microphone back until its processor is in place, so nothing unprocessed goes out. */
   private processingPending = false
   private processingQueue: Promise<void> = Promise.resolve()
+  /** Audio processing queued by the latest microphone publish (for join timings). */
+  private microphoneProcessed: Promise<void> = Promise.resolve()
   /** Serialize camera switches and toggles so a late capture cannot override a newer choice. */
   private cameraQueue: Promise<void> = Promise.resolve()
   /** Per-participant playback volume (0..1) and local mutes, by identity. */
@@ -277,6 +280,7 @@ export class CallSession {
     private readonly ownIdentity: string,
     audio: CallAudioOptions,
     private readonly client: MatrixClient,
+    private readonly timings: CallTimings,
   ) {
     this.ownKeyReady = keyProvider
       ? new Promise((resolve) => {
@@ -300,6 +304,7 @@ export class CallSession {
   }
 
   static async start(client: MatrixClient, roomId: string, audio: CallAudioOptions): Promise<CallSession> {
+    const timings = new CallTimings()
     const room = client.getRoom(roomId)
     if (!room) throw new Error(t('error.roomNotFound'))
 
@@ -311,11 +316,28 @@ export class CallSession {
     setLogLevel(isDebugEnabled() ? LogLevel.debug : LogLevel.warn)
 
     const rtcSession = client.matrixRTC.getRoomSession(room)
-    await rtcSession.initialMembershipCalculated
-    const ownServiceUrl = await discoverLivekitServiceUrl(client)
-    const serviceUrl = selectActiveServiceUrl(rtcSession.memberships, ownServiceUrl)
+    await timings.measure('memberships', () => rtcSession.initialMembershipCalculated)
+    const advertisedServiceUrl = selectActiveServiceUrl(rtcSession.memberships)
+    const service = advertisedServiceUrl
+      ? Promise.resolve(advertisedServiceUrl)
+      : timings.measure('discovery', async () => {
+          const ownServiceUrl = await discoverLivekitServiceUrl(client)
+          // Someone may have started the call on another service while discovery was pending.
+          return selectActiveServiceUrl(rtcSession.memberships) ?? ownServiceUrl
+        })
+    // Neither depends on the other; Promise.all also handles a late rejection of either one.
+    const [serviceUrl, openIdToken] = await Promise.all([
+      service,
+      timings.measure('openid', () => getOpenIdToken(client)),
+    ])
+    const sfu = await timings
+      .measure('token-exchange', () => getSfuConfig(client, serviceUrl, roomId, openIdToken))
+      .catch((error: unknown) => {
+        forgetLivekitServiceUrl(client, serviceUrl)
+        forgetOpenIdToken(client)
+        throw error
+      })
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
-    const sfu = await getSfuConfig(client, serviceUrl, roomId)
     debug('got SFU config', sfu.url)
 
     installH264MainProfilePreference()
@@ -349,10 +371,11 @@ export class CallSession {
     })
 
     const ownIdentity = `${userId}:${client.getDeviceId() ?? ''}`
-    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio, client)
+    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio, client, timings)
     try {
       await session.connect(serviceUrl, sfu, userId, client.getDeviceId() ?? '')
     } catch (error) {
+      forgetLivekitServiceUrl(client, serviceUrl)
       await session.leave()
       throw error
     }
@@ -372,7 +395,7 @@ export class CallSession {
 
     // Nothing is subscribed by default, so remote screenshares cost no bandwidth or decoding
     // until someone watches them; camera and audio are subscribed in subscribeByDefault().
-    await this.livekitRoom.connect(sfu.url, sfu.jwt, { autoSubscribe: false })
+    await this.timings.measure('connection', () => this.livekitRoom.connect(sfu.url, sfu.jwt, { autoSubscribe: false }))
     debug('connected to SFU')
     // TrackPublished only fires for tracks published after we joined.
     this.livekitRoom.remoteParticipants.forEach((participant) => {
@@ -389,7 +412,11 @@ export class CallSession {
 
   private async publishInitialMicrophone(): Promise<void> {
     try {
-      await this.setMicrophoneEnabled(true)
+      await this.timings.measure('microphone', async () => {
+        await this.setMicrophoneEnabled(true)
+        // Diagnostics only: include this publish's audio processor, not later setting changes.
+        if (this.timings.enabled) await this.microphoneProcessed
+      })
       debug('microphone published')
     } catch (error) {
       // Joining without a microphone (denied or missing) is still useful for listening.
@@ -489,7 +516,7 @@ export class CallSession {
       publication.track?.on(TrackEvent.Restarted, gateMicrophone)
       if (needsAudioGraph(this.processing)) this.processingPending = true
       gateMicrophone()
-      void this.queueAudioProcessing(() => this.applyAudioProcessing())
+      this.microphoneProcessed = this.queueAudioProcessing(() => this.applyAudioProcessing())
     }
     room.on(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
     room.on(LivekitRoomEvent.TrackUnmuted, gateMicrophone)

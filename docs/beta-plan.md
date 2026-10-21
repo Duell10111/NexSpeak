@@ -160,6 +160,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 ### Later (0.3+)
 
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
+- [x] Bind Geist font definitions to the theme and resolve existing lint warnings (#100)
 - [x] Keep the reaction emoji picker anchored while the pointer leaves the message (#90)
 - [x] Keep the add-server menu open when reopened before its previous exit animation ends (#86)
 - Message search with filters (#37), link previews (opt-in, #40), polls (#38)
@@ -172,6 +173,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Custom status text and "Do not disturb" (#45)
 - [x] Better noise suppression and voice activity detection (#41)
 - [x] Reliable speaking feedback and live microphone sensitivity testing (#94)
+- [x] Skip redundant service discovery on call joins, cache discovery and add opt-in join timings (#92)
+- [x] Bound pending call discovery and recheck memberships after slow discovery (#92)
 - [ ] Investigate attenuation of other PC audio on the first call join (#94)
 - [x] Camera selection and camera preview (#43)
 - [x] Pop out streams and video into an always-on-top window, reusing the existing track (#47)

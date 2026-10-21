@@ -345,6 +345,7 @@ export const en: Record<MessageKey, string> = {
   'call.exitFullscreen': 'Exit full screen',
   'call.audioBlocked': 'The browser blocked playback – click here to hear the others',
   'call.error.noService': "Your homeserver doesn't offer voice channels (no MatrixRTC/LiveKit service configured).",
+  'call.error.discoveryTimeout': 'Discovering the voice service timed out. Please try again.',
   'call.error.serviceRejected': 'The voice service rejected the sign-in ({status}).',
   'call.error.invalidServiceResponse': 'Invalid response from the voice service.',
   'call.error.notEnabled': "Calls aren't enabled for all members of this room yet.",

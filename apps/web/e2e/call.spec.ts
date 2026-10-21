@@ -6,6 +6,10 @@ async function joinVoice(page: Page) {
   await expect(page.getByRole("button", { name: "Anruf verlassen" })).toBeVisible({ timeout: 30_000 })
 }
 
+const DISCOVERY_PATTERNS = ["**/_matrix/client/**/rtc/transports", "**/.well-known/matrix/client"]
+// Same lifetime as DISCOVERY_CACHE_MS in packages/core/src/matrix/rtc.ts.
+const DISCOVERY_CACHE_MS = 5 * 60_000
+
 /** Participant tiles on the call stage (no screenshares in these tests). */
 function tiles(page: Page) {
   return page.getByTestId("call-tile")
@@ -41,13 +45,31 @@ for (const encrypted of [false, true]) {
 
     const alicePage = await newPage(browser)
     const bobPage = await newPage(browser)
+    await bobPage.addInitScript(() => localStorage.setItem("nexspeak:callTimings", "1"))
+    const timingPhases = new Set<string>()
+    bobPage.on("console", (message) => {
+      if (message.type() !== "info" || !message.text().startsWith("[call timing]")) return
+      void message.args()[1]?.jsonValue().then((timing: { phase: string }) => timingPhases.add(timing.phase))
+    })
     await continuousMicrophone(alicePage)
+    await continuousMicrophone(bobPage)
     await login(alicePage, alice)
     await login(bobPage, bob)
     await openRoom(alicePage, roomName)
     await openRoom(bobPage, roomName)
 
+    // Alice starts the call, so she has to discover her own service.
+    let aliceDiscoveryRequests = 0
+    let aliceDiscoveredAt = 0
+    for (const pattern of DISCOVERY_PATTERNS) {
+      await alicePage.route(pattern, (route) => {
+        aliceDiscoveryRequests++
+        aliceDiscoveredAt ||= Date.now()
+        return route.continue()
+      })
+    }
     await joinVoice(alicePage)
+    expect(aliceDiscoveryRequests).toBeGreaterThan(0)
     // The local speaking indicator must also work before anyone else joins.
     const localSpeaking = tiles(alicePage).filter({ hasText: alice.username }).locator(".ring-nx-online")
     await expect.poll(() => localSpeaking.count(), { timeout: 20_000, intervals: [50] }).toBe(1)
@@ -57,6 +79,19 @@ for (const encrypted of [false, true]) {
     await expect(duration).toHaveText(/^\d+:\d{2}$/)
     const initialDuration = await duration.textContent()
     await expect(duration).not.toHaveText(initialDuration!)
+
+    // An advertised service must work even if Bob's own discovery never responds.
+    // Hold any accidental request until after remote audio verification: no timing threshold.
+    let discoveryRequests = 0
+    let releaseDiscovery!: () => void
+    const discoveryBlocked = new Promise<void>((resolve) => { releaseDiscovery = resolve })
+    for (const pattern of DISCOVERY_PATTERNS) {
+      await bobPage.route(pattern, async (route) => {
+        discoveryRequests++
+        await discoveryBlocked
+        await route.abort()
+      })
+    }
     await joinVoice(bobPage)
 
     for (const page of [alicePage, bobPage]) {
@@ -72,6 +107,10 @@ for (const encrypted of [false, true]) {
 
     // With E2EE, frames must actually decrypt: wait for the remote mic to produce audio levels.
     await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 30_000 }).toBeGreaterThan(5)
+    await expect.poll(() => remoteAudioLevel(alicePage), { timeout: 30_000 }).toBeGreaterThan(5)
+    expect(discoveryRequests).toBe(0)
+    releaseDiscovery()
+    await expect.poll(() => [...timingPhases].sort()).toEqual(["connection", "memberships", "microphone", "openid", "token-exchange"])
     const remoteSpeaking = tiles(bobPage).filter({ hasText: alice.username }).locator(".ring-nx-online")
     await expect.poll(() => remoteSpeaking.count(), { timeout: 20_000, intervals: [50] }).toBe(1)
 
@@ -99,9 +138,14 @@ for (const encrypted of [false, true]) {
     await expect(duration).toHaveCount(0)
     await expect(alicePage.getByLabel(/^Anruf läuft seit /)).toHaveCount(0)
 
-    // A new call uses a fresh membership timestamp instead of the previous call's duration.
+    // A new call uses a fresh timestamp and reuses discovery within the same client.
+    // The cache entry expires no earlier than five minutes after the first request, so only a
+    // slower run may legitimately look up again.
+    const requestsBeforeRepeat = aliceDiscoveryRequests
+    const cached = Date.now() - aliceDiscoveredAt < DISCOVERY_CACHE_MS
     await joinVoice(alicePage)
     await expect(duration).toHaveText(/^0:0\d$/)
+    if (cached) expect(aliceDiscoveryRequests).toBe(requestsBeforeRepeat)
   })
 }
 

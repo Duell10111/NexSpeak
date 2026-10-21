@@ -6,6 +6,10 @@
 : Your homeserver has no call service (MatrixRTC with LiveKit). Ask its admins; homeservers with
   Element Call, like matrix.org, have one.
 
+"Discovering the voice service timed out. Please try again."
+: The service lookup did not finish within ten seconds. Check your connection and try joining
+  again; the next attempt starts a fresh lookup.
+
 "You aren't allowed to join calls in this room" / "Calls aren't enabled for all members of this room yet"
 : Only moderators and admins may join calls in this room. An admin can allow calls for everyone, see
   [Who may join calls](calls.md#who-may-join-calls).
@@ -62,3 +66,21 @@ Report bugs in the [issue tracker](https://github.com/Duell10111/NexSpeak/issues
 
 For detailed logs in the web app, run `localStorage.setItem("nexspeak:debug", "1")` in the browser
 console and reload; NexSpeak and LiveKit then log verbosely.
+
+For slow call joins, run `localStorage.setItem("nexspeak:callTimings", "1")` in the console before
+joining. Entries starting with `[call timing]` show each phase's duration and the elapsed time
+since the join started: membership loading, service discovery (only when needed), OpenID,
+token exchange, connection, and microphone readiness (including the encryption key and audio
+processing). Discovery and OpenID run in parallel, so their durations should not be added together.
+Microphone readiness is omitted when joining muted. Timings contain no tokens, room ids or service
+URLs. Disable them with `localStorage.removeItem("nexspeak:callTimings")` before the next join.
+
+Joining an existing call uses the service advertised by its oldest member without looking up
+your own service. That service must use HTTPS (plain HTTP only on `localhost`), because it
+receives your OpenID token; otherwise NexSpeak looks up your own service. When discovery is
+needed, a successful result is reused for five minutes in the current Matrix client; failed
+lookups are retried on the next attempt, and a cached service is dropped as soon as joining
+through it fails. A lookup has a ten-second deadline across all discovery methods, and pending
+requests are aborted when it expires. If a call starts while discovery is running, NexSpeak
+rechecks its oldest membership before choosing the service. The OpenID token is reused until
+shortly before it expires and dropped when a service rejects it. No discovery runs while idle.

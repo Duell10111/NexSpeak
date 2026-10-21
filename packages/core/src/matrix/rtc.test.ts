@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { MatrixClient } from "matrix-js-sdk"
 import type { CallMembership } from "matrix-js-sdk/lib/matrixrtc"
-import { getSfuConfig, selectActiveServiceUrl, userIdFromIdentity } from "./rtc"
+import {
+  discoverLivekitServiceUrl, forgetLivekitServiceUrl, forgetOpenIdToken, getOpenIdToken, getSfuConfig,
+  selectActiveServiceUrl, userIdFromIdentity,
+} from "./rtc"
 
 describe("userIdFromIdentity", () => {
   it("splits off the device id", () => {
@@ -36,31 +39,309 @@ describe("selectActiveServiceUrl", () => {
     const oldest = membershipWith({ type: "something-else" })
     expect(selectActiveServiceUrl([oldest], "https://own")).toBe("https://own")
   })
+
+  it.each([
+    undefined, "", "/relative", "not a url", "wss://sfu", "javascript:alert(1)", "https://user:secret@jwt",
+    "http://attacker.example", "http://192.168.1.10:8070",
+  ])(
+    "requires discovery for an invalid advertised service: %s", (url) => {
+      const oldest = membershipWith({ type: "livekit", livekit_service_url: url })
+      const newer = membershipWith({ type: "livekit", livekit_service_url: "https://newer" })
+      expect(selectActiveServiceUrl([oldest, newer])).toBeUndefined()
+    },
+  )
+
+  it.each(["http://localhost:8070", "http://127.0.0.1:8070", "http://[::1]:8070", "http://jwt.localhost"])(
+    "accepts plain HTTP from other members only on this machine: %s", (url) => {
+      expect(selectActiveServiceUrl([membershipWith({ type: "livekit", livekit_service_url: url })])).toBe(url)
+    },
+  )
+
+  it("does not require a local service for an existing call", () => {
+    expect(selectActiveServiceUrl([membershipWith({ type: "livekit", livekit_service_url: "http://localhost:8070" })]))
+      .toBe("http://localhost:8070")
+    expect(selectActiveServiceUrl([])).toBeUndefined()
+  })
+})
+
+describe("LiveKit service discovery cache", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  function mockClient() {
+    const discover = vi.fn().mockResolvedValue({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://jwt" }] })
+    const client = {
+      http: { authedRequest: discover },
+      getDomain: () => "example.org",
+      getHomeserverUrl: () => "https://matrix.example.org",
+    } as unknown as MatrixClient
+    return { client, discover }
+  }
+
+  it("shares in-flight discovery and successful results only within the same client", async () => {
+    const { client, discover } = mockClient()
+    const other = mockClient()
+    const result = Promise.withResolvers<{ rtc_transports: unknown[] }>()
+    discover.mockReturnValueOnce(result.promise)
+    const first = discoverLivekitServiceUrl(client)
+    const second = discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledOnce()
+    result.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://jwt" }] })
+    expect(await Promise.all([first, second])).toEqual(["https://jwt", "https://jwt"])
+    await discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledOnce()
+    expect(discover).toHaveBeenCalledWith("GET", "/rtc/transports", undefined, undefined, {
+      prefix: "/_matrix/client/unstable/org.matrix.msc4143", abortSignal: expect.any(AbortSignal),
+    })
+    await discoverLivekitServiceUrl(other.client)
+    expect(other.discover).toHaveBeenCalledOnce()
+  })
+
+  it("expires five minutes after success, without idle timers or refresh requests", async () => {
+    vi.useFakeTimers()
+    const { client, discover } = mockClient()
+    await discoverLivekitServiceUrl(client)
+    vi.advanceTimersByTime(5 * 60_000 - 1)
+    await discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(1)
+    expect(discover).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+    discover.mockResolvedValueOnce({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://new-jwt" }] })
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://new-jwt")
+    expect(discover).toHaveBeenCalledTimes(2)
+  })
+
+  it("retries after failure instead of caching a rejected promise", async () => {
+    const { client, discover } = mockClient()
+    discover.mockRejectedValueOnce(new Error("Not supported"))
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Unavailable")))
+    vi.stubEnv("NEXT_PUBLIC_LIVEKIT_SERVICE_URL", "")
+    await expect(discoverLivekitServiceUrl(client)).rejects.toThrow()
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://jwt")
+    expect(discover).toHaveBeenCalledTimes(2)
+  })
+
+  it("forgets a cached service after it failed, but keeps a different one", async () => {
+    const { client, discover } = mockClient()
+    await discoverLivekitServiceUrl(client)
+    forgetLivekitServiceUrl(client, "https://other")
+    forgetLivekitServiceUrl(client, undefined)
+    await discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledOnce()
+    forgetLivekitServiceUrl(client, "https://jwt")
+    await discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps a pending lookup when a service is forgotten", async () => {
+    const { client, discover } = mockClient()
+    const pending = Promise.withResolvers<{ rtc_transports: unknown[] }>()
+    discover.mockReturnValueOnce(pending.promise)
+    const first = discoverLivekitServiceUrl(client)
+    forgetLivekitServiceUrl(client, "https://jwt")
+    const second = discoverLivekitServiceUrl(client)
+    pending.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://jwt" }] })
+    expect(await Promise.all([first, second])).toEqual(["https://jwt", "https://jwt"])
+    expect(discover).toHaveBeenCalledOnce()
+  })
+
+  it("accepts plain HTTP from the own homeserver", async () => {
+    const { client, discover } = mockClient()
+    discover.mockResolvedValueOnce({ rtc_transports: [{ type: "livekit", livekit_service_url: "http://192.168.1.10:8070" }] })
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("http://192.168.1.10:8070")
+  })
+
+  it.each([
+    ["https://jwt.example.org", undefined, "https://jwt.example.org/"],
+    ["/livekit-jwt", "https://chat.example.org/rooms/", "https://chat.example.org/livekit-jwt"],
+  ])("uses the build-time fallback %s as an absolute URL", async (value, page, expected) => {
+    const { client, discover } = mockClient()
+    discover.mockRejectedValueOnce(new Error("Not supported"))
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Unavailable")))
+    if (page) vi.stubGlobal("location", new URL(page))
+    vi.stubEnv("NEXT_PUBLIC_LIVEKIT_SERVICE_URL", value)
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe(expected)
+  })
+
+  it("validates discovery results and caches the well-known fallback", async () => {
+    const { client, discover } = mockClient()
+    discover.mockResolvedValueOnce({ rtc_transports: [{ type: "livekit", livekit_service_url: "" }] })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      "org.matrix.msc4143.rtc_foci": [{ type: "livekit", livekit_service_url: "https://fallback" }],
+    })))
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://fallback")
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://fallback")
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith("https://example.org/.well-known/matrix/client", { signal: expect.any(AbortSignal) })
+  })
+
+  it.each(["resolve", "reject"])("bounds a hung transport request and ignores its late %s after a successful retry", async (completion) => {
+    vi.useFakeTimers()
+    const { client, discover } = mockClient()
+    const pending = Promise.withResolvers<{ rtc_transports: unknown[] }>()
+    discover.mockReturnValueOnce(pending.promise)
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const first = discoverLivekitServiceUrl(client)
+    const failed = expect(first).rejects.toThrow()
+    const signal = discover.mock.calls[0][4].abortSignal as AbortSignal
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(signal.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await failed
+    expect(signal.aborted).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://jwt")
+    if (completion === "resolve") pending.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://stale" }] })
+    else pending.reject(new Error("Late network failure"))
+    await pending.promise.catch(() => {})
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://jwt")
+    expect(discover).toHaveBeenCalledTimes(2)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("aborts a hung well-known lookup at the deadline and permits a fresh retry", async () => {
+    vi.useFakeTimers()
+    const { client, discover } = mockClient()
+    discover.mockResolvedValue({ rtc_transports: [] })
+    const pending = Promise.withResolvers<Response>()
+    const fetchMock = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(new Response(JSON.stringify({
+      "org.matrix.msc4143.rtc_foci": [{ type: "livekit", livekit_service_url: "https://recovered" }],
+    })))
+    vi.stubGlobal("fetch", fetchMock)
+    const first = discoverLivekitServiceUrl(client)
+    await vi.advanceTimersByTimeAsync(0)
+    const signal = fetchMock.mock.calls[0][1].signal as AbortSignal
+    const failed = expect(first).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(10_000)
+    await failed
+    expect(signal.aborted).toBe(true)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://recovered")
+    pending.resolve(new Response(JSON.stringify({})))
+    await pending.promise
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://recovered")
+    expect(discover).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("applies one deadline to the entire lookup, including well-known response bodies", async () => {
+    vi.useFakeTimers()
+    const { client, discover } = mockClient()
+    const transports = Promise.withResolvers<{ rtc_transports: unknown[] }>()
+    const body = Promise.withResolvers<object>()
+    discover.mockReturnValueOnce(transports.promise)
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => body.promise })
+    vi.stubGlobal("fetch", fetchMock)
+    const first = discoverLivekitServiceUrl(client)
+    const failed = expect(first).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(9_000)
+    transports.resolve({ rtc_transports: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const signal = fetchMock.mock.calls[0][1].signal as AbortSignal
+    await vi.advanceTimersByTimeAsync(1_000)
+    await failed
+    expect(signal.aborted).toBe(true)
+    body.resolve({})
+    await body.promise
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("expires a pending entry on demand when the timeout callback was delayed", async () => {
+    vi.useFakeTimers()
+    const { client, discover } = mockClient()
+    discover.mockReturnValueOnce(new Promise(() => {}))
+    const first = discoverLivekitServiceUrl(client)
+    const failed = expect(first).rejects.toThrow()
+    const signal = discover.mock.calls[0][4].abortSignal as AbortSignal
+    vi.setSystemTime(Date.now() + 10_001)
+    const retry = discoverLivekitServiceUrl(client)
+    expect(signal.aborted).toBe(true)
+    await failed
+    await expect(retry).resolves.toBe("https://jwt")
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://jwt")
+    expect(discover).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })
 
 describe("getSfuConfig", () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  const client = {
-    getOpenIdToken: async () => ({ access_token: "oid", token_type: "Bearer", matrix_server_name: "example.org", expires_in: 3600 }),
-    getDeviceId: () => "DEVICE",
-  } as unknown as MatrixClient
+  const client = { getDeviceId: () => "DEVICE" } as unknown as MatrixClient
+  const openIdToken = { access_token: "oid", token_type: "Bearer", matrix_server_name: "example.org", expires_in: 3600 }
 
   it("exchanges the OpenID token at /sfu/get", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ url: "wss://sfu", jwt: "token" })))
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(getSfuConfig(client, "https://jwt.example.org/", "!room:example.org")).resolves.toEqual({
+    await expect(getSfuConfig(client, "https://jwt.example.org/", "!room:example.org", openIdToken)).resolves.toEqual({
       url: "wss://sfu",
       jwt: "token",
     })
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe("https://jwt.example.org/sfu/get")
-    expect(JSON.parse(init.body as string)).toMatchObject({ room: "!room:example.org", device_id: "DEVICE" })
+    expect(JSON.parse(init.body as string)).toEqual({ room: "!room:example.org", openid_token: openIdToken, device_id: "DEVICE" })
   })
 
   it("reports a rejected token exchange", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })))
-    await expect(getSfuConfig(client, "https://jwt", "!r:x")).rejects.toThrow(/401/)
+    await expect(getSfuConfig(client, "https://jwt", "!r:x", openIdToken)).rejects.toThrow(/401/)
+  })
+})
+
+describe("OpenID token reuse", () => {
+  afterEach(() => vi.useRealTimers())
+
+  const token = (access_token: string) =>
+    ({ access_token, token_type: "Bearer", matrix_server_name: "example.org", expires_in: 3600 })
+  const mockClient = () => {
+    const request = vi.fn().mockResolvedValue(token("first"))
+    return { client: { getOpenIdToken: request } as unknown as MatrixClient, request }
+  }
+
+  it("shares one token per client until shortly before it expires", async () => {
+    vi.useFakeTimers()
+    const { client, request } = mockClient()
+    const other = mockClient()
+    const [first, second] = await Promise.all([getOpenIdToken(client), getOpenIdToken(client)])
+    expect(second).toBe(first)
+    await getOpenIdToken(other.client)
+    expect(other.request).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(3600_000 - 60_000 - 1)
+    await getOpenIdToken(client)
+    expect(request).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(1)
+    await getOpenIdToken(client)
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("retries after a failure and after the token was forgotten", async () => {
+    const { client, request } = mockClient()
+    request.mockReset().mockRejectedValueOnce(new Error("Unavailable")).mockResolvedValue(token("retry"))
+    await expect(getOpenIdToken(client)).rejects.toThrow("Unavailable")
+    await expect(getOpenIdToken(client)).resolves.toMatchObject({ access_token: "retry" })
+    forgetOpenIdToken(client)
+    await getOpenIdToken(client)
+    expect(request).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not let a hung request block later joins", async () => {
+    vi.useFakeTimers()
+    const { client, request } = mockClient()
+    request.mockReset().mockReturnValueOnce(new Promise(() => {})).mockResolvedValue(token("fresh"))
+    void getOpenIdToken(client)
+    vi.advanceTimersByTime(10_000)
+    await expect(getOpenIdToken(client)).resolves.toMatchObject({ access_token: "fresh" })
   })
 })

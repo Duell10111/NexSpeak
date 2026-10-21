@@ -93,7 +93,8 @@ When the headers in `security-headers.json` change, update these examples as wel
 ## Build-time configuration
 
 `NEXT_PUBLIC_LIVEKIT_SERVICE_URL` (see `apps/web/.env.example`) is baked in at build time. Other
-values require a new build.
+values require a new build. A relative path such as `/livekit-jwt` is resolved against the address
+the web app is served from (browser only; the desktop app needs an absolute URL).
 
 ## Planned voice moderation
 
