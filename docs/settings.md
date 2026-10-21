@@ -16,8 +16,9 @@ depends on your homeserver.
 - **Input mode**: **Voice activity** or **Push to talk**.
 - **Voice processing**: noise suppression, echo cancellation and automatic gain control, see
   [below](#voice-processing).
-- **Test microphone** records for five seconds with your current input mode and voice processing and
-  shows the level. Closing the settings or a processing error releases the microphone immediately.
+- **Test microphone** shows your microphone level with the selected voice processing until you choose
+  **Stop microphone test**. Changes apply while testing. Stopping the test, closing the settings,
+  switching settings tabs or a processing error releases the microphone immediately.
 - **Share system audio**: include sound when starting a screen share. The choice is remembered and
   applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
   depends on the browser and capture source. See [Calls and screen sharing](calls.md).
@@ -33,7 +34,9 @@ send only while you are louder than the threshold (in dB; further left is more s
 open for a moment after you stop, so word endings and short pauses aren't cut off. **Test microphone**
 marks the threshold on the level meter and shows whether you would be sent (**Transmitting**) or not
 (**Below the threshold – not transmitted**). Others don't see you as muted while the threshold holds
-you back.
+you back. Leave the test running while adjusting the slider: set the threshold above background noise
+but below your normal speaking level. Moving it left makes it more sensitive; moving it right blocks
+quieter sounds. The marker and transmission status update without restarting the test.
 
 ### Voice processing
 

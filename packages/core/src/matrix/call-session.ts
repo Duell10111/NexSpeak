@@ -55,6 +55,7 @@ import {
   type EncoderInfo,
 } from '../video-codec'
 import { createConnectionSampler, type ConnectionInfo } from '../connection-stats'
+import { SpeakingState } from '../speaking-state'
 import {
   CallAudioProcessor,
   captureConstraints,
@@ -240,6 +241,18 @@ export class CallSession {
   private readonly onCue?: (cue: CallCue) => void
   private cuesQuietUntil = 0
   private readonly cleanups: Array<() => void> = []
+  private speakingChangeQueued = false
+  private readonly speaking = new SpeakingState(() => {
+    this.snapshotDirty = true
+    if (this.speakingChangeQueued) return
+    this.speakingChangeQueued = true
+    // One server event can change several speakers. Notify React once, only for state changes.
+    queueMicrotask(() => {
+      if (!this.speakingChangeQueued) return
+      this.speakingChangeQueued = false
+      if (!this.isLeaving) this.changed()
+    })
+  })
 
   /**
    * Resolves once our own media key is in LiveKit. The SDK only creates it after our call
@@ -399,7 +412,10 @@ export class CallSession {
 
   private attachListeners(): void {
     const room = this.livekitRoom
-    const changed = () => this.changed()
+    const changed = () => {
+      this.refreshSpeaking()
+      this.changed()
+    }
     const onTrackPublished = (publication: RemoteTrackPublication, participant: RemoteParticipant) =>
       this.subscribeByDefault(publication, participant)
 
@@ -451,11 +467,12 @@ export class CallSession {
       LivekitRoomEvent.TrackUnpublished,
       LivekitRoomEvent.LocalTrackPublished,
       LivekitRoomEvent.LocalTrackUnpublished,
-      LivekitRoomEvent.ActiveSpeakersChanged,
       LivekitRoomEvent.AudioPlaybackStatusChanged,
       LivekitRoomEvent.ParticipantNameChanged,
     ] as const
     simpleEvents.forEach((event) => room.on(event, changed))
+    const onSpeakersChanged = () => this.refreshSpeaking()
+    room.on(LivekitRoomEvent.ActiveSpeakersChanged, onSpeakersChanged)
 
     // LiveKit enables the microphone track again on publish, unmute and restart (device change).
     const gateMicrophone = () => this.applyTransmitGate()
@@ -518,6 +535,7 @@ export class CallSession {
       room.off(LivekitRoomEvent.ConnectionStateChanged, onConnectionStateChanged)
       room.off(LivekitRoomEvent.Disconnected, onDisconnected)
       simpleEvents.forEach((event) => room.off(event, changed))
+      room.off(LivekitRoomEvent.ActiveSpeakersChanged, onSpeakersChanged)
       room.off(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
       room.off(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
       room.off(LivekitRoomEvent.ConnectionQualityChanged, onConnectionQualityChanged)
@@ -549,6 +567,7 @@ export class CallSession {
   }
 
   private changed(): void {
+    this.speakingChangeQueued = false
     this.snapshotDirty = true
     this.listeners.forEach((listener) => listener())
   }
@@ -570,6 +589,24 @@ export class CallSession {
     return { name: member?.name || userId, avatarMxc: member?.getMxcAvatarUrl() || undefined }
   }
 
+  private refreshSpeaking(): void {
+    if (this.isLeaving) return
+    const local = this.livekitRoom.localParticipant
+    const participants = [local, ...this.livekitRoom.remoteParticipants.values()]
+    this.speaking.retain(new Set(participants.map((participant) => participant.identity)))
+    for (const participant of participants) {
+      const isLocal = participant === local
+      if (!participant.isMicrophoneEnabled || (isLocal && (this.processingPending || (this.pushToTalk && !this.pushToTalkPressed)))) {
+        this.speaking.remove(participant.identity)
+      } else {
+        const gateOpen = isLocal ? this.microphoneProcessor()?.gateOpen : null
+        // The voice gate already holds across short pauses; don't add a second hold to it.
+        if (gateOpen === false) this.speaking.remove(participant.identity)
+        else this.speaking.update(participant.identity, gateOpen ?? participant.isSpeaking)
+      }
+    }
+  }
+
   private toParticipant(participant: Participant, isLocal: boolean): CallParticipant {
     const userId = userIdFromIdentity(participant.identity)
     return {
@@ -578,7 +615,7 @@ export class CallSession {
       ...this.memberName(userId),
       isLocal,
       isConnecting: false,
-      isSpeaking: participant.isSpeaking,
+      isSpeaking: participant.isMicrophoneEnabled && this.speaking.has(participant.identity),
       isMicMuted: !participant.isMicrophoneEnabled,
       isScreensharing: participant.isScreenShareEnabled,
       isWatchingScreenshare:
@@ -780,7 +817,7 @@ export class CallSession {
       if (!needsAudioGraph(this.processing)) {
         if (current) await this.replaceAudioProcessor(track, null)
       } else if (!current || !(await current.update(this.processing))) {
-        const processor = new CallAudioProcessor(this.processing)
+        const processor = new CallAudioProcessor(this.processing, () => this.refreshSpeaking())
         try {
           await this.replaceAudioProcessor(track, processor)
         } catch (error) {
@@ -814,6 +851,7 @@ export class CallSession {
    * input, the unprocessed microphone; the processed track LiveKit sends stays enabled.
    */
   private applyTransmitGate(): void {
+    this.refreshSpeaking()
     const track = this.microphoneTrack()
     if (!track || track.isMuted) return
     const input = this.microphoneProcessor()?.inputTrack ?? track.mediaStreamTrack
@@ -1002,6 +1040,7 @@ export class CallSession {
 
     this.cleanups.forEach((cleanup) => cleanup())
     this.cleanups.length = 0
+    this.speaking.clear()
     clearInterval(this.screenShareSizeTimer)
 
     await Promise.allSettled([

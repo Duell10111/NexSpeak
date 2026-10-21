@@ -36,13 +36,28 @@ test("voice processing and input sensitivity are set up in the settings", async 
   await dialog.getByRole("button", { name: "Mikrofon testen" }).click()
   await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
   await expect(dialog.getByText("Wird gesendet", { exact: true })).toHaveCount(0)
-  await expect(dialog.getByRole("button", { name: "Mikrofon testen" })).toBeVisible({ timeout: 10_000 })
+  // Deliberately wait past the previous five-second deadline: testing remains active.
+  await page.waitForTimeout(5500)
+  await expect(dialog.getByRole("button", { name: "Mikrofontest stoppen" })).toBeEnabled()
 
-  // Below the fake microphone's beeps: the gate opens.
+  // Moving the threshold below the beeps opens the running gate without restarting.
   await slider.focus()
   await page.keyboard.press("Home")
-  await dialog.getByRole("button", { name: "Mikrofon testen" }).click()
   await expect(dialog.getByText("Wird gesendet", { exact: true })).toBeVisible()
+  await slider.focus()
+  await page.keyboard.press("End")
+  await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
+  // Re-enabling sensitivity starts with a closed gate even after the bypass was transmitting.
+  await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
+  await expect(dialog.getByText("Sprich jetzt…", { exact: true })).toBeVisible()
+  await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
+  await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
+  await slider.focus()
+  await page.keyboard.press("Home")
+  await expect(dialog.getByText("Wird gesendet", { exact: true })).toBeVisible()
+  await dialog.getByRole("button", { name: "Mikrofontest stoppen" }).click()
+  await expect(dialog.getByRole("progressbar", { name: "Mikrofonpegel" })).toHaveCount(0)
+  await expect(dialog.getByRole("button", { name: "Mikrofon testen" })).toBeEnabled()
 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("nexspeak_audio_settings") ?? "{}"))
   expect(stored).toMatchObject({
@@ -73,6 +88,8 @@ test("enhanced suppression and the voice gate process the microphone in a call",
 
   // Gate open: Bob hears the beeps through the processor.
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
+  const localAliceTile = alicePage.getByTestId("call-tile").filter({ hasText: alice.username })
+  await expect.poll(() => localAliceTile.locator(".ring-nx-online").count(), { intervals: [50] }).toBe(1)
 
   // A threshold above the beeps closes the gate in the running call; others don't see a mute.
   await alicePage.getByRole("button", { name: "Einstellungen" }).click()
@@ -82,6 +99,7 @@ test("enhanced suppression and the voice gate process the microphone in a call",
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeLessThanOrEqual(2)
   const aliceTile = bobPage.getByTestId("call-tile").filter({ hasText: alice.username })
   await expect(aliceTile.getByLabel("Stummgeschaltet")).toHaveCount(0)
+  await expect(localAliceTile.locator(".ring-nx-online")).toHaveCount(0)
 
   // LiveKit restores the raw track during replacement. A slow RNNoise load must not bypass the gate.
   let releaseBinary!: () => void
@@ -115,7 +133,7 @@ type MicrophoneTestWindow = typeof window & {
   microphoneTestContexts: AudioContext[]
 }
 
-for (const outcome of ["load failure", "close while loading"] as const) {
+for (const outcome of ["load failure", "close while loading", "stop while loading"] as const) {
   test(`microphone test releases its resources on ${outcome}`, async ({ browser }) => {
     const user = await registerUser("mic-cleanup")
     const page = await newPage(browser)
@@ -146,7 +164,7 @@ for (const outcome of ["load failure", "close while loading"] as const) {
     let releaseBinary!: () => void
     const binaryHeld = new Promise<void>((resolve) => { releaseBinary = resolve })
     await page.route("**/audio-processing/rnnoise*.wasm", async (route) => {
-      if (outcome === "close while loading") await binaryHeld
+      if (outcome !== "load failure") await binaryHeld
       await route.abort()
     })
     const binaryRequested = page.waitForRequest(/\/audio-processing\/rnnoise.*\.wasm/)
@@ -157,10 +175,15 @@ for (const outcome of ["load failure", "close while loading"] as const) {
         await expect(page.getByText("Mikrofon konnte nicht geöffnet werden. Bitte prüfe die Berechtigungen.")).toBeVisible()
         await expect(dialog.getByRole("button", { name: "Mikrofon testen" })).toBeEnabled()
       } else {
-        await expect(dialog.getByRole("button", { name: "Sprich jetzt…" })).toBeDisabled()
+        await expect(dialog.getByRole("button", { name: "Mikrofontest stoppen" })).toBeEnabled()
       }
-      await page.keyboard.press("Escape")
-      await expect(dialog).not.toBeVisible()
+      if (outcome === "stop while loading") {
+        await dialog.getByRole("button", { name: "Mikrofontest stoppen" }).click()
+        await expect(dialog.getByRole("button", { name: "Mikrofon testen" })).toBeEnabled()
+      } else {
+        await page.keyboard.press("Escape")
+        await expect(dialog).not.toBeVisible()
+      }
       // Check while the download is still pending: closing must release resources immediately.
       await expect.poll(() => page.evaluate(() => {
         const scope = window as MicrophoneTestWindow
