@@ -17,7 +17,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
 import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
 import { useServerEmojis } from "@/hooks/useServerEmojis"
-import { findEmojiTrigger } from "@nexspeak/core/matrix/custom-emojis"
+import { findEmojiTrigger, type Sticker } from "@nexspeak/core/matrix/custom-emojis"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
@@ -51,6 +51,7 @@ interface MessageComposerProps {
   replyToName?: string
   onCancelReply?: () => void
   onSend: (message: ComposedMessage) => void
+  onSticker?: (sticker: Sticker) => void
   onFiles?: (files: File[]) => void
   isUploading?: boolean
   attachLabel?: string
@@ -125,6 +126,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     replyToName,
     onCancelReply,
     onSend,
+    onSticker,
     onFiles,
     isUploading = false,
     attachLabel,
@@ -391,7 +393,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           disabled={disabled}
         />
         <div className="flex h-11 shrink-0 items-center gap-1">
-          <ServerEmojiPicker onSelect={insertEmoji} onSelectCustom={pickCustomEmoji}>
+          <ServerEmojiPicker onSelect={insertEmoji} onSelectCustom={pickCustomEmoji} onSelectSticker={disabled ? undefined : onSticker}>
             <button
               className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               aria-label={t("chat.insertEmoji")}

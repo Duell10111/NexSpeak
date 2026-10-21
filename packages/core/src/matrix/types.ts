@@ -7,6 +7,7 @@ import { EventStatus, NotificationCountType, THREAD_RELATION_TYPE, type MatrixEv
 import { isEncryptedFile, type EncryptedFile } from './attachments'
 import { parseFormattedBody, type FormattedNode } from './formatted-body'
 import { t } from '@nexspeak/i18n'
+import { isEmojiMxc, stickerInfo } from './custom-emojis'
 
 export interface MatrixRoom {
   id: string
@@ -30,6 +31,7 @@ export type MessageKind =
   | 'notice'
   | 'emote'
   | 'image'
+  | 'sticker'
   | 'video'
   | 'audio'
   | 'file'
@@ -264,7 +266,7 @@ export function eventToMatrixMessage(
 
   const type = event.getType()
   const isEncryptedPlaceholder = type === 'm.room.encrypted'
-  if (type !== 'm.room.message' && !isEncryptedPlaceholder) return null
+  if (type !== 'm.room.message' && type !== 'm.sticker' && !isEncryptedPlaceholder) return null
 
   const senderId = event.getSender() || ''
   const eventId = event.getId()
@@ -309,6 +311,14 @@ export function eventToMatrixMessage(
   const content = event.getContent()
   const rawBody = typeof content.body === 'string' ? content.body : ''
   const body = replyEventId ? stripReplyFallback(rawBody) : rawBody
+
+  if (type === 'm.sticker') {
+    const info = stickerInfo(content.info)
+    return { ...base, kind: 'sticker', body: rawBody || t('sticker.label'), media: {
+      mxc: typeof content.url === 'string' && isEmojiMxc(content.url) ? content.url : undefined,
+      mimetype: info.mimetype, width: info.w, height: info.h, size: info.size,
+    } }
+  }
 
   switch (content.msgtype) {
     case 'm.text':

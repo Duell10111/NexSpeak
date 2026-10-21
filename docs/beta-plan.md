@@ -165,7 +165,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Message search with filters (#37), link previews (opt-in, #40), polls (#38)
 - [x] Custom server emoji (`im.ponies`), inline messages, reactions and shortcode completion (#39)
 - [x] Full emoji picker with search, categories, skin tones and frequent emoji, loaded on first open (#50)
-- Stickers (#51)
+- [x] Stickers: timeline rendering, server and personal packs, picker and visibility-gated playback (#51)
 - GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
 - Play audio and video attachments inline, loaded only on play (#42)
 - Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)

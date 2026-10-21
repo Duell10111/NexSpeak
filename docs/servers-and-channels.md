@@ -173,6 +173,13 @@ in the name. Names must be unique within the pack. Renaming and deleting update 
 server's `im.ponies.room_emotes` Matrix state, so other compatible clients can use the
 same images. Previously sent emoji remain visible after deletion.
 
+In the same settings, select **Stickers**, enter a **Sticker name**, and choose
+**Upload sticker**. The same file formats, size limit and name rules apply. Stickers
+can be renamed with **Save** and removed with **Delete**, just like emoji. Images are
+marked with their intended usage in the shared pack; existing images and metadata
+from other clients are preserved. Animated stickers play in chat only while visible
+and the window is focused. The settings list uses static previews.
+
 Emoji images and their pack state are shared with the homeserver and are not
 end-to-end encrypted, even when used inside an encrypted channel.
 

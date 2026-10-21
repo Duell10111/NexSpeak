@@ -29,6 +29,7 @@ import { editTextMessage, toggleReaction } from "@nexspeak/core/matrix/messages"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
 import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
+import { StickerImage } from '@/components/nexspeak/sticker-image'
 import { isEmojiMxc } from "@nexspeak/core/matrix/custom-emojis"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -145,6 +146,8 @@ function MessageBody({ message }: { message: MatrixMessage }) {
       )
     case "image":
       return <ImageAttachment message={message} />
+    case 'sticker':
+      return <StickerImage mxc={message.media?.mxc} name={message.body} />
     case "video":
     case "audio":
     case "file":

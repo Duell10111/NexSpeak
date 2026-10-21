@@ -2,13 +2,13 @@
 
 import { createContext, useContext, useEffect, useReducer } from 'react'
 import { RoomStateEvent } from 'matrix-js-sdk'
-import { ROOM_EMOTES_EVENT, serverEmojis } from '@nexspeak/core/matrix/custom-emojis'
+import { ROOM_EMOTES_EVENT, serverEmojis, serverStickers } from '@nexspeak/core/matrix/custom-emojis'
 import { useMatrixClient } from '@/hooks/useMatrixClient'
 
 export const EmojiServerContext = createContext<string | undefined>(undefined)
 
 /** State is already in sync; parsing and subscriptions start only on explicit use. */
-export function useServerEmojis(active: boolean, explicitServerId?: string) {
+export function useServerEmojis(active: boolean, explicitServerId?: string, usage: 'emoticon' | 'sticker' = 'emoticon') {
   const contextServerId = useContext(EmojiServerContext)
   const serverId = explicitServerId ?? contextServerId
   const { client } = useMatrixClient()
@@ -21,5 +21,5 @@ export function useServerEmojis(active: boolean, explicitServerId?: string) {
     client.on(RoomStateEvent.Events, listener)
     return () => { client.removeListener(RoomStateEvent.Events, listener) }
   }, [active, client, serverId])
-  return active && client && serverId ? serverEmojis(client, serverId) : []
+  return active && client && serverId ? (usage === 'sticker' ? serverStickers : serverEmojis)(client, serverId) : []
 }
