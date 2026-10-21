@@ -123,7 +123,7 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread, targ
   // DMs are addressed to a person (@Alice), channels by name (#general).
   const roomLabel = `${isDirect ? "@" : "#"}${roomName}`
   const isEncryptedRoom = roomInfo?.isEncrypted ?? false
-  const canSend = Boolean(client && roomInfo?.exists && (!isEncryptedRoom || isCryptoReady))
+  const canSend = Boolean(client && roomInfo?.canSendMessages && (!isEncryptedRoom || isCryptoReady))
   const latestSentEvent = timeline.findLast((message) => message.status === "sent")?.event
 
   // Mounted means visible: the chat is the main view or open next to the call.
@@ -300,11 +300,13 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread, targ
 
   const composerPlaceholder = !roomInfo?.exists
     ? t("chat.loadingRoom")
-    : isEncryptedRoom && !isCryptoReady
-      ? t("chat.cryptoUnavailable")
-      : threadId
-        ? t("thread.replyPlaceholder")
-        : t("chat.messageTo", { room: roomLabel })
+    : !roomInfo.canSendMessages
+      ? t("chat.readOnly")
+      : isEncryptedRoom && !isCryptoReady
+        ? t("chat.cryptoUnavailable")
+        : threadId
+          ? t("thread.replyPlaceholder")
+          : t("chat.messageTo", { room: roomLabel })
 
   return (
     <div

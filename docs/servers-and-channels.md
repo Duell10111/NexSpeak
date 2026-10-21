@@ -1,5 +1,9 @@
 # Servers and channels
 
+In a read-only channel, the message field explains that you do not have permission to send and
+the attachment and poll controls are disabled. The field follows permission changes immediately;
+a draft already entered is kept if you temporarily lose permission to send.
+
 NexSpeak shows Matrix the way Discord is organized, and Element sees the same structure:
 
 | NexSpeak | Matrix |

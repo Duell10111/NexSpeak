@@ -4,6 +4,7 @@
 
 import {
   EventType,
+  EventStatus,
   MsgType,
   RelationType,
   THREAD_RELATION_TYPE,
@@ -134,7 +135,16 @@ export function editTextMessage(
     'm.mentions': {},
     'm.relates_to': { rel_type: 'm.replace', event_id: eventId },
   } as RoomMessageEventContent
-  return client.sendMessage(roomId, content)
+  return client.sendMessage(roomId, content).catch((error: unknown) => {
+    // The inline editor owns the retry draft. A failed local edit must not keep replacing
+    // the original message or block later sends in the SDK's pending-event queue.
+    const failed = client.getRoom(roomId)?.getPendingEvents().find((event) =>
+      event.status === EventStatus.NOT_SENT && event.error === error &&
+      event.getRelation()?.rel_type === 'm.replace' && event.getRelation()?.event_id === eventId,
+    )
+    if (failed) client.cancelPendingEvent(failed)
+    throw error
+  })
 }
 
 export function deleteMessage(client: MatrixClient, roomId: string, eventId: string): Promise<unknown> {

@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, memo, useState, type KeyboardEvent } from "react"
+import { Fragment, memo, useRef, useState, type KeyboardEvent } from "react"
 import {
   AlertCircle,
   ChevronRight,
@@ -254,35 +254,51 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
   const { t } = useTranslation()
   const { client } = useMatrixClient()
   const [value, setValue] = useState(message.body)
+  const initialBody = useRef(message.body)
+  const saving = useRef(false)
+  const editor = useRef<HTMLTextAreaElement>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const save = () => {
+  const save = async () => {
+    if (saving.current) return
     const body = value.trim()
-    if (!client || !body || body === message.body) {
+    if (!client || !body || body === initialBody.current) {
       onDone()
       return
     }
+    saving.current = true
+    setIsSaving(true)
     const links = message.formatted ? formattedLinks(message.formatted) : []
-    editTextMessage(client, message.roomId, message.event, body, links).catch((error: unknown) => {
+    try {
+      await editTextMessage(client, message.roomId, message.event, body, links)
+      onDone()
+    } catch (error) {
       toast.error(describeMatrixError(error, t("chat.editFailed")))
-    })
-    onDone()
+      requestAnimationFrame(() => editor.current?.focus())
+    } finally {
+      saving.current = false
+      setIsSaving(false)
+    }
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (saving.current) return
     if (event.key === "Escape") {
       event.preventDefault()
       onDone()
     } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      save()
+      void save()
     }
   }
 
   return (
-    <div className="mt-1">
+    <div className="mt-1" aria-busy={isSaving}>
       <textarea
+        ref={editor}
         autoFocus
         value={value}
+        disabled={isSaving}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={(event) => event.currentTarget.setSelectionRange(value.length, value.length)}
@@ -295,12 +311,12 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
           k="chat.editHint"
           values={{
             cancel: (
-              <button className="text-primary hover:underline" onClick={onDone}>
+              <button className="text-primary hover:underline disabled:opacity-50" disabled={isSaving} onClick={onDone}>
                 {t("common.cancel")}
               </button>
             ),
             save: (
-              <button className="text-primary hover:underline" onClick={save}>
+              <button className="text-primary hover:underline disabled:opacity-50" disabled={isSaving} onClick={() => void save()}>
                 {t("common.save")}
               </button>
             ),

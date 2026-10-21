@@ -252,6 +252,7 @@ export const en: Record<MessageKey, string> = {
   'chat.reactionFailed': 'Could not send the reaction.',
   'chat.downloadFailed': 'Download failed.',
   'chat.loadingRoom': 'Loading room…',
+  'chat.readOnly': "You don't have permission to send messages in this room.",
   'chat.cryptoUnavailable': 'Encryption is unavailable – cannot send',
   'chat.messageTo': 'Message {room}',
   'chat.dropFiles': 'Drop files here to send them to {room}',

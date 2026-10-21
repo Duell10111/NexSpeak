@@ -6,7 +6,8 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
 **Open thread**, **Edit** and **Delete** (your own messages; moderators can delete others' too) and
 **More** with **Copy text**, **Pin** and **Report message**.
 
-- **Edit:** Escape cancels, Enter saves. Edited messages show **(edited)**.
+- **Edit:** Escape cancels, Enter saves. The editor stays open while saving and keeps your draft if
+  saving fails, so you can retry or cancel. Edited messages show **(edited)**.
 - **Files:** attach them with the clip, drag and drop them into the chat, or paste them. Up to 100 MB;
   in encrypted channels files are encrypted too.
 - **Emoji:** the emoji button in the message field, or reactions on messages, opens the same

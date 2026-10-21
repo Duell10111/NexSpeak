@@ -368,6 +368,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
               ref={fileInputRef}
               type="file"
               multiple
+              disabled={disabled || isUploading}
               className="hidden"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? [])

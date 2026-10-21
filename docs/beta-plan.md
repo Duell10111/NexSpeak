@@ -192,6 +192,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Hide ignored users from typing indicators and refresh when the ignore list changes (#105)
 - [x] Re-enable existing disabled push rules when choosing a channel notification mode (#107)
 - [x] Hide ignored messages from reply, thread and pin previews, including open lists (#108)
+- [x] Preserve failed edit drafts, prevent duplicate saves and clear failed local edit echoes (#109)
+- [x] Disable read-only message composers and follow live send-permission changes (#110)
 - [x] Configurable global call shortcuts for mute, deafen, disconnect and stopping screen sharing (#35)
 - Push-to-talk hook subscribes only to the events its binding needs, at the OS level (#74)
 - [x] Share system audio with the screen on macOS, with a remembered audio sharing toggle (#36)
