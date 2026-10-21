@@ -5,13 +5,14 @@ import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
 import { useState } from "react"
-import { AtSign, Hash, Lock, LogOut, Menu, MessagesSquare, Users, Volume2 } from "lucide-react"
+import { AtSign, Hash, Lock, LogOut, Menu, MessagesSquare, Search, Users, Volume2 } from "lucide-react"
 import { useCallContext } from "@/components/nexspeak/call-context"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useRoomInfo } from "@/hooks/useRoomInfo"
 import { useTranslation } from "@/hooks/useTranslation"
 import { CallArea } from "@/components/nexspeak/call-area"
 import { MemberList } from "@/components/nexspeak/member-list"
+import { MessageSearch } from "@/components/nexspeak/message-search"
 import { RoomChat } from "@/components/nexspeak/room-chat"
 import { LeaveRoomDialog } from "@/components/nexspeak/leave-room"
 import { PinnedMessagesButton } from "@/components/nexspeak/pinned-messages"
@@ -28,6 +29,10 @@ import {
 
 interface ChatAreaProps {
   activeChannelId: string
+  targetEventId?: string
+  targetThreadId?: string
+  onReturnToLatest: () => void
+  onJumpToMessage: (roomId: string, eventId: string, threadId?: string) => void
   /** The server of the channel, if it belongs to one. */
   serverId?: string
   showMembers: boolean
@@ -101,7 +106,7 @@ function NotificationModeButton({ roomId }: { roomId: string }) {
   )
 }
 
-function ChatAreaContent({ activeChannelId, serverId, showMembers, onToggleMembers, onOpenNavigation, leavable }: ChatAreaProps) {
+function ChatAreaContent({ activeChannelId, serverId, showMembers, onToggleMembers, onOpenNavigation, leavable, targetEventId, targetThreadId, onReturnToLatest, onJumpToMessage }: ChatAreaProps) {
   const { t } = useTranslation()
   const { isInCallInActiveChannel, joinCall, joiningRoomId } = useCallContext()
   const { client } = useMatrixClient()
@@ -109,6 +114,7 @@ function ChatAreaContent({ activeChannelId, serverId, showMembers, onToggleMembe
   const roomName = roomInfo?.name || ""
   // ChatArea is keyed by channel, so this resets when switching channels.
   const [threadView, setThreadView] = useState<ThreadPanelView | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [isLeaving, setIsLeaving] = useState(false)
 
   if (!activeChannelId) {
@@ -168,9 +174,14 @@ function ChatAreaContent({ activeChannelId, serverId, showMembers, onToggleMembe
             <HeaderButton
               label={t("thread.list")}
               active={threadView !== null}
-              onClick={() => setThreadView(threadView ? null : { kind: "list" })}
+              onClick={() => { setSearchOpen(false); setThreadView(threadView ? null : { kind: "list" }) }}
             >
               <MessagesSquare className="h-6 w-6" />
+            </HeaderButton>
+          )}
+          {roomInfo?.exists && (
+            <HeaderButton label={t("messageSearch.title")} active={searchOpen} onClick={() => { setSearchOpen(!searchOpen); setThreadView(null) }}>
+              <Search className="h-5 w-5" />
             </HeaderButton>
           )}
           {roomInfo?.exists && <PinnedMessagesButton roomId={activeChannelId} />}
@@ -205,9 +216,17 @@ function ChatAreaContent({ activeChannelId, serverId, showMembers, onToggleMembe
         <RoomChat
           key={activeChannelId}
           roomId={activeChannelId}
+          targetEventId={targetEventId}
+          threadId={targetThreadId}
+          onReturnToLatest={onReturnToLatest}
           onOpenThread={(rootId) => setThreadView({ kind: "thread", rootId })}
         />
-        {threadView ? (
+        {searchOpen ? (
+          <MessageSearch roomId={activeChannelId} serverId={serverId} onClose={() => setSearchOpen(false)} onJump={(roomId, eventId, threadId) => {
+            setSearchOpen(false)
+            onJumpToMessage(roomId, eventId, threadId)
+          }} />
+        ) : threadView ? (
           // Side by side on wide screens, on top of the chat on narrow ones.
           <ThreadPanel
             roomId={activeChannelId}

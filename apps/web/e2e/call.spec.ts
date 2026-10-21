@@ -15,6 +15,82 @@ function tiles(page: Page) {
   return page.getByTestId("call-tile")
 }
 
+test("incoming DM calls can be declined, end automatically, and join from a background notification", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Incoming ${Date.now().toString(36)}`
+  const roomId = await createRoom(alice, { name: roomName, members: [bob], encrypted: true })
+  for (const [user, other] of [[alice, bob], [bob, alice]]) {
+    await matrixApi(user, "PUT", `/user/${encodeURIComponent(user.userId)}/account_data/m.direct`, { [other.userId]: [roomId] })
+  }
+  const otherRoom = `Elsewhere ${Date.now().toString(36)}`
+  await createRoom(bob, { name: otherRoom, members: [] })
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  // Exercise the same notification API that Electron presents natively, without depending on OS permissions.
+  await bobPage.addInitScript(() => {
+    type CallNotification = { title: string; body?: string; closed: boolean; onclick?: () => void }
+    const notifications: CallNotification[] = []
+    ;(window as unknown as { __callNotifications: CallNotification[] }).__callNotifications = notifications
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true })
+    document.hasFocus = () => false
+    window.Notification = class {
+      static permission = "granted"
+      title: string
+      body?: string
+      closed = false
+      onclick?: () => void
+      constructor(title: string, options: NotificationOptions) {
+        this.title = title
+        this.body = options.body
+        notifications.push(this)
+      }
+      close() { this.closed = true }
+    } as unknown as typeof Notification
+  })
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, otherRoom)
+  const start = async () => {
+    await alicePage.getByRole("button", { name: "Anruf starten", exact: true }).click()
+    await expect(alicePage.getByRole("button", { name: "Anruf verlassen" })).toBeVisible({ timeout: 30_000 })
+  }
+  const prompt = bobPage.getByRole("alertdialog", { name: "Eingehender Anruf" })
+  await start()
+  await expect(prompt).toContainText(alice.username)
+  await expect(prompt).toContainText(roomName)
+  await prompt.getByRole("button", { name: "Ablehnen" }).click()
+  await expect(prompt).toHaveCount(0)
+  await expect(alicePage.getByRole("button", { name: "Anruf verlassen" })).toBeVisible()
+  await expect(bobPage.getByRole("button", { name: "Anruf verlassen" })).toHaveCount(0)
+  await alicePage.getByRole("button", { name: "Anruf verlassen" }).click()
+  await expect(bobPage.getByLabel(`Im Sprachkanal ${roomName}`)).toHaveCount(0)
+
+  // A later call rings again; ending it removes both its prompt and system notification.
+  await start()
+  await expect(prompt).toBeVisible()
+  await alicePage.getByRole("button", { name: "Anruf verlassen" }).click()
+  await expect(prompt).toHaveCount(0)
+  await expect.poll(() => bobPage.evaluate(() =>
+    (window as unknown as { __callNotifications: { closed: boolean }[] }).__callNotifications.every((notification) => notification.closed),
+  )).toBe(true)
+
+  await start()
+  await expect(prompt).toBeVisible()
+  await bobPage.evaluate(() => {
+    const notifications = (window as unknown as { __callNotifications: { onclick?: () => void }[] }).__callNotifications
+    notifications.at(-1)!.onclick!()
+  })
+  await prompt.getByRole("button", { name: "Beitreten" }).click()
+  await expect(prompt).toHaveCount(0)
+  await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
+  await expect(bobPage.getByRole("button", { name: "Anruf verlassen" })).toBeVisible()
+  // The worker-scoped browser outlives this test; open microphones would starve later captures.
+  await alicePage.context().close()
+  await bobPage.context().close()
+})
+
 /** Sustained, audible input: the default fake mic's brief beeps can miss the SFU's activity window. */
 async function continuousMicrophone(page: Page) {
   await page.addInitScript(() => {

@@ -11,6 +11,8 @@ import {
 } from "react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { jumpToMessage } from "@/lib/jump-to-message"
+import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import {
   AlertDialog,
@@ -41,6 +43,8 @@ import type { MatrixMessage } from "@nexspeak/core/matrix/types"
 
 interface RoomChatProps {
   roomId: string
+  targetEventId?: string
+  onReturnToLatest?: () => void
   /** Narrow side panel next to a call: smaller paddings, no welcome header. */
   compact?: boolean
   /** Show this thread (root first, then its replies) instead of the channel. */
@@ -88,7 +92,7 @@ function TypingIndicator({ names }: { names: string[] }) {
   )
 }
 
-export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: RoomChatProps) {
+export function RoomChat({ roomId, compact = false, threadId, onOpenThread, targetEventId, onReturnToLatest }: RoomChatProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [replyTo, setReplyTo] = useState<MatrixMessage | null>(null)
@@ -103,7 +107,7 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
   const { t } = useTranslation()
   const { client, isCryptoReady } = useMatrixClient()
   const roomInfo = useRoomInfo(client, roomId)
-  const { messages: timeline, isLoading, hasMore, loadMore } = useRoomTimeline(client, roomId, threadId)
+  const { messages: timeline, isLoading, hasMore, loadMore, contextError } = useRoomTimeline(client, roomId, threadId, targetEventId)
   // In a thread the root stays on top, above the (paginated) replies.
   const threadRoot = threadId && timeline[0]?.id === threadId ? timeline[0] : null
   const messages = threadRoot ? timeline.slice(1) : timeline
@@ -123,13 +127,26 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
   const latestSentEvent = timeline.findLast((message) => message.status === "sent")?.event
 
   // Mounted means visible: the chat is the main view or open next to the call.
-  useReadReceipt(client, roomId, latestSentEvent, true)
+  useReadReceipt(client, roomId, latestSentEvent, !targetEventId)
+
+  const jumpedTargetRef = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    if (!targetEventId) {
+      jumpedTargetRef.current = null
+      stickToBottomRef.current = true
+      return
+    }
+    stickToBottomRef.current = false
+    if (jumpedTargetRef.current !== targetEventId && jumpToMessage(targetEventId)) {
+      jumpedTargetRef.current = targetEventId
+    }
+  }, [targetEventId, timeline])
 
   // A newly opened room starts scrolled to the newest message.
   useLayoutEffect(() => {
-    stickToBottomRef.current = true
+    stickToBottomRef.current = !targetEventId
     scrollHeightBeforeLoadRef.current = null
-  }, [roomId])
+  }, [roomId, targetEventId])
 
   useLayoutEffect(() => {
     const element = scrollRef.current
@@ -147,9 +164,9 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
   // Keep loading history until the viewport is filled, so scrolling up is possible at all.
   useEffect(() => {
     const element = scrollRef.current
-    if (!element || isLoading || !hasMore) return
+    if (!element || targetEventId || isLoading || !hasMore) return
     if (element.scrollHeight <= element.clientHeight) void loadMore()
-  }, [messages, isLoading, hasMore, loadMore])
+  }, [messages, isLoading, hasMore, loadMore, targetEventId])
 
   const handleScroll = () => {
     const element = scrollRef.current
@@ -164,6 +181,12 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
     }
   }
 
+  const resumeAfterSend = () => {
+    if (!targetEventId) return
+    onReturnToLatest?.()
+    if (threadId) onOpenThread?.(threadId)
+  }
+
   const handleSend = ({ body, mentions, mentionsRoom, customEmojis }: ComposedMessage) => {
     if (!client || !canSend) return
     const replyEvent = replyTo?.event
@@ -174,6 +197,7 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
     sendTextMessage(client, roomId, body, { replyTo: replyEvent, mentions, mentionsRoom, customEmojis, ...threadTarget() }).catch((error: unknown) => {
       toast.error(describeMatrixError(error, t("chat.sendFailed")))
     })
+    resumeAfterSend()
   }
 
   const threadTarget = () =>
@@ -204,6 +228,7 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
     try {
       for (const file of files) {
         await sendAttachment(client, roomId, file, isEncryptedRoom, { replyTo: replyEvent, ...threadTarget() })
+        resumeAfterSend()
       }
     } catch (error) {
       toast.error(describeMatrixError(error, t("chat.uploadFailed")))
@@ -301,6 +326,13 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
         </div>
       )}
 
+      {targetEventId && (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm" role="status">
+          <span>{contextError ? t("messageSearch.contextFailed") : t("messageSearch.viewingContext")}</span>
+          <Button variant="outline" size="sm" onClick={onReturnToLatest}>{t("messageSearch.latest")}</Button>
+        </div>
+      )}
+
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="polite">
         <div className="flex min-h-full flex-col justify-end pb-4">
@@ -379,6 +411,7 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
             sendSticker(client, roomId, sticker, options).catch((error: unknown) => {
               toast.error(describeMatrixError(error, t('chat.sendFailed')))
             })
+            resumeAfterSend()
           }}
           onFiles={(files) => void uploadFiles(files)}
           isUploading={isUploading}
