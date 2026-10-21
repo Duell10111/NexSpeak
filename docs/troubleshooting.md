@@ -6,6 +6,10 @@
 : Your homeserver has no call service (MatrixRTC with LiveKit). Ask its admins; homeservers with
   Element Call, like matrix.org, have one.
 
+"Discovering the voice service timed out. Please try again."
+: The service lookup did not finish within ten seconds. Check your connection and try joining
+  again; the next attempt starts a fresh lookup.
+
 "You aren't allowed to join calls in this room" / "Calls aren't enabled for all members of this room yet"
 : Only moderators and admins may join calls in this room. An admin can allow calls for everyone, see
   [Who may join calls](calls.md#who-may-join-calls).
@@ -73,4 +77,7 @@ URLs. Disable them with `localStorage.removeItem("nexspeak:callTimings")` before
 
 Joining an existing call uses the service advertised by its oldest member without looking up
 your own service. When discovery is needed, a successful result is reused for five minutes in
-the current Matrix client; failures are retried on the next attempt. No discovery runs while idle.
+the current Matrix client; failures are retried on the next attempt. A lookup has a ten-second
+deadline across all discovery methods, and pending requests are aborted when it expires. If a
+call starts while discovery is running, NexSpeak rechecks its oldest membership before choosing
+the service. No discovery runs while idle.

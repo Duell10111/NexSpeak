@@ -333,6 +333,7 @@ export const de = {
   'call.exitFullscreen': 'Vollbild beenden',
   'call.audioBlocked': 'Der Browser hat die Wiedergabe blockiert – klicke hier, um die anderen zu hören',
   'call.error.noService': 'Dein Homeserver bietet keine Sprachkanäle an (kein MatrixRTC/LiveKit-Dienst konfiguriert).',
+  'call.error.discoveryTimeout': 'Die Suche nach dem Sprachdienst hat zu lange gedauert. Bitte versuche es erneut.',
   'call.error.serviceRejected': 'Der Sprachdienst hat die Anmeldung abgelehnt ({status}).',
   'call.error.invalidServiceResponse': 'Ungültige Antwort vom Sprachdienst.',
   'call.error.notEnabled': 'Anrufe sind in diesem Raum noch nicht für alle Mitglieder freigegeben.',

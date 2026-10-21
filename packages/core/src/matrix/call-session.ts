@@ -318,7 +318,11 @@ export class CallSession {
     const advertisedServiceUrl = selectActiveServiceUrl(rtcSession.memberships)
     const service = advertisedServiceUrl
       ? Promise.resolve(advertisedServiceUrl)
-      : timings.measure('discovery', () => discoverLivekitServiceUrl(client))
+      : timings.measure('discovery', async () => {
+          const ownServiceUrl = await discoverLivekitServiceUrl(client)
+          // Someone may have started the call on another service while discovery was pending.
+          return selectActiveServiceUrl(rtcSession.memberships) ?? ownServiceUrl
+        })
     const sfu = await getSfuConfig(client, service, roomId, timings)
     const serviceUrl = await service
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)

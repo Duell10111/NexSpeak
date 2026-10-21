@@ -3,7 +3,7 @@
  * Mirrors what Element Call does so both clients can share a call.
  */
 
-import { EventType, type MatrixClient, type Room } from 'matrix-js-sdk'
+import { EventType, Method, type MatrixClient, type Room } from 'matrix-js-sdk'
 import type { CallMembership, LivekitTransport, Transport } from 'matrix-js-sdk/lib/matrixrtc'
 import { t } from '@nexspeak/i18n'
 import type { CallTimings } from './call-timings'
@@ -14,8 +14,14 @@ export interface SfuConfig {
 }
 
 const DISCOVERY_CACHE_MS = 5 * 60_000
-// Weak keys release the result with the client. Expiry is checked only on demand.
-const discoveryCache = new WeakMap<MatrixClient, { result: Promise<string>; expiresAt: number }>()
+const DISCOVERY_TIMEOUT_MS = 10_000
+interface DiscoveryEntry {
+  result: Promise<string>
+  expiresAt: number
+  cancel?: () => void
+}
+// Weak keys release results with the client. Successful cache entries expire on demand.
+const discoveryCache = new WeakMap<MatrixClient, DiscoveryEntry>()
 
 function isServiceUrl(value: unknown): value is string {
   if (typeof value !== 'string') return false
@@ -36,14 +42,17 @@ function isLivekitServiceTransport(transport: unknown): transport is Transport &
   )
 }
 
-async function fromWellKnown(baseUrl: string): Promise<string | null> {
+async function fromWellKnown(baseUrl: string, signal: AbortSignal): Promise<string | null> {
+  signal.throwIfAborted()
   try {
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/.well-known/matrix/client`)
+    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/.well-known/matrix/client`, { signal })
     if (!response.ok) return null
     const foci = (await response.json())['org.matrix.msc4143.rtc_foci']
+    signal.throwIfAborted()
     const focus = Array.isArray(foci) ? foci.find(isLivekitServiceTransport) : undefined
     return focus?.livekit_service_url ?? null
   } catch {
+    signal.throwIfAborted()
     return null
   }
 }
@@ -55,31 +64,57 @@ async function fromWellKnown(baseUrl: string): Promise<string | null> {
 export function discoverLivekitServiceUrl(client: MatrixClient): Promise<string> {
   const cached = discoveryCache.get(client)
   if (cached && Date.now() < cached.expiresAt) return cached.result
+  // Also handles a delayed timeout callback in a background tab before starting a new lookup.
+  cached?.cancel?.()
 
   // Share in-flight discovery too. Failed attempts are never cached.
-  const entry = { result: discoverUncached(client), expiresAt: Infinity }
+  const controller = new AbortController()
+  let cancel!: () => void
+  const timeout = new Promise<never>((_, reject) => {
+    cancel = () => {
+      const error = new Error(t('call.error.discoveryTimeout'))
+      controller.abort(error)
+      reject(error)
+    }
+  })
+  const timer = setTimeout(cancel, DISCOVERY_TIMEOUT_MS)
+  const entry: DiscoveryEntry = {
+    result: Promise.race([discoverUncached(client, controller.signal), timeout]).finally(() => clearTimeout(timer)),
+    expiresAt: Date.now() + DISCOVERY_TIMEOUT_MS,
+    cancel,
+  }
   discoveryCache.set(client, entry)
   void entry.result.then(
-    () => { entry.expiresAt = Date.now() + DISCOVERY_CACHE_MS },
+    () => {
+      if (discoveryCache.get(client) !== entry) return
+      entry.expiresAt = Date.now() + DISCOVERY_CACHE_MS
+      entry.cancel = undefined
+    },
     () => { if (discoveryCache.get(client) === entry) discoveryCache.delete(client) },
   )
   return entry.result
 }
 
-async function discoverUncached(client: MatrixClient): Promise<string> {
+async function discoverUncached(client: MatrixClient, signal: AbortSignal): Promise<string> {
   try {
-    const transports = await client._unstable_getRTCTransports()
+    // Same endpoint as _unstable_getRTCTransports, whose wrapper accepts no abort signal.
+    const { rtc_transports: transports } = await client.http.authedRequest<{ rtc_transports: Transport[] }>(
+      Method.Get, '/rtc/transports', undefined, undefined,
+      { prefix: '/_matrix/client/unstable/org.matrix.msc4143', abortSignal: signal },
+    )
+    signal.throwIfAborted()
     const transport = transports.find(isLivekitServiceTransport)
     if (transport) return transport.livekit_service_url
   } catch {
+    signal.throwIfAborted()
     // Endpoint not supported by this homeserver; try the other mechanisms.
   }
 
   const domain = client.getDomain()
-  const fromDomain = domain ? await fromWellKnown(`https://${domain}`) : null
+  const fromDomain = domain ? await fromWellKnown(`https://${domain}`, signal) : null
   if (fromDomain) return fromDomain
 
-  const fromHomeserver = await fromWellKnown(client.getHomeserverUrl())
+  const fromHomeserver = await fromWellKnown(client.getHomeserverUrl(), signal)
   if (fromHomeserver) return fromHomeserver
 
   const fallback = process.env.NEXT_PUBLIC_LIVEKIT_SERVICE_URL
