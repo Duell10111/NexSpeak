@@ -160,6 +160,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 ### Later (0.3+)
 
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
+- [x] Bind Geist font definitions to the theme and resolve existing lint warnings (#100)
 - [x] Keep the reaction emoji picker anchored while the pointer leaves the message (#90)
 - [x] Keep the add-server menu open when reopened before its previous exit animation ends (#86)
 - Message search with filters (#37), link previews (opt-in, #40), polls (#38)

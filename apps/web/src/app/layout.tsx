@@ -8,8 +8,8 @@ import { DesktopTrayLabels } from '@/components/nexspeak/desktop-tray'
 import { DesktopDeepLinks } from '@/components/nexspeak/matrix-links'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
   title: 'NexSpeak - Chat, Connect, Create',
@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de" suppressHydrationWarning>
-      <body className="font-sans antialiased">
+      <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <DocumentLanguage />
           <DesktopTrayLabels />
