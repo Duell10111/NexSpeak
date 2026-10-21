@@ -1,6 +1,6 @@
 # Plan: beta release, monorepo, desktop and mobile
 
-Last updated: 2026-10-20
+Last updated: 2026-10-22
 
 Goal: release NexSpeak as a public beta (web and desktop) and structure the repository now so that a
 later mobile app (Expo) can be added without another restructuring.
@@ -188,6 +188,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Soundboard like Discord: server sounds played on each client, can be turned off (#26)
 - [x] Call duration next to active voice channels in the sidebar (#29)
 - [x] Incoming-call prompt with join/decline for direct calls (#34)
+- [x] Keep malformed session storage from restoring a previously cached login (#104)
+- [x] Hide ignored users from typing indicators and refresh when the ignore list changes (#105)
 - [x] Configurable global call shortcuts for mute, deafen, disconnect and stopping screen sharing (#35)
 - Push-to-talk hook subscribes only to the events its binding needs, at the OS level (#74)
 - [x] Share system audio with the screen on macOS, with a remembered audio sharing toggle (#36)

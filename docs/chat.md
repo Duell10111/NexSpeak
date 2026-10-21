@@ -76,8 +76,10 @@ invites you again. Leaving a direct message with a friend also ends the friendsh
 
 ## Safety
 
-- **Ignore** someone (in their profile or the member list): you won't see their messages, invites or
-  notifications anymore, in any room. They aren't told. **Settings → Account** lists ignored people.
+- **Ignore** someone (in their profile or the member list): you won't see their messages, invites,
+  notifications or typing indicators anymore, in any room. Typing indicators update as soon as you
+  ignore or unignore someone, including from another device. They aren't told. **Settings → Account**
+  lists ignored people.
 - **Report** a message or channel: the report goes to the admins of your homeserver. They can only
   read the message if it isn't encrypted.
 

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RoomMemberEvent, type MatrixClient, type MatrixEvent, type RoomMember } from 'matrix-js-sdk'
+import { subscribeIgnoredUsers } from '@nexspeak/core/matrix/safety'
 
 const TYPING_TIMEOUT_MS = 6000
 const TYPING_REFRESH_MS = 4000
@@ -16,23 +17,32 @@ export function useTypingMembers(client: MatrixClient | null, roomId: string): s
   useEffect(() => {
     if (!client || !roomId) return
     const ownUserId = client.getUserId()
+    let frame: number | null = null
 
     const refresh = () => {
+      frame = null
       const room = client.getRoom(roomId)
       const names =
         room
           ?.getMembers()
-          .filter((member) => member.typing && member.userId !== ownUserId)
+          .filter((member) => member.typing && member.userId !== ownUserId && !client.isUserIgnored(member.userId))
           .map((member) => member.name) ?? []
-      setState({ roomId, names })
+      setState((current) => current?.roomId === roomId && current.names.length === names.length &&
+        current.names.every((name, index) => name === names[index]) ? current : { roomId, names })
+    }
+    const scheduleRefresh = () => {
+      if (frame === null) frame = requestAnimationFrame(refresh)
     }
     const onTyping = (_event: MatrixEvent, member: RoomMember) => {
-      if (member.roomId === roomId) refresh()
+      if (member.roomId === roomId) scheduleRefresh()
     }
 
-    queueMicrotask(refresh)
+    scheduleRefresh()
+    const unsubscribeIgnored = subscribeIgnoredUsers(client, scheduleRefresh)
     client.on(RoomMemberEvent.Typing, onTyping)
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      unsubscribeIgnored()
       client.removeListener(RoomMemberEvent.Typing, onTyping)
     }
   }, [client, roomId])

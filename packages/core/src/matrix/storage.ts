@@ -60,6 +60,8 @@ export function loadSession(): MatrixSession | null {
     if (raw === cachedRaw) return cachedSession
 
     cachedRaw = raw
+    // A parse failure must leave this raw value paired with a null snapshot.
+    cachedSession = null
     const parsed: unknown = raw ? JSON.parse(raw) : null
     cachedSession = isMatrixSession(parsed) ? parsed : null
     return cachedSession
