@@ -69,6 +69,7 @@ import { t } from '@nexspeak/i18n'
 import { SoundboardTransport } from '../soundboard-transport'
 import { callSounds, SOUNDBOARD_TOPIC } from './soundboard'
 import { CallTimings } from './call-timings'
+import { localFlag } from '../local-flag'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -81,11 +82,7 @@ const RECONNECT_CUE_QUIET_MS = 2_000
 
 /** Verbose call logging, enabled with localStorage["nexspeak:debug"] = "1". */
 function isDebugEnabled(): boolean {
-  try {
-    return localStorage.getItem('nexspeak:debug') === '1'
-  } catch {
-    return false
-  }
+  return localFlag('nexspeak:debug')
 }
 
 function debug(...args: unknown[]): void {
@@ -324,11 +321,17 @@ export class CallSession {
           // Someone may have started the call on another service while discovery was pending.
           return selectActiveServiceUrl(rtcSession.memberships) ?? ownServiceUrl
         })
-    const sfu = await getSfuConfig(client, service, roomId, timings).catch(async (error: unknown) => {
-      forgetLivekitServiceUrl(client, await service.catch(() => undefined))
-      throw error
-    })
-    const serviceUrl = await service
+    // Neither depends on the other; Promise.all also handles a late rejection of either one.
+    const [serviceUrl, openIdToken] = await Promise.all([
+      service,
+      timings.measure('openid', () => client.getOpenIdToken()),
+    ])
+    const sfu = await timings
+      .measure('token-exchange', () => getSfuConfig(client, serviceUrl, roomId, openIdToken))
+      .catch((error: unknown) => {
+        forgetLivekitServiceUrl(client, serviceUrl)
+        throw error
+      })
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
     debug('got SFU config', sfu.url)
 

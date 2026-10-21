@@ -203,7 +203,7 @@ describe("LiveKit service discovery cache", () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it("aborts a hung well-known lookup after an OpenID failure and permits a fresh retry", async () => {
+  it("aborts a hung well-known lookup at the deadline and permits a fresh retry", async () => {
     vi.useFakeTimers()
     const { client, discover } = mockClient()
     discover.mockResolvedValue({ rtc_transports: [] })
@@ -213,8 +213,7 @@ describe("LiveKit service discovery cache", () => {
     })))
     vi.stubGlobal("fetch", fetchMock)
     const first = discoverLivekitServiceUrl(client)
-    const joiningClient = { ...client, getOpenIdToken: async () => { throw new Error("OpenID unavailable") } } as unknown as MatrixClient
-    await expect(getSfuConfig(joiningClient, first, "!r:x")).rejects.toThrow("OpenID unavailable")
+    await vi.advanceTimersByTimeAsync(0)
     const signal = fetchMock.mock.calls[0][1].signal as AbortSignal
     const failed = expect(first).rejects.toThrow()
     await vi.advanceTimersByTimeAsync(10_000)
@@ -275,64 +274,24 @@ describe("LiveKit service discovery cache", () => {
 describe("getSfuConfig", () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  const client = {
-    getOpenIdToken: async () => ({ access_token: "oid", token_type: "Bearer", matrix_server_name: "example.org", expires_in: 3600 }),
-    getDeviceId: () => "DEVICE",
-  } as unknown as MatrixClient
+  const client = { getDeviceId: () => "DEVICE" } as unknown as MatrixClient
+  const openIdToken = { access_token: "oid", token_type: "Bearer", matrix_server_name: "example.org", expires_in: 3600 }
 
   it("exchanges the OpenID token at /sfu/get", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ url: "wss://sfu", jwt: "token" })))
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(getSfuConfig(client, "https://jwt.example.org/", "!room:example.org")).resolves.toEqual({
+    await expect(getSfuConfig(client, "https://jwt.example.org/", "!room:example.org", openIdToken)).resolves.toEqual({
       url: "wss://sfu",
       jwt: "token",
     })
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe("https://jwt.example.org/sfu/get")
-    expect(JSON.parse(init.body as string)).toMatchObject({ room: "!room:example.org", device_id: "DEVICE" })
+    expect(JSON.parse(init.body as string)).toEqual({ room: "!room:example.org", openid_token: openIdToken, device_id: "DEVICE" })
   })
 
   it("reports a rejected token exchange", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })))
-    await expect(getSfuConfig(client, "https://jwt", "!r:x")).rejects.toThrow(/401/)
-  })
-
-  it("acquires OpenID while discovery is pending, then exchanges only once both are ready", async () => {
-    const discovery = Promise.withResolvers<string>()
-    const openId = Promise.withResolvers<Awaited<ReturnType<MatrixClient["getOpenIdToken"]>>>()
-    const getOpenIdToken = vi.fn(() => openId.promise)
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ url: "wss://sfu", jwt: "token" })))
-    vi.stubGlobal("fetch", fetchMock)
-    const result = getSfuConfig({ ...client, getOpenIdToken } as unknown as MatrixClient, discovery.promise, "!r:x")
-    expect(getOpenIdToken).toHaveBeenCalledOnce()
-    discovery.resolve("https://jwt")
-    await Promise.resolve()
-    expect(fetchMock).not.toHaveBeenCalled()
-    openId.resolve(await client.getOpenIdToken())
-    await expect(result).resolves.toEqual({ url: "wss://sfu", jwt: "token" })
-    expect(fetchMock).toHaveBeenCalledOnce()
-    const [, init] = fetchMock.mock.calls[0]
-    expect(JSON.parse(init.body)).toMatchObject({ openid_token: await client.getOpenIdToken() })
-  })
-
-  it.each(["discovery", "openid"])("handles %s failure without exchanging a token", async (failed) => {
-    const discovery = Promise.withResolvers<string>()
-    const openId = Promise.withResolvers<Awaited<ReturnType<MatrixClient["getOpenIdToken"]>>>()
-    const fetchMock = vi.fn()
-    vi.stubGlobal("fetch", fetchMock)
-    const result = getSfuConfig({ ...client, getOpenIdToken: () => openId.promise } as MatrixClient, discovery.promise, "!r:x")
-    const assertion = expect(result).rejects.toThrow(failed)
-    if (failed === "discovery") {
-      discovery.reject(new Error("discovery"))
-      await assertion
-      openId.reject(new Error("late OpenID failure"))
-    } else {
-      openId.reject(new Error("openid"))
-      await assertion
-      discovery.reject(new Error("late discovery failure"))
-    }
-    await Promise.resolve()
-    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(getSfuConfig(client, "https://jwt", "!r:x", openIdToken)).rejects.toThrow(/401/)
   })
 })

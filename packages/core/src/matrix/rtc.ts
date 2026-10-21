@@ -3,10 +3,9 @@
  * Mirrors what Element Call does so both clients can share a call.
  */
 
-import { EventType, Method, type MatrixClient, type Room } from 'matrix-js-sdk'
+import { EventType, Method, type IOpenIDToken, type MatrixClient, type Room } from 'matrix-js-sdk'
 import type { CallMembership, LivekitTransport, Transport } from 'matrix-js-sdk/lib/matrixrtc'
 import { t } from '@nexspeak/i18n'
-import type { CallTimings } from './call-timings'
 
 export interface SfuConfig {
   url: string
@@ -190,24 +189,9 @@ export function ownLivekitTransport(serviceUrl: string, roomId: string): Livekit
  */
 export async function getSfuConfig(
   client: MatrixClient,
-  serviceUrl: string | Promise<string>,
-  roomId: string,
-  timings?: CallTimings,
-): Promise<SfuConfig> {
-  // Attach both rejection handlers immediately: neither operation depends on the other.
-  const [resolvedServiceUrl, openIdToken] = await Promise.all([
-    serviceUrl,
-    timings ? timings.measure('openid', () => client.getOpenIdToken()) : client.getOpenIdToken(),
-  ])
-  const exchange = () => exchangeSfuToken(client, resolvedServiceUrl, roomId, openIdToken)
-  return timings ? timings.measure('token-exchange', exchange) : exchange()
-}
-
-async function exchangeSfuToken(
-  client: MatrixClient,
   serviceUrl: string,
   roomId: string,
-  openIdToken: Awaited<ReturnType<MatrixClient['getOpenIdToken']>>,
+  openIdToken: IOpenIDToken,
 ): Promise<SfuConfig> {
   const response = await fetch(`${serviceUrl.replace(/\/+$/, '')}/sfu/get`, {
     method: 'POST',

@@ -3,7 +3,10 @@ import type { MatrixClient } from "matrix-js-sdk"
 import type { CallMembership } from "matrix-js-sdk/lib/matrixrtc"
 import { CallSession } from "./call-session"
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
 
 function membership(serviceUrl: string): CallMembership {
   return { getTransport: () => ({ type: "livekit", livekit_service_url: serviceUrl }) } as unknown as CallMembership
@@ -13,7 +16,9 @@ function mockJoin() {
   const discovery = Promise.withResolvers<{ rtc_transports: unknown[] }>()
   const rtcSession = { initialMembershipCalculated: Promise.resolve(), memberships: [] as CallMembership[] }
   const discover = vi.fn(() => discovery.promise)
-  const getOpenIdToken = vi.fn().mockResolvedValue({ access_token: "test-token" })
+  const openId = Promise.withResolvers<{ access_token: string }>()
+  openId.resolve({ access_token: "test-token" })
+  const getOpenIdToken = vi.fn(() => openId.promise)
   // Inspect the real startup path without creating media resources or opening a connection.
   const exchange = vi.fn().mockRejectedValue(new Error("Stop before connecting"))
   vi.stubGlobal("fetch", exchange)
@@ -25,10 +30,12 @@ function mockJoin() {
     http: { authedRequest: discover },
     getOpenIdToken,
   } as unknown as MatrixClient
-  const join = () => expect(CallSession.start(client, "!room:example.org", {
+  const start = () => CallSession.start(client, "!room:example.org", {
     inputDeviceId: "", outputDeviceId: "", outputVolume: 1,
-  })).rejects.toThrow("Stop before connecting")
-  return { discovery, rtcSession, discover, getOpenIdToken, exchange, join }
+  })
+  const join = () => expect(start()).rejects.toThrow("Stop before connecting")
+  const tokenExchanges = () => exchange.mock.calls.filter(([url]) => String(url).endsWith("/sfu/get"))
+  return { discovery, rtcSession, discover, getOpenIdToken, exchange, join, start, tokenExchanges }
 }
 
 describe("call startup service selection", () => {
@@ -57,5 +64,33 @@ describe("call startup service selection", () => {
     discovery.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://own" }] })
     await join()
     expect(exchange.mock.calls[0][0]).toBe("https://own/sfu/get")
+  })
+
+  it("exchanges the OpenID token from the parallel request", async () => {
+    const { discovery, exchange, join } = mockJoin()
+    discovery.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://own" }] })
+    await join()
+    expect(JSON.parse(exchange.mock.calls[0][1].body)).toMatchObject({ openid_token: { access_token: "test-token" } })
+  })
+
+  it.each(["discovery", "openid"])("exchanges no token after a %s failure", async (failed) => {
+    const mocks = mockJoin()
+    vi.stubEnv("NEXT_PUBLIC_LIVEKIT_SERVICE_URL", "")
+    if (failed === "openid") {
+      mocks.getOpenIdToken.mockReturnValueOnce(Promise.reject(new Error("openid")))
+      mocks.discovery.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://own" }] })
+    } else {
+      mocks.discovery.reject(new Error("Not supported"))
+    }
+    await expect(mocks.start()).rejects.toThrow()
+    expect(mocks.tokenExchanges()).toHaveLength(0)
+  })
+
+  it("looks up the service again after the token exchange through it failed", async () => {
+    const { discovery, discover, join } = mockJoin()
+    discovery.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://own" }] })
+    await join()
+    await join()
+    expect(discover).toHaveBeenCalledTimes(2)
   })
 })

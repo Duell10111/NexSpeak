@@ -1,14 +1,12 @@
+import { localFlag } from '../local-flag'
+
 /** On-demand join diagnostics: no polling, tokens, room ids or service URLs. */
 export class CallTimings {
   private readonly enabled: boolean
   private readonly startedAt: number
 
   constructor() {
-    try {
-      this.enabled = localStorage.getItem('nexspeak:callTimings') === '1'
-    } catch {
-      this.enabled = false
-    }
+    this.enabled = localFlag('nexspeak:callTimings')
     this.startedAt = this.enabled ? performance.now() : 0
   }
 
