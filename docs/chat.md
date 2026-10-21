@@ -9,7 +9,11 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
 - **Edit:** Escape cancels, Enter saves. Edited messages show **(edited)**.
 - **Files:** attach them with the clip, drag and drop them into the chat, or paste them. Up to 100 MB;
   in encrypted channels files are encrypted too.
-- **Emoji:** the emoji button in the message field, or reactions on messages.
+- **Emoji:** the emoji button in the message field, or reactions on messages, opens the same
+  picker. **Search emoji** searches English and German names and keywords. Use **Emoji category**
+  to browse a category and **Skin tone** to choose a variant; **All skin tones** includes mixed
+  tones. Your skin tone and up to 32 **Frequently used** emoji are remembered on this device.
+  Emoji use your system font, so newer characters may depend on your operating system.
 - **Reactions:** choose **Add reaction**, then an emoji. The picker stays next to the message while
   you move the pointer to it. Escape closes it without adding a reaction.
 - A message that failed to send can be **resent** or **discarded**.

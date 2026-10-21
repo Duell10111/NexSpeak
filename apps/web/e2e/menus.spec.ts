@@ -48,6 +48,7 @@ test("the reaction picker stays anchored when the pointer leaves the message", a
   await page.mouse.move(2, 2)
   await expect(trigger).toBeVisible()
   for (const emoji of ["👍", "✨"]) {
+    await page.getByRole("textbox", { name: "Emojis suchen" }).fill(emoji)
     await picker.getByRole("option", { name: emoji, exact: true }).hover()
     const current = await popup.boundingBox()
     expect(current).not.toBeNull()

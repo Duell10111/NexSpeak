@@ -103,8 +103,10 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Done (2026-10-17): `apps/web/scripts/third-party-licenses.mjs` (no dependency) collects the
   production dependencies of web and desktop into `public/third-party-licenses.json` at build time;
   *Settings → About* shows it. `--check` (CI step "License check") fails on unknown or incompatible
-  licenses. Open: a `THIRD_PARTY_NOTICES.md` for the repository.
-- List bundled emoji data and icons (lucide: ISC) separately.
+  licenses. Bundled assets are documented in `THIRD_PARTY_NOTICES.md` in the repository.
+- Bundled emoji names and keywords: Unicode Emoji 17.0 and CLDR 48 (Unicode-3.0);
+  the picker loads this data only on first open. See `THIRD_PARTY_NOTICES.md` and the bundled
+  `public/licenses/unicode.txt` license. Icons: lucide (ISC).
 - **About dialog:** version, git commit, links (source, issues, privacy), licenses, contributors. Done
   except privacy (depends on the hosting instance) and contributors.
 
@@ -161,7 +163,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Keep the reaction emoji picker anchored while the pointer leaves the message (#90)
 - Message search with filters (#37), link previews (opt-in, #40), custom emoji (`im.ponies`, #39),
   polls (#38)
-- Full emoji picker with search and categories, loaded on first open (#50); stickers (#51)
+- [x] Full emoji picker with search, categories, skin tones and frequent emoji, loaded on first open (#50)
+- Stickers (#51)
 - GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
 - Play audio and video attachments inline, loaded only on play (#42)
 - Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)

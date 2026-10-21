@@ -722,6 +722,33 @@ export const de = {
   'login.oidcHint': 'Du meldest dich auf der Seite deines Homeservers an und kommst danach automatisch zurück.',
   'login.oidcFailed': 'Anmeldung abgebrochen oder fehlgeschlagen: {reason}',
   'settings.manageAccount': 'Konto verwalten (Passwort, Sitzungen)',
+
+  // Lazy Unicode emoji picker.
+  'emojiPicker.loading': 'Emojis werden geladen…',
+  'emojiPicker.search': 'Emojis suchen',
+  'emojiPicker.category': 'Emoji-Kategorie',
+  'emojiPicker.all': 'Alle Kategorien',
+  'emojiPicker.frequent': 'Häufig verwendet',
+  'emojiPicker.server': 'Server-Emojis',
+  'emojiPicker.skinTone': 'Hautfarbe',
+  'emojiPicker.defaultTone': 'Standard',
+  'emojiPicker.allTones': 'Alle Hautfarben',
+  'emojiPicker.noResults': 'Keine Emojis gefunden',
+  'emojiPicker.smileys': 'Smileys & Emotionen',
+  'emojiPicker.people': 'Menschen & Körper',
+  'emojiPicker.components': 'Bestandteile',
+  'emojiPicker.nature': 'Tiere & Natur',
+  'emojiPicker.food': 'Essen & Trinken',
+  'emojiPicker.travel': 'Reisen & Orte',
+  'emojiPicker.activities': 'Aktivitäten',
+  'emojiPicker.objects': 'Objekte',
+  'emojiPicker.symbols': 'Symbole',
+  'emojiPicker.flags': 'Flaggen',
+  'emojiPicker.tone1': 'Hell',
+  'emojiPicker.tone2': 'Mittelhell',
+  'emojiPicker.tone3': 'Mittel',
+  'emojiPicker.tone4': 'Mitteldunkel',
+  'emojiPicker.tone5': 'Dunkel',
 } as const
 
 export type MessageKey = keyof typeof de
