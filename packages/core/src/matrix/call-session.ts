@@ -67,6 +67,7 @@ import {
 import { t } from '@nexspeak/i18n'
 import { SoundboardTransport } from '../soundboard-transport'
 import { callSounds, SOUNDBOARD_TOPIC } from './soundboard'
+import { CallTimings } from './call-timings'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -277,6 +278,7 @@ export class CallSession {
     private readonly ownIdentity: string,
     audio: CallAudioOptions,
     private readonly client: MatrixClient,
+    private readonly timings: CallTimings,
   ) {
     this.ownKeyReady = keyProvider
       ? new Promise((resolve) => {
@@ -300,6 +302,7 @@ export class CallSession {
   }
 
   static async start(client: MatrixClient, roomId: string, audio: CallAudioOptions): Promise<CallSession> {
+    const timings = new CallTimings()
     const room = client.getRoom(roomId)
     if (!room) throw new Error(t('error.roomNotFound'))
 
@@ -311,11 +314,14 @@ export class CallSession {
     setLogLevel(isDebugEnabled() ? LogLevel.debug : LogLevel.warn)
 
     const rtcSession = client.matrixRTC.getRoomSession(room)
-    await rtcSession.initialMembershipCalculated
-    const ownServiceUrl = await discoverLivekitServiceUrl(client)
-    const serviceUrl = selectActiveServiceUrl(rtcSession.memberships, ownServiceUrl)
+    await timings.measure('memberships', () => rtcSession.initialMembershipCalculated)
+    const advertisedServiceUrl = selectActiveServiceUrl(rtcSession.memberships)
+    const service = advertisedServiceUrl
+      ? Promise.resolve(advertisedServiceUrl)
+      : timings.measure('discovery', () => discoverLivekitServiceUrl(client))
+    const sfu = await getSfuConfig(client, service, roomId, timings)
+    const serviceUrl = await service
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
-    const sfu = await getSfuConfig(client, serviceUrl, roomId)
     debug('got SFU config', sfu.url)
 
     installH264MainProfilePreference()
@@ -349,7 +355,7 @@ export class CallSession {
     })
 
     const ownIdentity = `${userId}:${client.getDeviceId() ?? ''}`
-    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio, client)
+    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio, client, timings)
     try {
       await session.connect(serviceUrl, sfu, userId, client.getDeviceId() ?? '')
     } catch (error) {
@@ -372,7 +378,7 @@ export class CallSession {
 
     // Nothing is subscribed by default, so remote screenshares cost no bandwidth or decoding
     // until someone watches them; camera and audio are subscribed in subscribeByDefault().
-    await this.livekitRoom.connect(sfu.url, sfu.jwt, { autoSubscribe: false })
+    await this.timings.measure('connection', () => this.livekitRoom.connect(sfu.url, sfu.jwt, { autoSubscribe: false }))
     debug('connected to SFU')
     // TrackPublished only fires for tracks published after we joined.
     this.livekitRoom.remoteParticipants.forEach((participant) => {
@@ -389,7 +395,10 @@ export class CallSession {
 
   private async publishInitialMicrophone(): Promise<void> {
     try {
-      await this.setMicrophoneEnabled(true)
+      await this.timings.measure('microphone', async () => {
+        await this.setMicrophoneEnabled(true)
+        await this.processingQueue
+      })
       debug('microphone published')
     } catch (error) {
       // Joining without a microphone (denied or missing) is still useful for listening.

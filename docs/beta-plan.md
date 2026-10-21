@@ -172,6 +172,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Custom status text and "Do not disturb" (#45)
 - [x] Better noise suppression and voice activity detection (#41)
 - [x] Reliable speaking feedback and live microphone sensitivity testing (#94)
+- [x] Skip redundant service discovery on call joins, cache discovery and add opt-in join timings (#92)
 - [ ] Investigate attenuation of other PC audio on the first call join (#94)
 - [x] Camera selection and camera preview (#43)
 - [x] Pop out streams and video into an always-on-top window, reusing the existing track (#47)

@@ -62,3 +62,15 @@ Report bugs in the [issue tracker](https://github.com/Duell10111/NexSpeak/issues
 
 For detailed logs in the web app, run `localStorage.setItem("nexspeak:debug", "1")` in the browser
 console and reload; NexSpeak and LiveKit then log verbosely.
+
+For slow call joins, run `localStorage.setItem("nexspeak:callTimings", "1")` in the console before
+joining. Entries starting with `[call timing]` show each phase's duration and the elapsed time
+since the join started: membership loading, service discovery (only when needed), OpenID,
+token exchange, connection, and microphone readiness (including the encryption key and audio
+processing). Discovery and OpenID run in parallel, so their durations should not be added together.
+Microphone readiness is omitted when joining muted. Timings contain no tokens, room ids or service
+URLs. Disable them with `localStorage.removeItem("nexspeak:callTimings")` before the next join.
+
+Joining an existing call uses the service advertised by its oldest member without looking up
+your own service. When discovery is needed, a successful result is reused for five minutes in
+the current Matrix client; failures are retried on the next attempt. No discovery runs while idle.

@@ -41,7 +41,14 @@ for (const encrypted of [false, true]) {
 
     const alicePage = await newPage(browser)
     const bobPage = await newPage(browser)
+    await bobPage.addInitScript(() => localStorage.setItem("nexspeak:callTimings", "1"))
+    const timingPhases = new Set<string>()
+    bobPage.on("console", (message) => {
+      if (message.type() !== "info" || !message.text().startsWith("[call timing]")) return
+      void message.args()[1]?.jsonValue().then((timing: { phase: string }) => timingPhases.add(timing.phase))
+    })
     await continuousMicrophone(alicePage)
+    await continuousMicrophone(bobPage)
     await login(alicePage, alice)
     await login(bobPage, bob)
     await openRoom(alicePage, roomName)
@@ -57,6 +64,19 @@ for (const encrypted of [false, true]) {
     await expect(duration).toHaveText(/^\d+:\d{2}$/)
     const initialDuration = await duration.textContent()
     await expect(duration).not.toHaveText(initialDuration!)
+
+    // An advertised service must work even if Bob's own discovery never responds.
+    // Hold any accidental request until after remote audio verification: no timing threshold.
+    let discoveryRequests = 0
+    let releaseDiscovery!: () => void
+    const discoveryBlocked = new Promise<void>((resolve) => { releaseDiscovery = resolve })
+    for (const pattern of ["**/_matrix/client/**/rtc/transports", "**/.well-known/matrix/client"]) {
+      await bobPage.route(pattern, async (route) => {
+        discoveryRequests++
+        await discoveryBlocked
+        await route.abort()
+      })
+    }
     await joinVoice(bobPage)
 
     for (const page of [alicePage, bobPage]) {
@@ -72,6 +92,10 @@ for (const encrypted of [false, true]) {
 
     // With E2EE, frames must actually decrypt: wait for the remote mic to produce audio levels.
     await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 30_000 }).toBeGreaterThan(5)
+    await expect.poll(() => remoteAudioLevel(alicePage), { timeout: 30_000 }).toBeGreaterThan(5)
+    expect(discoveryRequests).toBe(0)
+    releaseDiscovery()
+    await expect.poll(() => [...timingPhases].sort()).toEqual(["connection", "memberships", "microphone", "openid", "token-exchange"])
     const remoteSpeaking = tiles(bobPage).filter({ hasText: alice.username }).locator(".ring-nx-online")
     await expect.poll(() => remoteSpeaking.count(), { timeout: 20_000, intervals: [50] }).toBe(1)
 
@@ -99,9 +123,17 @@ for (const encrypted of [false, true]) {
     await expect(duration).toHaveCount(0)
     await expect(alicePage.getByLabel(/^Anruf läuft seit /)).toHaveCount(0)
 
-    // A new call uses a fresh membership timestamp instead of the previous call's duration.
+    // A new call uses a fresh timestamp and reuses discovery within the same client.
+    let repeatDiscoveryRequests = 0
+    for (const pattern of ["**/_matrix/client/**/rtc/transports", "**/.well-known/matrix/client"]) {
+      await alicePage.route(pattern, (route) => {
+        repeatDiscoveryRequests++
+        return route.abort()
+      })
+    }
     await joinVoice(alicePage)
     await expect(duration).toHaveText(/^0:0\d$/)
+    expect(repeatDiscoveryRequests).toBe(0)
   })
 }
 

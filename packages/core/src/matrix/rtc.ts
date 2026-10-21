@@ -6,10 +6,25 @@
 import { EventType, type MatrixClient, type Room } from 'matrix-js-sdk'
 import type { CallMembership, LivekitTransport, Transport } from 'matrix-js-sdk/lib/matrixrtc'
 import { t } from '@nexspeak/i18n'
+import type { CallTimings } from './call-timings'
 
 export interface SfuConfig {
   url: string
   jwt: string
+}
+
+const DISCOVERY_CACHE_MS = 5 * 60_000
+// Weak keys release the result with the client. Expiry is checked only on demand.
+const discoveryCache = new WeakMap<MatrixClient, { result: Promise<string>; expiresAt: number }>()
+
+function isServiceUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password
+  } catch {
+    return false
+  }
 }
 
 function isLivekitServiceTransport(transport: unknown): transport is Transport & { livekit_service_url: string } {
@@ -17,7 +32,7 @@ function isLivekitServiceTransport(transport: unknown): transport is Transport &
     typeof transport === 'object' &&
     transport !== null &&
     (transport as Transport).type === 'livekit' &&
-    typeof (transport as { livekit_service_url?: unknown }).livekit_service_url === 'string'
+    isServiceUrl((transport as { livekit_service_url?: unknown }).livekit_service_url)
   )
 }
 
@@ -37,7 +52,21 @@ async function fromWellKnown(baseUrl: string): Promise<string | null> {
  * Find the LiveKit JWT service the user's homeserver offers (MSC4143),
  * falling back to .well-known and finally to NEXT_PUBLIC_LIVEKIT_SERVICE_URL.
  */
-export async function discoverLivekitServiceUrl(client: MatrixClient): Promise<string> {
+export function discoverLivekitServiceUrl(client: MatrixClient): Promise<string> {
+  const cached = discoveryCache.get(client)
+  if (cached && Date.now() < cached.expiresAt) return cached.result
+
+  // Share in-flight discovery too. Failed attempts are never cached.
+  const entry = { result: discoverUncached(client), expiresAt: Infinity }
+  discoveryCache.set(client, entry)
+  void entry.result.then(
+    () => { entry.expiresAt = Date.now() + DISCOVERY_CACHE_MS },
+    () => { if (discoveryCache.get(client) === entry) discoveryCache.delete(client) },
+  )
+  return entry.result
+}
+
+async function discoverUncached(client: MatrixClient): Promise<string> {
   try {
     const transports = await client._unstable_getRTCTransports()
     const transport = transports.find(isLivekitServiceTransport)
@@ -54,19 +83,19 @@ export async function discoverLivekitServiceUrl(client: MatrixClient): Promise<s
   if (fromHomeserver) return fromHomeserver
 
   const fallback = process.env.NEXT_PUBLIC_LIVEKIT_SERVICE_URL
-  if (fallback) return fallback
+  if (isServiceUrl(fallback)) return fallback
 
   throw new Error(t('call.error.noService'))
 }
 
 /**
- * Reuse the service advertised by the oldest member, or our own for a new call.
+ * Reuse the service advertised by the oldest member, or fall back to discovery.
  * MatrixRTC keeps memberships sorted oldest first.
  */
 export function selectActiveServiceUrl(
   memberships: CallMembership[],
-  ownServiceUrl: string,
-): string {
+  ownServiceUrl?: string,
+): string | undefined {
   const oldest = memberships[0]
   if (!oldest) return ownServiceUrl
   const transport = oldest.getTransport()
@@ -82,8 +111,27 @@ export function ownLivekitTransport(serviceUrl: string, roomId: string): Livekit
  * Uses the legacy /sfu/get endpoint, which assigns the "<user_id>:<device_id>" identity
  * that all MatrixRTC clients match memberships against.
  */
-export async function getSfuConfig(client: MatrixClient, serviceUrl: string, roomId: string): Promise<SfuConfig> {
-  const openIdToken = await client.getOpenIdToken()
+export async function getSfuConfig(
+  client: MatrixClient,
+  serviceUrl: string | Promise<string>,
+  roomId: string,
+  timings?: CallTimings,
+): Promise<SfuConfig> {
+  // Attach both rejection handlers immediately: neither operation depends on the other.
+  const [resolvedServiceUrl, openIdToken] = await Promise.all([
+    serviceUrl,
+    timings ? timings.measure('openid', () => client.getOpenIdToken()) : client.getOpenIdToken(),
+  ])
+  const exchange = () => exchangeSfuToken(client, resolvedServiceUrl, roomId, openIdToken)
+  return timings ? timings.measure('token-exchange', exchange) : exchange()
+}
+
+async function exchangeSfuToken(
+  client: MatrixClient,
+  serviceUrl: string,
+  roomId: string,
+  openIdToken: Awaited<ReturnType<MatrixClient['getOpenIdToken']>>,
+): Promise<SfuConfig> {
   const response = await fetch(`${serviceUrl.replace(/\/+$/, '')}/sfu/get`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
