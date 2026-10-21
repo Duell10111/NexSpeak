@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { MatrixClient } from "matrix-js-sdk"
 import type { CallMembership } from "matrix-js-sdk/lib/matrixrtc"
-import { discoverLivekitServiceUrl, getSfuConfig, selectActiveServiceUrl, userIdFromIdentity } from "./rtc"
+import { discoverLivekitServiceUrl, forgetLivekitServiceUrl, getSfuConfig, selectActiveServiceUrl, userIdFromIdentity } from "./rtc"
 
 describe("userIdFromIdentity", () => {
   it("splits off the device id", () => {
@@ -37,11 +37,20 @@ describe("selectActiveServiceUrl", () => {
     expect(selectActiveServiceUrl([oldest], "https://own")).toBe("https://own")
   })
 
-  it.each([undefined, "", "/relative", "not a url", "wss://sfu", "javascript:alert(1)", "https://user:secret@jwt"])(
+  it.each([
+    undefined, "", "/relative", "not a url", "wss://sfu", "javascript:alert(1)", "https://user:secret@jwt",
+    "http://attacker.example", "http://192.168.1.10:8070",
+  ])(
     "requires discovery for an invalid advertised service: %s", (url) => {
       const oldest = membershipWith({ type: "livekit", livekit_service_url: url })
       const newer = membershipWith({ type: "livekit", livekit_service_url: "https://newer" })
       expect(selectActiveServiceUrl([oldest, newer])).toBeUndefined()
+    },
+  )
+
+  it.each(["http://localhost:8070", "http://127.0.0.1:8070", "http://[::1]:8070", "http://jwt.localhost"])(
+    "accepts plain HTTP from other members only on this machine: %s", (url) => {
+      expect(selectActiveServiceUrl([membershipWith({ type: "livekit", livekit_service_url: url })])).toBe(url)
     },
   )
 
@@ -111,6 +120,48 @@ describe("LiveKit service discovery cache", () => {
     await expect(discoverLivekitServiceUrl(client)).rejects.toThrow()
     await expect(discoverLivekitServiceUrl(client)).resolves.toBe("https://jwt")
     expect(discover).toHaveBeenCalledTimes(2)
+  })
+
+  it("forgets a cached service after it failed, but keeps a different one", async () => {
+    const { client, discover } = mockClient()
+    await discoverLivekitServiceUrl(client)
+    forgetLivekitServiceUrl(client, "https://other")
+    forgetLivekitServiceUrl(client, undefined)
+    await discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledOnce()
+    forgetLivekitServiceUrl(client, "https://jwt")
+    await discoverLivekitServiceUrl(client)
+    expect(discover).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps a pending lookup when a service is forgotten", async () => {
+    const { client, discover } = mockClient()
+    const pending = Promise.withResolvers<{ rtc_transports: unknown[] }>()
+    discover.mockReturnValueOnce(pending.promise)
+    const first = discoverLivekitServiceUrl(client)
+    forgetLivekitServiceUrl(client, "https://jwt")
+    const second = discoverLivekitServiceUrl(client)
+    pending.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://jwt" }] })
+    expect(await Promise.all([first, second])).toEqual(["https://jwt", "https://jwt"])
+    expect(discover).toHaveBeenCalledOnce()
+  })
+
+  it("accepts plain HTTP from the own homeserver", async () => {
+    const { client, discover } = mockClient()
+    discover.mockResolvedValueOnce({ rtc_transports: [{ type: "livekit", livekit_service_url: "http://192.168.1.10:8070" }] })
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe("http://192.168.1.10:8070")
+  })
+
+  it.each([
+    ["https://jwt.example.org", undefined, "https://jwt.example.org/"],
+    ["/livekit-jwt", "https://chat.example.org/rooms/", "https://chat.example.org/livekit-jwt"],
+  ])("uses the build-time fallback %s as an absolute URL", async (value, page, expected) => {
+    const { client, discover } = mockClient()
+    discover.mockRejectedValueOnce(new Error("Not supported"))
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Unavailable")))
+    if (page) vi.stubGlobal("location", new URL(page))
+    vi.stubEnv("NEXT_PUBLIC_LIVEKIT_SERVICE_URL", value)
+    await expect(discoverLivekitServiceUrl(client)).resolves.toBe(expected)
   })
 
   it("validates discovery results and caches the well-known fallback", async () => {

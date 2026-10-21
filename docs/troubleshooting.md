@@ -76,8 +76,10 @@ Microphone readiness is omitted when joining muted. Timings contain no tokens, r
 URLs. Disable them with `localStorage.removeItem("nexspeak:callTimings")` before the next join.
 
 Joining an existing call uses the service advertised by its oldest member without looking up
-your own service. When discovery is needed, a successful result is reused for five minutes in
-the current Matrix client; failures are retried on the next attempt. A lookup has a ten-second
+your own service. That service must use HTTPS (plain HTTP only on `localhost`), because it
+receives your OpenID token; otherwise NexSpeak looks up your own service. When discovery is needed, a successful result is reused for five minutes in
+the current Matrix client; failed lookups are retried on the next attempt, and a cached service
+is dropped as soon as joining through it fails. A lookup has a ten-second
 deadline across all discovery methods, and pending requests are aborted when it expires. If a
 call starts while discovery is running, NexSpeak rechecks its oldest membership before choosing
 the service. No discovery runs while idle.

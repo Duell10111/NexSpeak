@@ -36,6 +36,7 @@ import {
   CallPermissionError,
   canJoinCalls,
   discoverLivekitServiceUrl,
+  forgetLivekitServiceUrl,
   getSfuConfig,
   ownLivekitTransport,
   selectActiveServiceUrl,
@@ -323,7 +324,10 @@ export class CallSession {
           // Someone may have started the call on another service while discovery was pending.
           return selectActiveServiceUrl(rtcSession.memberships) ?? ownServiceUrl
         })
-    const sfu = await getSfuConfig(client, service, roomId, timings)
+    const sfu = await getSfuConfig(client, service, roomId, timings).catch(async (error: unknown) => {
+      forgetLivekitServiceUrl(client, await service.catch(() => undefined))
+      throw error
+    })
     const serviceUrl = await service
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
     debug('got SFU config', sfu.url)
@@ -363,6 +367,7 @@ export class CallSession {
     try {
       await session.connect(serviceUrl, sfu, userId, client.getDeviceId() ?? '')
     } catch (error) {
+      forgetLivekitServiceUrl(client, serviceUrl)
       await session.leave()
       throw error
     }

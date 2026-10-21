@@ -19,27 +19,59 @@ interface DiscoveryEntry {
   result: Promise<string>
   expiresAt: number
   cancel?: () => void
+  url?: string
 }
 // Weak keys release results with the client. Successful cache entries expire on demand.
 const discoveryCache = new WeakMap<MatrixClient, DiscoveryEntry>()
 
-function isServiceUrl(value: unknown): value is string {
-  if (typeof value !== 'string') return false
+function parseServiceUrl(value: unknown): URL | null {
+  if (typeof value !== 'string') return null
   try {
     const url = new URL(value)
-    return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password
+    return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password ? url : null
   } catch {
-    return false
+    return null
   }
 }
 
-function isLivekitServiceTransport(transport: unknown): transport is Transport & { livekit_service_url: string } {
+/** Services from our own homeserver or build config, which already sees our traffic. */
+function isServiceUrl(value: unknown): value is string {
+  return parseServiceUrl(value) !== null
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * Services advertised by other call members receive our OpenID token:
+ * plain HTTP only to this machine (local development), never across the network.
+ */
+function isSecureServiceUrl(value: unknown): value is string {
+  const url = parseServiceUrl(value)
+  return url !== null && (url.protocol === 'https:' || LOOPBACK_HOSTS.has(url.hostname) || url.hostname.endsWith('.localhost'))
+}
+
+function isLivekitServiceTransport(
+  transport: unknown,
+  isAcceptedUrl: (value: unknown) => value is string,
+): transport is Transport & { livekit_service_url: string } {
   return (
     typeof transport === 'object' &&
     transport !== null &&
     (transport as Transport).type === 'livekit' &&
-    isServiceUrl((transport as { livekit_service_url?: unknown }).livekit_service_url)
+    isAcceptedUrl((transport as { livekit_service_url?: unknown }).livekit_service_url)
   )
+}
+
+/** Our membership tells other clients where to join, so a relative build setting becomes absolute. */
+function fallbackServiceUrl(): string | null {
+  const value = process.env.NEXT_PUBLIC_LIVEKIT_SERVICE_URL
+  if (!value) return null
+  try {
+    const url = new URL(value, typeof location === 'undefined' ? undefined : location.href).href
+    return isServiceUrl(url) ? url : null
+  } catch {
+    return null
+  }
 }
 
 async function fromWellKnown(baseUrl: string, signal: AbortSignal): Promise<string | null> {
@@ -49,7 +81,7 @@ async function fromWellKnown(baseUrl: string, signal: AbortSignal): Promise<stri
     if (!response.ok) return null
     const foci = (await response.json())['org.matrix.msc4143.rtc_foci']
     signal.throwIfAborted()
-    const focus = Array.isArray(foci) ? foci.find(isLivekitServiceTransport) : undefined
+    const focus = Array.isArray(foci) ? foci.find((transport) => isLivekitServiceTransport(transport, isServiceUrl)) : undefined
     return focus?.livekit_service_url ?? null
   } catch {
     signal.throwIfAborted()
@@ -85,14 +117,24 @@ export function discoverLivekitServiceUrl(client: MatrixClient): Promise<string>
   }
   discoveryCache.set(client, entry)
   void entry.result.then(
-    () => {
+    (url) => {
       if (discoveryCache.get(client) !== entry) return
       entry.expiresAt = Date.now() + DISCOVERY_CACHE_MS
       entry.cancel = undefined
+      entry.url = url
     },
     () => { if (discoveryCache.get(client) === entry) discoveryCache.delete(client) },
   )
   return entry.result
+}
+
+/**
+ * Drop a cached discovery result after its service failed, so the next join looks again
+ * instead of reusing a dead service for the rest of the cache lifetime.
+ */
+export function forgetLivekitServiceUrl(client: MatrixClient, serviceUrl: string | undefined): void {
+  const cached = discoveryCache.get(client)
+  if (serviceUrl && cached?.url === serviceUrl) discoveryCache.delete(client)
 }
 
 async function discoverUncached(client: MatrixClient, signal: AbortSignal): Promise<string> {
@@ -103,7 +145,7 @@ async function discoverUncached(client: MatrixClient, signal: AbortSignal): Prom
       { prefix: '/_matrix/client/unstable/org.matrix.msc4143', abortSignal: signal },
     )
     signal.throwIfAborted()
-    const transport = transports.find(isLivekitServiceTransport)
+    const transport = transports.find((transport) => isLivekitServiceTransport(transport, isServiceUrl))
     if (transport) return transport.livekit_service_url
   } catch {
     signal.throwIfAborted()
@@ -117,8 +159,8 @@ async function discoverUncached(client: MatrixClient, signal: AbortSignal): Prom
   const fromHomeserver = await fromWellKnown(client.getHomeserverUrl(), signal)
   if (fromHomeserver) return fromHomeserver
 
-  const fallback = process.env.NEXT_PUBLIC_LIVEKIT_SERVICE_URL
-  if (isServiceUrl(fallback)) return fallback
+  const fallback = fallbackServiceUrl()
+  if (fallback) return fallback
 
   throw new Error(t('call.error.noService'))
 }
@@ -134,7 +176,7 @@ export function selectActiveServiceUrl(
   const oldest = memberships[0]
   if (!oldest) return ownServiceUrl
   const transport = oldest.getTransport()
-  return isLivekitServiceTransport(transport) ? transport.livekit_service_url : ownServiceUrl
+  return isLivekitServiceTransport(transport, isSecureServiceUrl) ? transport.livekit_service_url : ownServiceUrl
 }
 
 export function ownLivekitTransport(serviceUrl: string, roomId: string): LivekitTransport {
