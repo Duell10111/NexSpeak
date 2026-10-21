@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useStickers } from '@/hooks/useStickers'
@@ -18,8 +18,11 @@ export default function StickerPickerContent({ onSelect }: { onSelect: (sticker:
   const [query, setQuery] = useState('')
   const [scroll, setScroll] = useState(0)
   const viewport = useRef<HTMLDivElement>(null)
-  const words = normalizeSearch(query).split(/\s+/).filter(Boolean)
-  const filtered = stickers.filter((sticker) => words.every((word) => normalizeSearch(`${sticker.name} ${sticker.body} ${sticker.packName}`).includes(word)))
+  const searchable = useMemo(() => stickers.map((sticker) => normalizeSearch(`${sticker.name} ${sticker.body} ${sticker.packName}`)), [stickers])
+  const filtered = useMemo(() => {
+    const words = normalizeSearch(query).split(/\s+/).filter(Boolean)
+    return stickers.filter((_, index) => words.every((word) => searchable[index].includes(word)))
+  }, [stickers, searchable, query])
   const first = Math.max(0, Math.floor(scroll / ROW_HEIGHT) - 1) * COLUMNS
   const last = Math.min(filtered.length, (Math.ceil((scroll + HEIGHT) / ROW_HEIGHT) + 1) * COLUMNS)
   function focus(index: number) {

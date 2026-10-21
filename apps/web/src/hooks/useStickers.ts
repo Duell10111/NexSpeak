@@ -1,6 +1,6 @@
 'use client'
 
-import { useContext, useEffect, useReducer } from 'react'
+import { useContext, useEffect, useMemo, useReducer } from 'react'
 import { ClientEvent, RoomStateEvent } from 'matrix-js-sdk'
 import { availableStickers, EMOTE_ROOMS_EVENT, ROOM_EMOTES_EVENT, USER_EMOTES_EVENT } from '@nexspeak/core/matrix/custom-emojis'
 import { EmojiServerContext } from '@/hooks/useServerEmojis'
@@ -10,7 +10,7 @@ import { useMatrixClient } from '@/hooks/useMatrixClient'
 export function useStickers(active: boolean) {
   const serverId = useContext(EmojiServerContext)
   const { client } = useMatrixClient()
-  const [, changed] = useReducer((version: number) => version + 1, 0)
+  const [version, changed] = useReducer((version: number) => version + 1, 0)
   useEffect(() => {
     if (!active || !client) return
     let frame: number | null = null
@@ -31,5 +31,7 @@ export function useStickers(active: boolean) {
       client.removeListener(ClientEvent.Room, update)
     }
   }, [active, client])
-  return active && client ? availableStickers(client, serverId) : []
+  // Parse packs only when they change, not on every picker re-render (e.g. while scrolling).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version marks pack changes
+  return useMemo(() => active && client ? availableStickers(client, serverId) : [], [active, client, serverId, version])
 }

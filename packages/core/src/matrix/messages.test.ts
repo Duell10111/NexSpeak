@@ -94,7 +94,7 @@ describe('sendSticker', () => {
     expect(client.sendEvent.mock.calls[0][2]['m.relates_to']).toEqual({
       rel_type: 'm.thread', event_id: '$root', is_falling_back: true, 'm.in_reply_to': { event_id: '$last' },
     })
-    expect(() => sendSticker(client as unknown as MatrixClient, '!r', { ...sticker, url: 'https://tracker/pixel' })).toThrow('Invalid sticker')
+    await expect(sendSticker(client as unknown as MatrixClient, '!r', { ...sticker, url: 'https://tracker/pixel' })).rejects.toThrow('Invalid sticker')
     expect(client.sendEvent).toHaveBeenCalledTimes(1)
   })
 })

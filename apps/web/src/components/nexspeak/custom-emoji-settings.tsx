@@ -57,8 +57,12 @@ export function CustomEmojiSettings({ serverId }: { serverId: string }) {
       toast.error(t('customEmoji.invalidName')); return
     }
     void action(async () => {
+      // Other clients size stickers from info.w/h; reading them once at upload is cheap.
+      const bitmap = await createImageBitmap(file)
+      const info = { mimetype: file.type, size: file.size, w: bitmap.width, h: bitmap.height }
+      bitmap.close()
       const { content_uri: url } = await client.uploadContent(file, { type: file.type, includeFilename: false })
-      await changeServerEmoji(client, serverId, { name, image: { url, usage: [usage], info: { mimetype: file.type, size: file.size } } })
+      await changeServerEmoji(client, serverId, { name, image: { url, usage: [usage], info } })
       setName('')
     })
   }
@@ -90,7 +94,7 @@ export function CustomEmojiSettings({ serverId }: { serverId: string }) {
           <div className="max-h-[45vh] space-y-2 overflow-y-auto">
             {emojis.map((emoji) => <EmojiEntry key={`${emoji.packId}:${emoji.name}`} emoji={emoji} disabled={!canEdit} busy={busy}
               onRename={(next) => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name, name: next }))}
-              onDelete={() => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name }))} />)}
+              onDelete={() => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name, usage }))} />)}
           </div>
         </TabsContent>
       </Tabs>

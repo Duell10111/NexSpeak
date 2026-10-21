@@ -147,7 +147,7 @@ function MessageBody({ message }: { message: MatrixMessage }) {
     case "image":
       return <ImageAttachment message={message} />
     case 'sticker':
-      return <StickerImage mxc={message.media?.mxc} name={message.body} />
+      return <StickerImage mxc={message.media?.mxc} name={message.body} width={message.media?.width} height={message.media?.height} />
     case "video":
     case "audio":
     case "file":

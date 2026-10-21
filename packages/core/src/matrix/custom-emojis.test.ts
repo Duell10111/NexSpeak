@@ -34,6 +34,15 @@ describe('server emoji packs', () => {
     expect(client.sendStateEvent.mock.calls[1][2].images).not.toHaveProperty('cat')
   })
 
+  it('deletes only one usage of an unrestricted image and removes it once no usage is left', async () => {
+    const image = { url: 'mxc://test/cat', body: 'Cat' }
+    const client = clientWith({ images: { cat: image, sticker: { url: 'mxc://test/sticker', usage: ['sticker'] } } })
+    await changeServerEmoji(client as unknown as MatrixClient, '!server', { oldName: 'cat', usage: 'sticker' })
+    expect(client.sendStateEvent.mock.calls[0][2].images.cat).toEqual({ ...image, usage: ['emoticon'] })
+    await changeServerEmoji(client as unknown as MatrixClient, '!server', { oldName: 'sticker', usage: 'sticker' })
+    expect(client.sendStateEvent.mock.calls[1][2].images).not.toHaveProperty('sticker')
+  })
+
   it('requires moderator role and the actual state-event permission', async () => {
     for (const client of [clientWith({}, 0, true), clientWith({}, 50, false)]) {
       expect(canManageEmoji(client as unknown as MatrixClient, '!server')).toBe(false)

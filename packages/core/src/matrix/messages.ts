@@ -91,7 +91,8 @@ export function sendTextMessage(
 
 /** The SDK handles encryption, local echoes and retries just like other timeline events. */
 export function sendSticker(client: MatrixClient, roomId: string, sticker: Sticker, options: SendOptions = {}): Promise<unknown> {
-  if (!isEmojiMxc(sticker.url)) throw new Error('Invalid sticker image URL')
+  // Reject instead of throwing so callers' .catch() also handles invalid packs.
+  if (!isEmojiMxc(sticker.url)) return Promise.reject(new Error('Invalid sticker image URL'))
   return client.sendEvent(roomId, EventType.Sticker, {
     body: sticker.body || sticker.name,
     url: sticker.url,

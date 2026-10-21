@@ -24,6 +24,14 @@ function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
+export type ImageUsage = 'emoticon' | 'sticker'
+
+/** MSC2545: a missing or empty usage means the image is usable as both. */
+function imageUsage(image: Record<string, unknown>, pack: Record<string, unknown>): string[] {
+  const usage = image.usage ?? pack.usage
+  return Array.isArray(usage) && usage.length ? usage.filter((value): value is string => typeof value === 'string') : ['emoticon', 'sticker']
+}
+
 export interface Sticker extends CustomEmoji {
   body: string
   info: { mimetype?: string; w?: number; h?: number; size?: number }
@@ -48,8 +56,7 @@ export function parseStickerPack(content: unknown, packId = '', packName = ''): 
   return Object.entries(object(pack.images)).flatMap(([name, value]) => {
     const image = object(value)
     // Older im.ponies clients allow an image's usage to override the pack default.
-    const usage = image.usage ?? metadata.usage
-    if (Array.isArray(usage) && usage.length && !usage.includes('sticker')) return []
+    if (!imageUsage(image, metadata).includes('sticker')) return []
     if (typeof image.url !== 'string' || !isEmojiMxc(image.url)) return []
     return [{ name, url: image.url, key: image.url, packId,
       body: typeof image.body === 'string' && image.body ? image.body : name,
@@ -87,27 +94,28 @@ export function availableStickers(client: MatrixClient, serverId?: string): Stic
   return stickers
 }
 
-export function serverStickers(client: MatrixClient, serverId: string): Sticker[] {
-  return (client.getRoom(serverId)?.currentState.getStateEvents(ROOM_EMOTES_EVENT) ?? [])
-    .flatMap((event) => parseStickerPack(event.getContent(), event.getStateKey() ?? ''))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.packId.localeCompare(b.packId))
-}
-
 export function parseEmojiPack(content: unknown, packId = ''): CustomEmoji[] {
   const pack = object(content)
   return Object.entries(object(pack.images)).flatMap(([name, value]) => {
     const image = object(value)
     if (typeof image.url !== 'string' || !isEmojiMxc(image.url)) return []
-    const usage = image.usage ?? object(pack.pack).usage
-    if (Array.isArray(usage) && usage.length && !usage.includes('emoticon')) return []
+    if (!imageUsage(image, object(pack.pack)).includes('emoticon')) return []
     return [{ name, url: image.url, key: image.url, packId }]
   })
 }
 
-export function serverEmojis(client: MatrixClient, serverId: string): CustomEmoji[] {
+function serverPack<T extends CustomEmoji>(client: MatrixClient, serverId: string, parse: (content: unknown, packId: string) => T[]): T[] {
   return (client.getRoom(serverId)?.currentState.getStateEvents(ROOM_EMOTES_EVENT) ?? [])
-    .flatMap((event) => parseEmojiPack(event.getContent(), event.getStateKey() ?? ''))
+    .flatMap((event) => parse(event.getContent(), event.getStateKey() ?? ''))
     .sort((a, b) => a.name.localeCompare(b.name) || a.packId.localeCompare(b.packId))
+}
+
+export function serverEmojis(client: MatrixClient, serverId: string): CustomEmoji[] {
+  return serverPack(client, serverId, parseEmojiPack)
+}
+
+export function serverStickers(client: MatrixClient, serverId: string): Sticker[] {
+  return serverPack(client, serverId, parseStickerPack)
 }
 
 export function canManageEmoji(client: MatrixClient, serverId: string): boolean {
@@ -119,7 +127,7 @@ export function canManageEmoji(client: MatrixClient, serverId: string): boolean 
 /** Preserve pack metadata and other clients' image fields when renaming or deleting. */
 export async function changeServerEmoji(
   client: MatrixClient, serverId: string,
-  change: { packId?: string; oldName?: string; name?: string; image?: Record<string, unknown> },
+  change: { packId?: string; oldName?: string; name?: string; image?: Record<string, unknown>; usage?: ImageUsage },
 ): Promise<void> {
   if (!canManageEmoji(client, serverId)) throw new Error('Insufficient permission to manage server emoji')
   const packId = change.packId ?? ''
@@ -132,7 +140,14 @@ export async function changeServerEmoji(
     if (typeof image.url !== 'string' || !isEmojiMxc(image.url)) throw new Error('Invalid emoji image URL')
     Object.defineProperty(images, change.name, { value: image, enumerable: true, configurable: true, writable: true })
   }
-  if (change.oldName && change.oldName !== change.name) delete images[change.oldName]
+  if (change.oldName && change.name === undefined && change.usage) {
+    // Unrestricted images are emoji and sticker at once; deleting one usage keeps the other.
+    const image = object(images[change.oldName])
+    const remaining = imageUsage(image, object(content.pack)).filter((usage) => usage !== change.usage)
+    if (remaining.length) {
+      Object.defineProperty(images, change.oldName, { value: { ...image, usage: remaining }, enumerable: true, configurable: true, writable: true })
+    } else delete images[change.oldName]
+  } else if (change.oldName && change.oldName !== change.name) delete images[change.oldName]
   const next = { ...content, images }
   if (new TextEncoder().encode(JSON.stringify(next)).length > 50_000) throw new Error('Emoji pack is full')
   // The SDK permits custom state events, although its event map only lists stable types.
