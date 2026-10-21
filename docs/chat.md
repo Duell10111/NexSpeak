@@ -81,3 +81,22 @@ to remove it. Editing a message keeps its existing custom emoji.
 Emoji use fixed-size, static thumbnails, including GIF and animated WebP uploads.
 Images are fetched only when an emoji becomes visible; closing a picker releases its
 contents. This avoids animation and image processing while gaming.
+
+## Stickers
+
+Open the emoji button in the message field and select **Stickers**. **Search stickers**
+finds stickers by name, description or pack name. Select one to send it immediately;
+text already in the message field stays as a draft. Stickers also work in replies and
+threads. The reaction picker continues to use emoji.
+
+The sticker tab includes the current server's packs, your personal Matrix sticker pack
+and room packs enabled globally in a compatible Matrix client. NexSpeak reads these
+from your synced account data; personal pack management stays in that client.
+Server moderators can add stickers under **Server settings → Server emoji → Stickers**.
+
+Stickers sent by other Matrix clients appear directly in the timeline, without a
+message bubble or download controls, at a maximum of 200 × 200 pixels. Hover over a
+sticker for its description. Picker results are virtualized and images load only when
+visible. Animated stickers play only while visible and the window is focused; otherwise
+a static thumbnail is shown. Stickers larger than 4 MiB always show the static thumbnail. Pack images are shared with the homeserver and are not
+end-to-end encrypted, including when sent in an encrypted channel.

@@ -16,6 +16,7 @@ import { markdownToHtml, type MarkdownEmoji } from './markdown'
 import { formattedEmojis, parseFormattedBody } from './formatted-body'
 import { parseMatrixLink } from './links'
 import { t } from '@nexspeak/i18n'
+import { isEmojiMxc, stickerInfo, type Sticker } from './custom-emojis'
 
 /** A mention picked in the composer: its text in the message and whom it points to. */
 export interface MessageMention {
@@ -86,6 +87,19 @@ export function sendTextMessage(
     ...intentionalMentions(client, options),
   } as RoomMessageEventContent
   return client.sendMessage(roomId, content)
+}
+
+/** The SDK handles encryption, local echoes and retries just like other timeline events. */
+export function sendSticker(client: MatrixClient, roomId: string, sticker: Sticker, options: SendOptions = {}): Promise<unknown> {
+  // Reject instead of throwing so callers' .catch() also handles invalid packs.
+  if (!isEmojiMxc(sticker.url)) return Promise.reject(new Error('Invalid sticker image URL'))
+  return client.sendEvent(roomId, EventType.Sticker, {
+    body: sticker.body || sticker.name,
+    url: sticker.url,
+    info: stickerInfo(sticker.info),
+    ...relation(options),
+    ...intentionalMentions(client, options),
+  })
 }
 
 /**

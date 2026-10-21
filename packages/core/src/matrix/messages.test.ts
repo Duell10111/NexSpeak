@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { MatrixEvent, type MatrixClient } from "matrix-js-sdk"
-import { editTextMessage, sendTextMessage } from "./messages"
+import { editTextMessage, sendTextMessage, sendSticker } from "./messages"
 
 function fakeClient() {
   return { getUserId: () => "@me:example.org", sendMessage: vi.fn().mockResolvedValue({ event_id: "$new" }) }
@@ -72,5 +72,29 @@ describe('custom emoji messages', () => {
     } })
     await editTextMessage(client as unknown as MatrixClient, '!r', original, 'hello :cat:')
     expect(client.sendMessage.mock.calls[0][1]['m.new_content'].formatted_body).toContain('<img data-mx-emoticon src="mxc://test/cat"')
+  })
+})
+
+
+describe('sendSticker', () => {
+  const sticker = { name: 'cat', body: 'Happy cat', url: 'mxc://test/cat', key: 'mxc://test/cat', packId: '', packName: 'Cats', info: { w: 256, h: 256, mimetype: 'image/png' } }
+  it('sends m.sticker with metadata and intentional reply mentions', async () => {
+    const client = { getUserId: () => '@me:example.org', sendEvent: vi.fn().mockResolvedValue({}) }
+    const replyTo = new MatrixEvent({ event_id: '$reply', sender: '@alice:example.org' })
+    await sendSticker(client as unknown as MatrixClient, '!r', sticker, { replyTo })
+    expect(client.sendEvent).toHaveBeenCalledWith('!r', 'm.sticker', {
+      body: 'Happy cat', url: sticker.url, info: sticker.info,
+      'm.relates_to': { 'm.in_reply_to': { event_id: '$reply' } },
+      'm.mentions': { user_ids: ['@alice:example.org'] },
+    })
+  })
+  it('keeps thread relations and rejects external URLs before sending', async () => {
+    const client = { getUserId: () => '@me:example.org', sendEvent: vi.fn().mockResolvedValue({}) }
+    await sendSticker(client as unknown as MatrixClient, '!r', sticker, { threadRootId: '$root', threadLatestEventId: '$last' })
+    expect(client.sendEvent.mock.calls[0][2]['m.relates_to']).toEqual({
+      rel_type: 'm.thread', event_id: '$root', is_falling_back: true, 'm.in_reply_to': { event_id: '$last' },
+    })
+    await expect(sendSticker(client as unknown as MatrixClient, '!r', { ...sticker, url: 'https://tracker/pixel' })).rejects.toThrow('Invalid sticker')
+    expect(client.sendEvent).toHaveBeenCalledTimes(1)
   })
 })

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useMatrixClient } from '@/hooks/useMatrixClient'
 import { useServerEmojis } from '@/hooks/useServerEmojis'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -33,7 +34,8 @@ function EmojiEntry({ emoji, disabled, busy, onRename, onDelete }: {
 export function CustomEmojiSettings({ serverId }: { serverId: string }) {
   const { client } = useMatrixClient()
   const { t } = useTranslation()
-  const emojis = useServerEmojis(true, serverId)
+  const [usage, setUsage] = useState<'emoticon' | 'sticker'>('emoticon')
+  const emojis = useServerEmojis(true, serverId, usage)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -55,34 +57,47 @@ export function CustomEmojiSettings({ serverId }: { serverId: string }) {
       toast.error(t('customEmoji.invalidName')); return
     }
     void action(async () => {
+      // Other clients size stickers from info.w/h; reading them once at upload is cheap.
+      const bitmap = await createImageBitmap(file)
+      const info = { mimetype: file.type, size: file.size, w: bitmap.width, h: bitmap.height }
+      bitmap.close()
       const { content_uri: url } = await client.uploadContent(file, { type: file.type, includeFilename: false })
-      await changeServerEmoji(client, serverId, { name, image: { url, info: { mimetype: file.type, size: file.size } } })
+      await changeServerEmoji(client, serverId, { name, image: { url, usage: [usage], info } })
       setName('')
     })
   }
   return (
     <section className="space-y-3" aria-label={t('customEmoji.title')}>
-      <p className="text-sm text-muted-foreground">{t('customEmoji.description')}</p>
-      {!canEdit && <p className="text-sm text-muted-foreground">{t('customEmoji.readOnly')}</p>}
-      {canEdit && <div className="space-y-2">
-        <Label htmlFor="emoji-shortcode">{t('customEmoji.shortcode')}</Label>
-        <div className="flex gap-2">
-          <Input id="emoji-shortcode" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder="party_cat" disabled={busy} />
-          <Button variant="outline" disabled={busy || !validShortcode(name)} onClick={() => fileRef.current?.click()}>{t('customEmoji.upload')}</Button>
-        </div>
-        <p className="text-xs text-muted-foreground">{t('customEmoji.fileHint')}</p>
-        <input ref={fileRef} type="file" accept={EMOJI_FILE_TYPES} className="hidden" aria-label={t('customEmoji.upload')} onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          if (file) upload(file)
-        }} />
-      </div>}
-      {!emojis.length && <p className="text-sm text-muted-foreground">{t('customEmoji.empty')}</p>}
-      <div className="max-h-[45vh] space-y-2 overflow-y-auto">
-        {emojis.map((emoji) => <EmojiEntry key={`${emoji.packId}:${emoji.name}`} emoji={emoji} disabled={!canEdit} busy={busy}
-          onRename={(next) => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name, name: next }))}
-          onDelete={() => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name }))} />)}
-      </div>
+      <Tabs value={usage} onValueChange={(value) => setUsage(value as 'emoticon' | 'sticker')}>
+        <TabsList aria-label={t('sticker.manage')}>
+          <TabsTrigger value="emoticon">{t('sticker.emojiTab')}</TabsTrigger>
+          <TabsTrigger value="sticker">{t('sticker.tab')}</TabsTrigger>
+        </TabsList>
+        <TabsContent value={usage} className="space-y-3">
+          <p className="text-sm text-muted-foreground">{t('customEmoji.description')}</p>
+          {usage === 'sticker' && <p className="text-sm text-muted-foreground">{t('sticker.manageHint')}</p>}
+          {!canEdit && <p className="text-sm text-muted-foreground">{t('customEmoji.readOnly')}</p>}
+          {canEdit && <div className="space-y-2">
+            <Label htmlFor="emoji-shortcode">{t(usage === 'sticker' ? 'sticker.name' : 'customEmoji.shortcode')}</Label>
+            <div className="flex gap-2">
+              <Input id="emoji-shortcode" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder="party_cat" disabled={busy} />
+              <Button variant="outline" disabled={busy || !validShortcode(name)} onClick={() => fileRef.current?.click()}>{t(usage === 'sticker' ? 'sticker.upload' : 'customEmoji.upload')}</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{t(usage === 'sticker' ? 'sticker.fileHint' : 'customEmoji.fileHint')}</p>
+            <input ref={fileRef} type="file" accept={EMOJI_FILE_TYPES} className="hidden" aria-label={t(usage === 'sticker' ? 'sticker.upload' : 'customEmoji.upload')} onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) upload(file)
+            }} />
+          </div>}
+          {!emojis.length && <p className="text-sm text-muted-foreground">{t(usage === 'sticker' ? 'sticker.serverEmpty' : 'customEmoji.empty')}</p>}
+          <div className="max-h-[45vh] space-y-2 overflow-y-auto">
+            {emojis.map((emoji) => <EmojiEntry key={`${emoji.packId}:${emoji.name}`} emoji={emoji} disabled={!canEdit} busy={busy}
+              onRename={(next) => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name, name: next }))}
+              onDelete={() => void action(() => changeServerEmoji(client!, serverId, { packId: emoji.packId, oldName: emoji.name, usage }))} />)}
+          </div>
+        </TabsContent>
+      </Tabs>
     </section>
   )
 }

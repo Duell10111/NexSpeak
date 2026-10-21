@@ -89,3 +89,21 @@ describe("stripReplyFallback", () => {
     expect(stripReplyFallback("Hallo\n> kein Zitat am Anfang")).toBe("Hallo\n> kein Zitat am Anfang")
   })
 })
+
+
+describe('sticker timeline events', () => {
+  it('maps external-client stickers without a msgtype and retains reply relations', () => {
+    const event = messageEvent({ body: 'Happy cat', url: 'mxc://test/cat', info: { w: 256, h: 128, mimetype: 'image/png' },
+      'm.relates_to': { 'm.in_reply_to': { event_id: '$parent' } },
+    }, { type: 'm.sticker' })
+    expect(eventToMatrixMessage(event, ROOM)).toMatchObject({ kind: 'sticker', body: 'Happy cat',
+      media: { mxc: 'mxc://test/cat', width: 256, height: 128 }, replyTo: { eventId: '$parent' },
+    })
+  })
+  it('keeps redacted stickers redacted and malformed media as safe text fallbacks', () => {
+    const event = messageEvent({}, { type: 'm.sticker', unsigned: { redacted_because: { type: 'm.room.redaction' } } })
+    expect(eventToMatrixMessage(event, ROOM)?.kind).toBe('redacted')
+    const unsafe = eventToMatrixMessage(messageEvent({ body: 'Fallback', url: 'https://tracker/pixel', info: { w: -50, h: Infinity } }, { type: 'm.sticker' }), ROOM)
+    expect(unsafe).toMatchObject({ kind: 'sticker', body: 'Fallback', media: { mxc: undefined, width: undefined, height: undefined } })
+  })
+})

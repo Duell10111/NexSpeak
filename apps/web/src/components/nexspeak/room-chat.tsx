@@ -30,7 +30,7 @@ import { useReadReceipt } from "@/hooks/useReadReceipt"
 import { useTypingMembers, useTypingNotifier } from "@/hooks/useTyping"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
-import { deleteMessage, sendAttachment, sendTextMessage } from "@nexspeak/core/matrix/messages"
+import { deleteMessage, sendAttachment, sendTextMessage, sendSticker } from "@nexspeak/core/matrix/messages"
 import { MessageComposer, type ComposedMessage, type MessageComposerHandle } from "@/components/nexspeak/message-composer"
 import { ReportDialog } from "@/components/nexspeak/report-dialog"
 import { usePinnedEventIds } from "@/hooks/usePinnedEvents"
@@ -365,6 +365,15 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
           replyToName={replyTo?.senderName}
           onCancelReply={() => setReplyTo(null)}
           onSend={handleSend}
+          onSticker={(sticker) => {
+            if (!client || !canSend) return
+            const options = { replyTo: replyTo?.event, ...threadTarget() }
+            setReplyTo(null)
+            stickToBottomRef.current = true
+            sendSticker(client, roomId, sticker, options).catch((error: unknown) => {
+              toast.error(describeMatrixError(error, t('chat.sendFailed')))
+            })
+          }}
           onFiles={(files) => void uploadFiles(files)}
           isUploading={isUploading}
           attachLabel={isEncryptedRoom ? t("chat.attachFileEncrypted") : t("chat.attachFile")}
