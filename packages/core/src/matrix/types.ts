@@ -3,12 +3,13 @@
  * Plain view models derived from matrix-js-sdk objects. Never mutate SDK state in here.
  */
 
-import { EventStatus, NotificationCountType, THREAD_RELATION_TYPE, type MatrixEvent, type Room } from 'matrix-js-sdk'
+import { EventStatus, NotificationCountType, THREAD_RELATION_TYPE, type MatrixClient, type MatrixEvent, type Room } from 'matrix-js-sdk'
 import { isEncryptedFile, type EncryptedFile } from './attachments'
 import { parseFormattedBody, type FormattedNode } from './formatted-body'
 import { t } from '@nexspeak/i18n'
 import { isEmojiMxc, stickerInfo } from './custom-emojis'
 import { isPollStart, pollFromRoom, type MatrixPoll } from './polls'
+import { isIgnoredEvent } from './safety'
 
 export interface MatrixRoom {
   id: string
@@ -214,11 +215,11 @@ function formattedNodes(event: MatrixEvent, content: Record<string, unknown>): F
   return nodes
 }
 
-export function threadSummary(event: MatrixEvent): ThreadSummary | undefined {
+export function threadSummary(event: MatrixEvent, client?: MatrixClient): ThreadSummary | undefined {
   if (!event.isThreadRoot) return undefined
   const thread = event.getThread()
   if (!thread || thread.length === 0) return undefined
-  const latest = thread.replyToEvent
+  const latest = isIgnoredEvent(client, thread.replyToEvent) ? undefined : thread.replyToEvent
   return {
     count: thread.length,
     latestSenderName: latest ? latest.sender?.name || latest.getSender() || '' : '',
@@ -291,14 +292,14 @@ export function eventToMatrixMessage(
     edited: Boolean(event.replacingEventId()),
     status: toStatus(event),
     reactions: context.room && eventId ? collectReactions(context.room, eventId, context.ownUserId ?? null) : [],
-    replyTo: replyEventId
+    replyTo: replyEventId && !isIgnoredEvent(context.room?.client, repliedEvent)
       ? {
           eventId: replyEventId,
           senderName: repliedEvent ? repliedEvent.sender?.name || repliedEvent.getSender() || '' : '',
           body: repliedEvent ? summarizeEvent(repliedEvent) : t('message.replyNotLoaded'),
         }
       : undefined,
-    thread: threadSummary(event),
+    thread: threadSummary(event, context.room?.client),
     event,
   }
 

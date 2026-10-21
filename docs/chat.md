@@ -80,6 +80,9 @@ invites you again. Leaving a direct message with a friend also ends the friendsh
   notifications or typing indicators anymore, in any room. Typing indicators update as soon as you
   ignore or unignore someone, including from another device. They aren't told. **Settings → Account**
   lists ignored people.
+- Ignoring also hides their text from reply quotations, thread previews and pinned-message previews.
+  Threads they started disappear from the thread list. Already open lists update when the ignore
+  list changes; unignoring restores previews for messages that are still loaded.
 - **Report** a message or channel: the report goes to the admins of your homeserver. They can only
   read the message if it isn't encrypted.
 

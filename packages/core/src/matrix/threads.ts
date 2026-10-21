@@ -4,6 +4,7 @@
  */
 
 import type { Room, Thread } from 'matrix-js-sdk'
+import { isIgnoredEvent } from './safety'
 
 const fetched = new WeakMap<Room, Promise<void>>()
 
@@ -30,7 +31,7 @@ function latestActivity(thread: Thread): number {
 export function sortedThreads(room: Room): Thread[] {
   return room
     .getThreads()
-    .filter((thread) => thread.rootEvent && !thread.rootEvent.isRedacted())
+    .filter((thread) => thread.rootEvent && !thread.rootEvent.isRedacted() && !isIgnoredEvent(room.client, thread.rootEvent))
     .sort((a, b) => latestActivity(b) - latestActivity(a))
 }
 

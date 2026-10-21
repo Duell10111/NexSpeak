@@ -41,6 +41,7 @@ describe("setRoomNotificationMode", () => {
       pushRules,
       addPushRule: vi.fn().mockResolvedValue({}),
       deletePushRule: vi.fn().mockResolvedValue({}),
+      setPushRuleEnabled: vi.fn().mockResolvedValue({}),
     }
   }
 
@@ -52,6 +53,7 @@ describe("setRoomNotificationMode", () => {
       conditions: [{ kind: "event_match", key: "room_id", pattern: ROOM }],
       actions: [],
     })
+    expect(fake.setPushRuleEnabled).not.toHaveBeenCalled()
   })
 
   it("unmutes to mentions only: removes the override, writes the room rule", async () => {
@@ -66,5 +68,14 @@ describe("setRoomNotificationMode", () => {
     await setRoomNotificationMode(fake as unknown as MatrixClient, ROOM, "default")
     expect(fake.addPushRule).not.toHaveBeenCalled()
     expect(fake.deletePushRule).not.toHaveBeenCalled()
+  })
+
+  it.each(['all', 'mentions', 'mute'] as const)('re-enables a disabled matching rule when selecting %s', async (mode) => {
+    const kind = mode === 'mute' ? 'override' : 'room'
+    const fake = client(rules({ [kind]: [{ ...muteRule, enabled: false }] } as never))
+    await setRoomNotificationMode(fake as unknown as MatrixClient, ROOM, mode)
+    expect(fake.addPushRule).toHaveBeenCalledOnce()
+    expect(fake.setPushRuleEnabled).toHaveBeenCalledWith('global', kind, ROOM, true)
+    expect(fake.addPushRule.mock.invocationCallOrder[0]).toBeLessThan(fake.setPushRuleEnabled.mock.invocationCallOrder[0])
   })
 })

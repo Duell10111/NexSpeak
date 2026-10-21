@@ -78,6 +78,8 @@ export async function setRoomNotificationMode(client: MatrixClient, roomId: stri
   if (mode !== 'mute') await removeRule(client, PushRuleKind.Override, roomId)
   if (mode === 'default' || mode === 'mute') await removeRule(client, PushRuleKind.RoomSpecific, roomId)
 
+  const kind = mode === 'mute' ? PushRuleKind.Override : PushRuleKind.RoomSpecific
+  const wasDisabled = client.pushRules?.global?.[kind]?.some((rule) => rule.rule_id === roomId && !rule.enabled)
   if (mode === 'mute') {
     await client.addPushRule('global', PushRuleKind.Override, roomId, {
       conditions: [{ kind: ConditionKind.EventMatch, key: 'room_id', pattern: roomId }],
@@ -89,6 +91,8 @@ export async function setRoomNotificationMode(client: MatrixClient, roomId: stri
       actions: mode === 'all' ? ['notify' as PushRuleAction] : [],
     })
   }
+  // Replacing a rule preserves its enabled flag on the homeserver.
+  if (mode !== 'default' && wasDisabled) await client.setPushRuleEnabled('global', kind, roomId, true)
 }
 
 /** One after the other: homeservers rate-limit push rule changes. */
