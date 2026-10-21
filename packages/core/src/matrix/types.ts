@@ -8,6 +8,7 @@ import { isEncryptedFile, type EncryptedFile } from './attachments'
 import { parseFormattedBody, type FormattedNode } from './formatted-body'
 import { t } from '@nexspeak/i18n'
 import { isEmojiMxc, stickerInfo } from './custom-emojis'
+import { isPollStart, pollFromRoom, type MatrixPoll } from './polls'
 
 export interface MatrixRoom {
   id: string
@@ -28,6 +29,7 @@ export interface MatrixRoom {
 
 export type MessageKind =
   | 'text'
+  | 'poll'
   | 'notice'
   | 'emote'
   | 'image'
@@ -87,7 +89,10 @@ export interface MatrixMessage {
     width?: number
     height?: number
     size?: number
+    /** A separate preview supplied by the sender, never the video itself. */
+    thumbnail?: { mxc?: string; file?: EncryptedFile; mimetype?: string }
   }
+  poll?: MatrixPoll
   reactions: MessageReaction[]
   replyTo?: MessageReply
   /** Set on thread roots that have replies. */
@@ -180,6 +185,7 @@ export function summarizeEvent(event: MatrixEvent): string {
   if (event.isRedacted()) return t('message.redacted')
   if (event.isDecryptionFailure()) return t('message.encrypted')
   const content = event.getContent()
+  if (isPollStart(event)) return pollFromRoom(event)?.question ?? ''
   switch (content.msgtype) {
     case 'm.image':
       return t('message.image')
@@ -266,7 +272,7 @@ export function eventToMatrixMessage(
 
   const type = event.getType()
   const isEncryptedPlaceholder = type === 'm.room.encrypted'
-  if (type !== 'm.room.message' && type !== 'm.sticker' && !isEncryptedPlaceholder) return null
+  if (type !== 'm.room.message' && type !== 'm.sticker' && !isPollStart(event) && !isEncryptedPlaceholder) return null
 
   const senderId = event.getSender() || ''
   const eventId = event.getId()
@@ -308,6 +314,11 @@ export function eventToMatrixMessage(
     return { ...base, kind: 'decrypting', body: t('message.decrypting') }
   }
 
+  if (isPollStart(event)) {
+    const poll = pollFromRoom(event, context.room, context.ownUserId)
+    return poll ? { ...base, kind: 'poll', body: poll.question, poll } : { ...base, kind: 'unsupported', body: t('poll.invalid') }
+  }
+
   const content = event.getContent()
   const rawBody = typeof content.body === 'string' ? content.body : ''
   const body = replyEventId ? stripReplyFallback(rawBody) : rawBody
@@ -331,8 +342,13 @@ export function eventToMatrixMessage(
     case 'm.video':
     case 'm.audio':
     case 'm.file': {
-      const info = (content.info ?? {}) as { mimetype?: string; w?: number; h?: number; size?: number }
+      const info = (content.info ?? {}) as { mimetype?: string; w?: number; h?: number; size?: number;
+        thumbnail_url?: unknown; thumbnail_file?: unknown; thumbnail_info?: { mimetype?: string } }
       const file = isEncryptedFile(content.file) ? content.file : undefined
+      // A malformed preview must never cause the full attachment to load before Play.
+      const originals = [content.url, file?.url]
+      const thumbnailFile = isEncryptedFile(info.thumbnail_file) && !originals.includes(info.thumbnail_file.url) ? info.thumbnail_file : undefined
+      const thumbnailMxc = typeof info.thumbnail_url === 'string' && isEmojiMxc(info.thumbnail_url) && !originals.includes(info.thumbnail_url) ? info.thumbnail_url : undefined
       return {
         ...base,
         kind: content.msgtype.slice(2) as 'image' | 'video' | 'audio' | 'file',
@@ -344,6 +360,9 @@ export function eventToMatrixMessage(
           width: info.w,
           height: info.h,
           size: info.size,
+          thumbnail: thumbnailFile || thumbnailMxc ? {
+            mxc: thumbnailMxc, file: thumbnailFile, mimetype: info.thumbnail_info?.mimetype,
+          } : undefined,
         },
       }
     }

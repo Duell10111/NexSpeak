@@ -3,6 +3,30 @@
  * Placeholders are written as {name}.
  */
 export const de = {
+  'poll.create': 'Umfrage erstellen',
+  'poll.description': 'Stelle eine Frage mit 2 bis 20 Antworten.',
+  'poll.question': 'Frage',
+  'poll.answer': 'Antwort {number}',
+  'poll.removeAnswer': 'Antwort {number} entfernen',
+  'poll.addAnswer': 'Antwort hinzufügen',
+  'poll.multiple': 'Mehrere Antworten erlauben',
+  'poll.hideResults': 'Ergebnisse bis zum Ende verbergen',
+  'poll.label': 'Umfrage',
+  'poll.chooseOne': 'Wähle eine Antwort.',
+  'poll.chooseMultiple': 'Wähle bis zu {count} Antworten.',
+  'poll.oneVote': '1 Stimme',
+  'poll.oneVoter': '1 teilnehmende Person',
+  'poll.answerVotes': '{count} Stimmen',
+  'poll.voters': '{count} Teilnehmende',
+  'poll.resultsHidden': 'Ergebnisse werden nach Ende der Umfrage angezeigt.',
+  'poll.vote': 'Abstimmen',
+  'poll.changeVote': 'Stimme ändern',
+  'poll.end': 'Umfrage beenden',
+  'poll.ended': 'Umfrage beendet',
+  'poll.createFailed': 'Umfrage konnte nicht erstellt werden',
+  'poll.actionFailed': 'Umfrage konnte nicht aktualisiert werden',
+  'poll.invalid': 'Diese Umfrage kann nicht angezeigt werden',
+
   'common.accept': 'Annehmen',
   'common.cancel': 'Abbrechen',
   'common.close': 'Schließen',
@@ -253,6 +277,9 @@ export const de = {
   'chat.edited': '(bearbeitet)',
   'chat.encryptedFile': 'Verschlüsselt',
   'chat.download': 'Herunterladen',
+  'chat.mediaPlay': 'Abspielen',
+  'chat.mediaLoading': 'Wird geladen…',
+  'chat.mediaPlaybackFailed': 'Wiedergabe nicht möglich. Lade die Datei herunter, um sie in einer anderen App zu öffnen.',
 
   'message.redacted': 'Nachricht gelöscht',
   'message.encrypted': 'Verschlüsselte Nachricht',
@@ -792,6 +819,19 @@ export const de = {
   'emojiPicker.tone3': 'Mittel',
   'emojiPicker.tone4': 'Mitteldunkel',
   'emojiPicker.tone5': 'Dunkel',
+  // Keyboard navigation between joined conversations.
+  'quickSwitcher.title': 'Schnellwechsler',
+  'quickSwitcher.description': 'Finde Server, Kanäle oder Direktnachrichten. Mit ↑ ↓ auswählen, mit Enter öffnen und mit Esc schließen.',
+  'quickSwitcher.search': 'Unterhaltungen suchen',
+  'quickSwitcher.placeholder': 'Wohin möchtest du wechseln?',
+  'quickSwitcher.results': 'Unterhaltungen',
+  'quickSwitcher.server': 'Server',
+  'quickSwitcher.direct': 'Direktnachricht',
+  'quickSwitcher.room': 'Raum',
+  'quickSwitcher.unread': '{count} ungelesene Nachrichten',
+  'quickSwitcher.mentions': '{count} Erwähnungen',
+  'quickSwitcher.empty': 'Keine Unterhaltungen gefunden.',
+
 } as const
 
 export type MessageKey = keyof typeof de

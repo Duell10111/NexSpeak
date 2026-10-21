@@ -30,6 +30,7 @@ import { useReadReceipt } from "@/hooks/useReadReceipt"
 import { useTypingMembers, useTypingNotifier } from "@/hooks/useTyping"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
+import { sendPoll } from "@nexspeak/core/matrix/polls"
 import { deleteMessage, sendAttachment, sendTextMessage, sendSticker } from "@nexspeak/core/matrix/messages"
 import { MessageComposer, type ComposedMessage, type MessageComposerHandle } from "@/components/nexspeak/message-composer"
 import { ReportDialog } from "@/components/nexspeak/report-dialog"
@@ -365,6 +366,11 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread }: Ro
           replyToName={replyTo?.senderName}
           onCancelReply={() => setReplyTo(null)}
           onSend={handleSend}
+          onPoll={threadId ? undefined : async (draft) => {
+            if (!client || !canSend) throw new Error("Room is not ready to send polls")
+            stickToBottomRef.current = true
+            await sendPoll(client, roomId, draft)
+          }}
           onSticker={(sticker) => {
             if (!client || !canSend) return
             const options = { replyTo: replyTo?.event, ...threadTarget() }

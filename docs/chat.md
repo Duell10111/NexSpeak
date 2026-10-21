@@ -18,6 +18,18 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
   you move the pointer to it. Escape closes it without adding a reaction.
 - A message that failed to send can be **resent** or **discarded**.
 
+## Audio and video
+
+Audio and video attachments have an inline player. Choose **Play** to load the file,
+then use the browser's playback, volume and seek controls. Videos show a preview when
+the sender includes one. **Download** remains available, including for formats your
+browser cannot play.
+
+Full media files are downloaded and encrypted files are decrypted only after you choose **Play**
+or **Download**. Playback stops and its media buffers are released when the attachment
+scrolls out of view, you switch channels or the window becomes hidden. Choose **Play**
+again to reload the file.
+
 ## Formatting
 
 NexSpeak understands Discord-style Markdown:
@@ -100,3 +112,22 @@ sticker for its description. Picker results are virtualized and images load only
 visible. Animated stickers play only while visible and the window is focused; otherwise
 a static thumbnail is shown. Stickers larger than 4 MiB always show the static thumbnail. Pack images are shared with the homeserver and are not
 end-to-end encrypted, including when sent in an encrypted channel.
+
+## Polls
+
+Choose **Create poll** next to the message field. Enter a **Question** and 2–20 answers;
+**Add answer** adds another option. Enable **Allow multiple answers** if people may
+select more than one option, or **Hide results until the poll ends** to reveal the
+results only after closing the poll. Poll creation is available in the main channel
+or direct message, outside threads.
+
+Select an answer and choose **Vote**. You can choose different answers and use
+**Change vote**; only each person's latest response counts. Disclosed polls show
+live vote counts. For hidden results, your own selection remains visible until the
+poll ends. The creator and moderators can choose **End poll** to close voting and
+reveal the final results.
+
+Polls use Matrix polls and work with compatible clients such as Element. In encrypted
+rooms the question, responses and end event are encrypted by the Matrix SDK. Counts
+reflect the responses already loaded with the room's timeline; loading more history
+can fill in older responses. Opening a poll does not fetch a separate response history.

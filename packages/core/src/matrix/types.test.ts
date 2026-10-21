@@ -82,6 +82,16 @@ describe("eventToMatrixMessage", () => {
     const message = eventToMatrixMessage(messageEvent({ msgtype: "org.example.custom", body: "Fallback" }), ROOM)
     expect(message).toMatchObject({ kind: "unsupported", body: "Fallback" })
   })
+
+  it('preserves separate video previews and rejects non-Matrix preview URLs', () => {
+    const event = (info: Record<string, unknown>) => messageEvent({ msgtype: 'm.video', body: 'clip.mp4', url: 'mxc://test/video', info })
+    expect(eventToMatrixMessage(event({ thumbnail_url: 'mxc://test/preview', thumbnail_info: { mimetype: 'image/jpeg' } }), ROOM)?.media?.thumbnail)
+      .toEqual({ mxc: 'mxc://test/preview', file: undefined, mimetype: 'image/jpeg' })
+    expect(eventToMatrixMessage(event({ thumbnail_url: 'https://tracker.test/pixel' }), ROOM)?.media?.thumbnail).toBeUndefined()
+    expect(eventToMatrixMessage(event({ thumbnail_url: 'mxc://test/video' }), ROOM)?.media?.thumbnail).toBeUndefined()
+    const file = { url: 'mxc://test/encrypted-preview', iv: 'iv', key: { k: 'key' }, hashes: { sha256: 'hash' } }
+    expect(eventToMatrixMessage(event({ thumbnail_file: file }), ROOM)?.media?.thumbnail?.file).toEqual(file)
+  })
 })
 
 describe("stripReplyFallback", () => {

@@ -15,14 +15,15 @@ import { t } from '@nexspeak/i18n'
 const MAX_CACHE_ENTRIES = 300
 const cache = new Map<string, Promise<string | null>>()
 
-async function fetchMedia(client: MatrixClient, httpUrl: string, retry = true): Promise<ArrayBuffer> {
+async function fetchMedia(client: MatrixClient, httpUrl: string, signal?: AbortSignal, retry = true): Promise<ArrayBuffer> {
   const response = await fetch(httpUrl, {
     headers: { Authorization: `Bearer ${client.getAccessToken() ?? ''}` },
+    signal,
   })
   if (response.status === 401 && retry && client.getRefreshToken()) {
     // An expired OIDC access token: any request through the SDK refreshes it, then try again.
     await client.whoami()
-    return fetchMedia(client, httpUrl, false)
+    return fetchMedia(client, httpUrl, signal, false)
   }
   if (!response.ok) throw new Error(t('error.downloadStatus', { status: response.status }))
   return response.arrayBuffer()
@@ -33,18 +34,22 @@ export async function loadMediaBlob(
   client: MatrixClient,
   source: { mxc?: string; file?: EncryptedFile; mimetype?: string },
   size?: number,
+  signal?: AbortSignal,
 ): Promise<Blob> {
   if (source.file) {
     // Encrypted media has no server-side thumbnails; always fetch the original.
     const httpUrl = getMediaUrl(client, source.file.url)
     if (!httpUrl) throw new Error(t('error.invalidMediaUrl'))
-    const plaintext = await decryptAttachment(await fetchMedia(client, httpUrl), source.file)
+    const ciphertext = await fetchMedia(client, httpUrl, signal)
+    signal?.throwIfAborted()
+    const plaintext = await decryptAttachment(ciphertext, source.file)
+    signal?.throwIfAborted()
     return new Blob([plaintext], { type: source.mimetype || 'application/octet-stream' })
   }
 
   const httpUrl = getMediaUrl(client, source.mxc, size)
   if (!httpUrl) throw new Error(t('error.invalidMediaUrl'))
-  return new Blob([await fetchMedia(client, httpUrl)], { type: source.mimetype || '' })
+  return new Blob([await fetchMedia(client, httpUrl, signal)], { type: source.mimetype || '' })
 }
 
 function cachedBlobUrl(cacheKey: string, load: () => Promise<Blob>): Promise<string | null> {

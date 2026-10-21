@@ -2,6 +2,30 @@ import type { MessageKey } from './de'
 
 /** English texts; the type makes sure no key from `de.ts` is missing. */
 export const en: Record<MessageKey, string> = {
+  'poll.create': 'Create poll',
+  'poll.description': 'Ask a question with 2 to 20 answers.',
+  'poll.question': 'Question',
+  'poll.answer': 'Answer {number}',
+  'poll.removeAnswer': 'Remove answer {number}',
+  'poll.addAnswer': 'Add answer',
+  'poll.multiple': 'Allow multiple answers',
+  'poll.hideResults': 'Hide results until the poll ends',
+  'poll.label': 'Poll',
+  'poll.chooseOne': 'Choose one answer.',
+  'poll.chooseMultiple': 'Choose up to {count} answers.',
+  'poll.oneVote': '1 vote',
+  'poll.oneVoter': '1 participant',
+  'poll.answerVotes': '{count} votes',
+  'poll.voters': '{count} participants',
+  'poll.resultsHidden': 'Results are shown after the poll ends.',
+  'poll.vote': 'Vote',
+  'poll.changeVote': 'Change vote',
+  'poll.end': 'End poll',
+  'poll.ended': 'Poll ended',
+  'poll.createFailed': 'Could not create poll',
+  'poll.actionFailed': 'Could not update poll',
+  'poll.invalid': 'This poll cannot be displayed',
+
   'common.accept': 'Accept',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
@@ -252,6 +276,9 @@ export const en: Record<MessageKey, string> = {
   'chat.edited': '(edited)',
   'chat.encryptedFile': 'Encrypted',
   'chat.download': 'Download',
+  'chat.mediaPlay': 'Play',
+  'chat.mediaLoading': 'Loading…',
+  'chat.mediaPlaybackFailed': 'Playback failed. Download the file to open it in another app.',
 
   'message.redacted': 'Message deleted',
   'message.encrypted': 'Encrypted message',
@@ -787,4 +814,17 @@ export const en: Record<MessageKey, string> = {
   'emojiPicker.tone3': 'Medium',
   'emojiPicker.tone4': 'Medium dark',
   'emojiPicker.tone5': 'Dark',
+  // Keyboard navigation between joined conversations.
+  'quickSwitcher.title': 'Quick switcher',
+  'quickSwitcher.description': 'Find a server, channel or direct message. Use ↑ ↓ to choose, Enter to open and Esc to close.',
+  'quickSwitcher.search': 'Search conversations',
+  'quickSwitcher.placeholder': 'Where would you like to go?',
+  'quickSwitcher.results': 'Conversations',
+  'quickSwitcher.server': 'Server',
+  'quickSwitcher.direct': 'Direct message',
+  'quickSwitcher.room': 'Room',
+  'quickSwitcher.unread': '{count} unread messages',
+  'quickSwitcher.mentions': '{count} mentions',
+  'quickSwitcher.empty': 'No conversations found.',
+
 }
