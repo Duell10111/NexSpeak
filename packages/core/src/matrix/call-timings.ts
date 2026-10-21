@@ -2,7 +2,7 @@ import { localFlag } from '../local-flag'
 
 /** On-demand join diagnostics: no polling, tokens, room ids or service URLs. */
 export class CallTimings {
-  private readonly enabled: boolean
+  readonly enabled: boolean
   private readonly startedAt: number
 
   constructor() {

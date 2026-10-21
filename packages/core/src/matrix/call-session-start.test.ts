@@ -16,9 +16,7 @@ function mockJoin() {
   const discovery = Promise.withResolvers<{ rtc_transports: unknown[] }>()
   const rtcSession = { initialMembershipCalculated: Promise.resolve(), memberships: [] as CallMembership[] }
   const discover = vi.fn(() => discovery.promise)
-  const openId = Promise.withResolvers<{ access_token: string }>()
-  openId.resolve({ access_token: "test-token" })
-  const getOpenIdToken = vi.fn(() => openId.promise)
+  const getOpenIdToken = vi.fn(async () => ({ access_token: "test-token", expires_in: 3600 }))
   // Inspect the real startup path without creating media resources or opening a connection.
   const exchange = vi.fn().mockRejectedValue(new Error("Stop before connecting"))
   vi.stubGlobal("fetch", exchange)
@@ -77,7 +75,7 @@ describe("call startup service selection", () => {
     const mocks = mockJoin()
     vi.stubEnv("NEXT_PUBLIC_LIVEKIT_SERVICE_URL", "")
     if (failed === "openid") {
-      mocks.getOpenIdToken.mockReturnValueOnce(Promise.reject(new Error("openid")))
+      mocks.getOpenIdToken.mockRejectedValueOnce(new Error("openid"))
       mocks.discovery.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://own" }] })
     } else {
       mocks.discovery.reject(new Error("Not supported"))
@@ -86,11 +84,22 @@ describe("call startup service selection", () => {
     expect(mocks.tokenExchanges()).toHaveLength(0)
   })
 
-  it("looks up the service again after the token exchange through it failed", async () => {
-    const { discovery, discover, join } = mockJoin()
+  it("looks up the service and OpenID token again after the token exchange failed", async () => {
+    const { discovery, discover, getOpenIdToken, join } = mockJoin()
     discovery.resolve({ rtc_transports: [{ type: "livekit", livekit_service_url: "https://own" }] })
     await join()
     await join()
     expect(discover).toHaveBeenCalledTimes(2)
+    expect(getOpenIdToken).toHaveBeenCalledTimes(2)
+  })
+
+  it("reuses the OpenID token when a retry follows a failed discovery", async () => {
+    const { discover, getOpenIdToken, start } = mockJoin()
+    vi.stubEnv("NEXT_PUBLIC_LIVEKIT_SERVICE_URL", "")
+    discover.mockRejectedValue(new Error("Not supported"))
+    await expect(start()).rejects.toThrow()
+    await expect(start()).rejects.toThrow()
+    expect(discover).toHaveBeenCalledTimes(2)
+    expect(getOpenIdToken).toHaveBeenCalledOnce()
   })
 })

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { MatrixClient } from "matrix-js-sdk"
 import type { CallMembership } from "matrix-js-sdk/lib/matrixrtc"
-import { discoverLivekitServiceUrl, forgetLivekitServiceUrl, getSfuConfig, selectActiveServiceUrl, userIdFromIdentity } from "./rtc"
+import {
+  discoverLivekitServiceUrl, forgetLivekitServiceUrl, forgetOpenIdToken, getOpenIdToken, getSfuConfig,
+  selectActiveServiceUrl, userIdFromIdentity,
+} from "./rtc"
 
 describe("userIdFromIdentity", () => {
   it("splits off the device id", () => {
@@ -293,5 +296,52 @@ describe("getSfuConfig", () => {
   it("reports a rejected token exchange", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })))
     await expect(getSfuConfig(client, "https://jwt", "!r:x", openIdToken)).rejects.toThrow(/401/)
+  })
+})
+
+describe("OpenID token reuse", () => {
+  afterEach(() => vi.useRealTimers())
+
+  const token = (access_token: string) =>
+    ({ access_token, token_type: "Bearer", matrix_server_name: "example.org", expires_in: 3600 })
+  const mockClient = () => {
+    const request = vi.fn().mockResolvedValue(token("first"))
+    return { client: { getOpenIdToken: request } as unknown as MatrixClient, request }
+  }
+
+  it("shares one token per client until shortly before it expires", async () => {
+    vi.useFakeTimers()
+    const { client, request } = mockClient()
+    const other = mockClient()
+    const [first, second] = await Promise.all([getOpenIdToken(client), getOpenIdToken(client)])
+    expect(second).toBe(first)
+    await getOpenIdToken(other.client)
+    expect(other.request).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(3600_000 - 60_000 - 1)
+    await getOpenIdToken(client)
+    expect(request).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(1)
+    await getOpenIdToken(client)
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("retries after a failure and after the token was forgotten", async () => {
+    const { client, request } = mockClient()
+    request.mockReset().mockRejectedValueOnce(new Error("Unavailable")).mockResolvedValue(token("retry"))
+    await expect(getOpenIdToken(client)).rejects.toThrow("Unavailable")
+    await expect(getOpenIdToken(client)).resolves.toMatchObject({ access_token: "retry" })
+    forgetOpenIdToken(client)
+    await getOpenIdToken(client)
+    expect(request).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not let a hung request block later joins", async () => {
+    vi.useFakeTimers()
+    const { client, request } = mockClient()
+    request.mockReset().mockReturnValueOnce(new Promise(() => {})).mockResolvedValue(token("fresh"))
+    void getOpenIdToken(client)
+    vi.advanceTimersByTime(10_000)
+    await expect(getOpenIdToken(client)).resolves.toMatchObject({ access_token: "fresh" })
   })
 })

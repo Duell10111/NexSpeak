@@ -77,9 +77,10 @@ URLs. Disable them with `localStorage.removeItem("nexspeak:callTimings")` before
 
 Joining an existing call uses the service advertised by its oldest member without looking up
 your own service. That service must use HTTPS (plain HTTP only on `localhost`), because it
-receives your OpenID token; otherwise NexSpeak looks up your own service. When discovery is needed, a successful result is reused for five minutes in
-the current Matrix client; failed lookups are retried on the next attempt, and a cached service
-is dropped as soon as joining through it fails. A lookup has a ten-second
-deadline across all discovery methods, and pending requests are aborted when it expires. If a
-call starts while discovery is running, NexSpeak rechecks its oldest membership before choosing
-the service. No discovery runs while idle.
+receives your OpenID token; otherwise NexSpeak looks up your own service. When discovery is
+needed, a successful result is reused for five minutes in the current Matrix client; failed
+lookups are retried on the next attempt, and a cached service is dropped as soon as joining
+through it fails. A lookup has a ten-second deadline across all discovery methods, and pending
+requests are aborted when it expires. If a call starts while discovery is running, NexSpeak
+rechecks its oldest membership before choosing the service. The OpenID token is reused until
+shortly before it expires and dropped when a service rejects it. No discovery runs while idle.

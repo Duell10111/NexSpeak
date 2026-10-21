@@ -127,6 +127,40 @@ export function discoverLivekitServiceUrl(client: MatrixClient): Promise<string>
   return entry.result
 }
 
+const OPENID_PENDING_MS = 10_000
+const OPENID_EXPIRY_MARGIN_MS = 60_000
+interface OpenIdEntry {
+  token: Promise<IOpenIDToken>
+  expiresAt: number
+}
+const openIdCache = new WeakMap<MatrixClient, OpenIdEntry>()
+
+/**
+ * OpenID tokens stay valid for their whole lifetime (usually an hour), so joins share one
+ * instead of requesting a new token each time, also across attempts whose discovery failed.
+ */
+export function getOpenIdToken(client: MatrixClient): Promise<IOpenIDToken> {
+  const cached = openIdCache.get(client)
+  if (cached && Date.now() < cached.expiresAt) return cached.token
+
+  // A hung request is shared only briefly, so it cannot block later joins.
+  const entry: OpenIdEntry = { token: client.getOpenIdToken(), expiresAt: Date.now() + OPENID_PENDING_MS }
+  openIdCache.set(client, entry)
+  void entry.token.then(
+    (token) => {
+      if (openIdCache.get(client) !== entry) return
+      entry.expiresAt = Date.now() + token.expires_in * 1000 - OPENID_EXPIRY_MARGIN_MS
+    },
+    () => { if (openIdCache.get(client) === entry) openIdCache.delete(client) },
+  )
+  return entry.token
+}
+
+/** Drop the shared OpenID token, e.g. after a service rejected it. */
+export function forgetOpenIdToken(client: MatrixClient): void {
+  openIdCache.delete(client)
+}
+
 /**
  * Drop a cached discovery result after its service failed, so the next join looks again
  * instead of reusing a dead service for the rest of the cache lifetime.

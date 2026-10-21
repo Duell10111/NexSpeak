@@ -37,6 +37,8 @@ import {
   canJoinCalls,
   discoverLivekitServiceUrl,
   forgetLivekitServiceUrl,
+  forgetOpenIdToken,
+  getOpenIdToken,
   getSfuConfig,
   ownLivekitTransport,
   selectActiveServiceUrl,
@@ -231,6 +233,8 @@ export class CallSession {
   /** Holds the microphone back until its processor is in place, so nothing unprocessed goes out. */
   private processingPending = false
   private processingQueue: Promise<void> = Promise.resolve()
+  /** Audio processing queued by the latest microphone publish (for join timings). */
+  private microphoneProcessed: Promise<void> = Promise.resolve()
   /** Serialize camera switches and toggles so a late capture cannot override a newer choice. */
   private cameraQueue: Promise<void> = Promise.resolve()
   /** Per-participant playback volume (0..1) and local mutes, by identity. */
@@ -324,12 +328,13 @@ export class CallSession {
     // Neither depends on the other; Promise.all also handles a late rejection of either one.
     const [serviceUrl, openIdToken] = await Promise.all([
       service,
-      timings.measure('openid', () => client.getOpenIdToken()),
+      timings.measure('openid', () => getOpenIdToken(client)),
     ])
     const sfu = await timings
       .measure('token-exchange', () => getSfuConfig(client, serviceUrl, roomId, openIdToken))
       .catch((error: unknown) => {
         forgetLivekitServiceUrl(client, serviceUrl)
+        forgetOpenIdToken(client)
         throw error
       })
     debug('using LiveKit service', serviceUrl, 'members:', rtcSession.memberships.length)
@@ -409,7 +414,8 @@ export class CallSession {
     try {
       await this.timings.measure('microphone', async () => {
         await this.setMicrophoneEnabled(true)
-        await this.processingQueue
+        // Diagnostics only: include this publish's audio processor, not later setting changes.
+        if (this.timings.enabled) await this.microphoneProcessed
       })
       debug('microphone published')
     } catch (error) {
@@ -510,7 +516,7 @@ export class CallSession {
       publication.track?.on(TrackEvent.Restarted, gateMicrophone)
       if (needsAudioGraph(this.processing)) this.processingPending = true
       gateMicrophone()
-      void this.queueAudioProcessing(() => this.applyAudioProcessing())
+      this.microphoneProcessed = this.queueAudioProcessing(() => this.applyAudioProcessing())
     }
     room.on(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
     room.on(LivekitRoomEvent.TrackUnmuted, gateMicrophone)
