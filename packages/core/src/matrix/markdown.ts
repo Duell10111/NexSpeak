@@ -15,6 +15,8 @@ export interface MarkdownLink {
   href: string
 }
 
+export interface MarkdownEmoji { text: string; url: string }
+
 const SAFE_HREF = /^(https?:\/\/|mailto:)/i
 // Private-use characters as placeholder delimiters; stripped from the input first.
 const PH_OPEN = ''
@@ -33,7 +35,7 @@ function escapeRegExp(text: string): string {
 class InlineRenderer {
   private readonly saved: string[] = []
 
-  constructor(private readonly links: MarkdownLink[]) {}
+  constructor(private readonly links: MarkdownLink[], private readonly emojis: MarkdownEmoji[] = []) {}
 
   private hold(html: string): string {
     this.saved.push(html)
@@ -62,6 +64,13 @@ class InlineRenderer {
     )
     // Bare URLs are kept as they are, so emphasis markers inside them (a_b_c) stay untouched.
     text = text.replace(URL_PATTERN, (url) => this.hold(escapeHtml(url)))
+
+    for (const emoji of this.emojis) {
+      if (!emoji.text || !/^mxc:\/\/[^/\s]+\/[^/?#\s]+$/.test(emoji.url)) continue
+      text = text.replace(new RegExp(escapeRegExp(emoji.text), 'g'), () =>
+        this.hold(`<img data-mx-emoticon src="${escapeHtml(emoji.url)}" alt="${escapeHtml(emoji.text)}" title="${escapeHtml(emoji.text)}" height="32">`),
+      )
+    }
 
     text = escapeHtml(text)
     text = text
@@ -181,9 +190,9 @@ function renderBlocks(lines: string[], inline: InlineRenderer, depth: number): s
  * The HTML for a message, or null when the markdown changes nothing (then only `body` is sent,
  * like Element does).
  */
-export function markdownToHtml(markdown: string, links: MarkdownLink[] = []): string | null {
+export function markdownToHtml(markdown: string, links: MarkdownLink[] = [], emojis: MarkdownEmoji[] = []): string | null {
   const source = markdown.replace(/[]/g, '').replace(/\r\n?/g, '\n')
-  const blocks = renderBlocks(source.split('\n'), new InlineRenderer(links), 0)
+  const blocks = renderBlocks(source.split('\n'), new InlineRenderer(links, emojis), 0)
   // A single paragraph is sent without <p>, as Element does.
   const html = blocks.length === 1 && blocks[0].startsWith('<p>') ? blocks[0].slice(3, -4) : blocks.join('')
   const plain = escapeHtml(source.trim()).replace(/\n/g, '<br>')

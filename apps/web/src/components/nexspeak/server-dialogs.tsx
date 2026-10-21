@@ -32,6 +32,7 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { CustomEmojiSettings } from "@/components/nexspeak/custom-emoji-settings"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { RoleDot, roleLabel, RolePicker, RolesTab } from "@/components/nexspeak/server-roles"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
@@ -896,11 +897,12 @@ export function ServerSettingsDialog({
         </DialogHeader>
         {open && (
           <Tabs defaultValue="overview">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1">
               <TabsTrigger value="overview">{t("manage.overview")}</TabsTrigger>
               <TabsTrigger value="roles">{t("manage.roles")}</TabsTrigger>
               <TabsTrigger value="permissions">{t("manage.permissions")}</TabsTrigger>
               <TabsTrigger value="members">{t("members.title")}</TabsTrigger>
+              <TabsTrigger value="emoji">{t("customEmoji.title")}</TabsTrigger>
             </TabsList>
             <TabsContent value="overview" className="space-y-6 pt-2">
               <IconPicker roomId={serverId} name={name} rounded disabled={!canEdit} />
@@ -918,6 +920,7 @@ export function ServerSettingsDialog({
             <TabsContent value="members" className="pt-2">
               <MembersTab serverId={serverId} />
             </TabsContent>
+            <TabsContent value="emoji" className="pt-2"><CustomEmojiSettings serverId={serverId} /></TabsContent>
           </Tabs>
         )}
       </DialogContent>

@@ -27,7 +27,9 @@ import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { editTextMessage, toggleReaction } from "@nexspeak/core/matrix/messages"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
-import { EmojiPicker } from "@/components/nexspeak/emoji-picker"
+import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
+import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
+import { isEmojiMxc } from "@nexspeak/core/matrix/custom-emojis"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
@@ -227,7 +229,7 @@ function Reactions({ message }: { message: MatrixMessage }) {
               aria-pressed={Boolean(reaction.ownEventId)}
               aria-label={`${reaction.key} ${reaction.count}`}
             >
-              <span>{reaction.key}</span>
+              {isEmojiMxc(reaction.key) ? <CustomEmojiImage mxc={reaction.key} name={reaction.key} size={18} /> : <span>{reaction.key}</span>}
               <span className="font-semibold">{reaction.count}</span>
             </button>
           </TooltipTrigger>
@@ -458,11 +460,11 @@ export const MessageItem = memo(function MessageItem({
           // Popups are portaled outside the row; their open triggers must keep their anchors visible.
           className="absolute -top-4 right-4 z-10 hidden items-center rounded-md border border-nx-guild-bar bg-background p-0.5 shadow-md group-focus-within:flex group-hover:flex has-[[data-state=open]]:flex"
         >
-          <EmojiPicker onSelect={react}>
+          <ServerEmojiPicker onSelect={react}>
             <button className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={t("chat.addReaction")}>
               <SmilePlus className="h-4 w-4" />
             </button>
-          </EmojiPicker>
+          </ServerEmojiPicker>
           <ActionButton label={t("chat.reply")} onClick={() => actions.onReply(message)}>
             <CornerUpLeft className="h-4 w-4" />
           </ActionButton>

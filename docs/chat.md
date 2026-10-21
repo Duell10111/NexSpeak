@@ -68,3 +68,16 @@ invites you again. Leaving a direct message with a friend also ends the friendsh
   notifications anymore, in any room. They aren't told. **Settings → Account** lists ignored people.
 - **Report** a message or channel: the report goes to the admins of your homeserver. They can only
   read the message if it isn't encrypted.
+
+## Server emoji
+
+Open the emoji picker to find the current server's **Server emoji** section. Select
+an emoji to insert its `:shortcode:` into the message. You can also type `:` followed
+by its name, then choose a suggestion with the arrow keys and Enter or Tab.
+The sent message contains the image and a text fallback for other Matrix clients.
+Use **Add reaction** to select a server emoji as a reaction; click the reaction again
+to remove it. Editing a message keeps its existing custom emoji.
+
+Emoji use fixed-size, static thumbnails, including GIF and animated WebP uploads.
+Images are fetched only when an emoji becomes visible; closing a picker releases its
+contents. This avoids animation and image processing while gaming.

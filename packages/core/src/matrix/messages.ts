@@ -12,7 +12,8 @@ import {
 } from 'matrix-js-sdk'
 import type { RoomMessageEventContent } from 'matrix-js-sdk/lib/@types/events'
 import { encryptAttachment } from './attachments'
-import { markdownToHtml } from './markdown'
+import { markdownToHtml, type MarkdownEmoji } from './markdown'
+import { formattedEmojis, parseFormattedBody } from './formatted-body'
 import { parseMatrixLink } from './links'
 import { t } from '@nexspeak/i18n'
 
@@ -33,6 +34,7 @@ export interface SendOptions {
   /** Latest event in that thread: older clients show the message as a reply to it. */
   threadLatestEventId?: string
   mentions?: MessageMention[]
+  customEmojis?: MarkdownEmoji[]
   /** "@room" was picked and we may notify the whole room. */
   mentionsRoom?: boolean
 }
@@ -66,8 +68,8 @@ function intentionalMentions(client: MatrixClient, options: SendOptions): Record
 }
 
 /** Plain body (the markdown source) and, if the markdown formats anything, the HTML. */
-function textContent(body: string, msgtype: MsgType, mentions: MessageMention[] = []) {
-  const html = markdownToHtml(body, mentions)
+function textContent(body: string, msgtype: MsgType, mentions: MessageMention[] = [], emojis: MarkdownEmoji[] = []) {
+  const html = markdownToHtml(body, mentions, emojis)
   return { msgtype, body, ...(html !== null && { format: HTML_FORMAT, formatted_body: html }) }
 }
 
@@ -79,7 +81,7 @@ export function sendTextMessage(
 ): Promise<unknown> {
   const isEmote = body.startsWith('/me ')
   const content = {
-    ...textContent(isEmote ? body.slice(4) : body, isEmote ? MsgType.Emote : MsgType.Text, options.mentions),
+    ...textContent(isEmote ? body.slice(4) : body, isEmote ? MsgType.Emote : MsgType.Text, options.mentions, options.customEmojis),
     ...relation(options),
     ...intentionalMentions(client, options),
   } as RoomMessageEventContent
@@ -100,7 +102,9 @@ export function editTextMessage(
   const eventId = original.getId()
   if (!eventId) throw new Error(t('error.messageNotSent'))
   const msgtype = original.getContent().msgtype === MsgType.Emote ? MsgType.Emote : MsgType.Text
-  const newContent = textContent(body, msgtype, links)
+  const formatted = original.getContent().formatted_body
+  const emojis = typeof formatted === 'string' ? formattedEmojis(parseFormattedBody(formatted)) : []
+  const newContent = textContent(body, msgtype, links, emojis)
   const mentionedUserIds = links.flatMap((link) => {
     if (!body.includes(link.text)) return []
     const target = parseMatrixLink(link.href)

@@ -1,0 +1,77 @@
+/** MSC2545 image packs, using the interoperable im.ponies unstable event type. */
+import type { MatrixClient } from 'matrix-js-sdk'
+
+export const ROOM_EMOTES_EVENT = 'im.ponies.room_emotes'
+export const EMOJI_FILE_TYPES = 'image/png,image/jpeg,image/gif,image/webp'
+export const MAX_EMOJI_BYTES = 2 * 1024 * 1024
+const SHORTCODE = /^[a-zA-Z0-9_-]{1,100}$/
+const MXC = /^mxc:\/\/[^/\s]+\/[^/?#\s]+$/
+
+export interface CustomEmoji {
+  name: string
+  url: string
+  /** The mxc URI is also the interoperable reaction key. */
+  key: string
+  packId: string
+}
+
+export function validShortcode(value: string): boolean { return SHORTCODE.test(value) }
+export function isEmojiMxc(value: string): boolean { return MXC.test(value) }
+
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export function parseEmojiPack(content: unknown, packId = ''): CustomEmoji[] {
+  const pack = object(content)
+  const usage = object(pack.pack).usage
+  if (Array.isArray(usage) && usage.length && !usage.includes('emoticon')) return []
+  return Object.entries(object(pack.images)).flatMap(([name, value]) => {
+    const image = object(value)
+    if (typeof image.url !== 'string' || !isEmojiMxc(image.url)) return []
+    const usage = image.usage
+    if (Array.isArray(usage) && usage.length && !usage.includes('emoticon')) return []
+    return [{ name, url: image.url, key: image.url, packId }]
+  })
+}
+
+export function serverEmojis(client: MatrixClient, serverId: string): CustomEmoji[] {
+  return (client.getRoom(serverId)?.currentState.getStateEvents(ROOM_EMOTES_EVENT) ?? [])
+    .flatMap((event) => parseEmojiPack(event.getContent(), event.getStateKey() ?? ''))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.packId.localeCompare(b.packId))
+}
+
+export function canManageEmoji(client: MatrixClient, serverId: string): boolean {
+  const room = client.getRoom(serverId)
+  const ownId = client.getUserId() ?? ''
+  return Boolean(room && (room.getMember(ownId)?.powerLevel ?? 0) >= 50 && room.currentState.maySendStateEvent(ROOM_EMOTES_EVENT, ownId))
+}
+
+/** Preserve pack metadata and other clients' image fields when renaming or deleting. */
+export async function changeServerEmoji(
+  client: MatrixClient, serverId: string,
+  change: { packId?: string; oldName?: string; name?: string; image?: Record<string, unknown> },
+): Promise<void> {
+  if (!canManageEmoji(client, serverId)) throw new Error('Insufficient permission to manage server emoji')
+  const packId = change.packId ?? ''
+  const content = { ...client.getRoom(serverId)?.currentState.getStateEvents(ROOM_EMOTES_EVENT, packId)?.getContent() }
+  const images = { ...object(content.images) }
+  if (change.name !== undefined) {
+    if (!validShortcode(change.name)) throw new Error('Invalid emoji shortcode')
+    if (change.name !== change.oldName && Object.hasOwn(images, change.name)) throw new Error('Emoji shortcode already exists')
+    const image = change.image ?? object(images[change.oldName ?? ''])
+    if (typeof image.url !== 'string' || !isEmojiMxc(image.url)) throw new Error('Invalid emoji image URL')
+    Object.defineProperty(images, change.name, { value: image, enumerable: true, configurable: true, writable: true })
+  }
+  if (change.oldName && change.oldName !== change.name) delete images[change.oldName]
+  const next = { ...content, images }
+  if (new TextEncoder().encode(JSON.stringify(next)).length > 50_000) throw new Error('Emoji pack is full')
+  // The SDK permits custom state events, although its event map only lists stable types.
+  type StateSender = (roomId: string, type: string, content: Record<string, unknown>, stateKey: string) => Promise<unknown>
+  await (client.sendStateEvent as unknown as StateSender).call(client, serverId, ROOM_EMOTES_EVENT, next, packId)
+}
+
+export function findEmojiTrigger(text: string, caret: number): { start: number; query: string } | null {
+  const match = /(?:^|\s):([a-zA-Z0-9_-]{0,100})$/.exec(text.slice(0, caret))
+  return match ? { start: caret - match[1].length - 1, query: match[1] } : null
+}

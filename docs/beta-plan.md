@@ -161,8 +161,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
 - [x] Keep the reaction emoji picker anchored while the pointer leaves the message (#90)
-- Message search with filters (#37), link previews (opt-in, #40), custom emoji (`im.ponies`, #39),
-  polls (#38)
+- Message search with filters (#37), link previews (opt-in, #40), polls (#38)
+- [x] Custom server emoji (`im.ponies`), inline messages, reactions and shortcode completion (#39)
 - [x] Full emoji picker with search, categories, skin tones and frequent emoji, loaded on first open (#50)
 - Stickers (#51)
 - GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
