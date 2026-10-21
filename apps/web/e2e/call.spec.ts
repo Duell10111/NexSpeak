@@ -86,6 +86,9 @@ test("incoming DM calls can be declined, end automatically, and join from a back
   await expect(prompt).toHaveCount(0)
   await expect(tiles(bobPage)).toHaveCount(2, { timeout: 30_000 })
   await expect(bobPage.getByRole("button", { name: "Anruf verlassen" })).toBeVisible()
+  // The worker-scoped browser outlives this test; open microphones would starve later captures.
+  await alicePage.context().close()
+  await bobPage.context().close()
 })
 
 /** Sustained, audible input: the default fake mic's brief beeps can miss the SFU's activity window. */
