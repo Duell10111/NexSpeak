@@ -45,3 +45,13 @@ the login expires, start again from NexSpeak's login page.
   direct message**.
 - **Check your microphone:** **Settings → Audio** has device selection, a microphone test and push
   to talk.
+
+## Switch between conversations
+
+Press **Ctrl+K** (**Cmd+K** on macOS) to open **Quick switcher** while NexSpeak is focused.
+Search the names of your joined servers, channels and direct messages; partial or abbreviated names
+work too. Channel results also show their server, unread messages and mentions.
+
+With the search empty, recently visited destinations appear first. Use **Up** and **Down** to choose
+a result, then **Enter** to open it, or click a result. **Esc** closes the switcher. It searches the
+rooms already loaded in NexSpeak without contacting a directory, and does not run in the background.

@@ -10,7 +10,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react"
-import { AtSign, Hash, PlusCircle, SendHorizonal, Smile, X } from "lucide-react"
+import { ChartNoAxesColumn, AtSign, Hash, PlusCircle, SendHorizonal, Smile, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
@@ -29,6 +29,9 @@ import {
   type MentionCandidate,
 } from "@nexspeak/core/matrix/mentions"
 import type { MessageMention } from "@nexspeak/core/matrix/messages"
+
+import { PollComposer } from "@/components/nexspeak/poll-composer"
+import type { PollDraft } from "@nexspeak/core/matrix/polls"
 
 const MAX_COMPOSER_HEIGHT_PX = 200
 
@@ -51,6 +54,7 @@ interface MessageComposerProps {
   replyToName?: string
   onCancelReply?: () => void
   onSend: (message: ComposedMessage) => void
+  onPoll?: (draft: PollDraft) => Promise<unknown>
   onSticker?: (sticker: Sticker) => void
   onFiles?: (files: File[]) => void
   isUploading?: boolean
@@ -127,6 +131,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     onCancelReply,
     onSend,
     onSticker,
+    onPoll,
     onFiles,
     isUploading = false,
     attachLabel,
@@ -139,6 +144,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
 ) {
   const { t } = useTranslation()
   const { client } = useMatrixClient()
+  const [pollOpen, setPollOpen] = useState(false)
   const [value, setValue] = useState("")
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
   const [emojiTrigger, setEmojiTrigger] = useState<{ start: number; end: number; query: string; selected: number } | null>(null)
@@ -341,6 +347,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           </button>
         </div>
       )}
+      {pollOpen && onPoll && <PollComposer onClose={() => setPollOpen(false)} onCreate={onPoll} />}
       <div className={cn("flex items-start gap-1 bg-nx-chat-input pr-2 pl-1", replyToName ? "rounded-b-lg" : "rounded-lg", compact && "pl-0")}>
         {onFiles && (
           <>
@@ -393,6 +400,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           disabled={disabled}
         />
         <div className="flex h-11 shrink-0 items-center gap-1">
+          {onPoll && <button type="button" disabled={disabled} aria-label={t("poll.create")} onClick={() => { onStopTyping?.(); setPollOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-50"><ChartNoAxesColumn className="h-5 w-5" /></button>}
           <ServerEmojiPicker onSelect={insertEmoji} onSelectCustom={pickCustomEmoji} onSelectSticker={disabled ? undefined : onSticker}>
             <button
               className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"

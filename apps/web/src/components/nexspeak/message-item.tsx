@@ -30,6 +30,7 @@ import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
 import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
 import { StickerImage } from '@/components/nexspeak/sticker-image'
+import { InlineMediaAttachment } from '@/components/nexspeak/inline-media-attachment'
 import { isEmojiMxc } from "@nexspeak/core/matrix/custom-emojis"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -42,6 +43,7 @@ import {
 import type { MatrixMessage } from "@nexspeak/core/matrix/types"
 import { formattedLinks } from "@nexspeak/core/matrix/formatted-body"
 import { FormattedMessage, LinkifiedText } from "@/components/nexspeak/formatted-message"
+import { PollMessage } from "@/components/nexspeak/poll-message"
 import { jumpToMessage } from "@/lib/jump-to-message"
 
 export interface MessageActions {
@@ -130,6 +132,8 @@ function TextBody({ message }: { message: MatrixMessage }) {
 function MessageBody({ message }: { message: MatrixMessage }) {
   const { t } = useTranslation()
   switch (message.kind) {
+    case "poll":
+      return <PollMessage message={message} />
     case "text":
       return <TextBody message={message} />
     case "notice":
@@ -150,6 +154,7 @@ function MessageBody({ message }: { message: MatrixMessage }) {
       return <StickerImage mxc={message.media?.mxc} name={message.body} width={message.media?.width} height={message.media?.height} />
     case "video":
     case "audio":
+      return <InlineMediaAttachment key={`${message.roomId}:${message.id}`} message={message} />
     case "file":
       return <FileAttachment message={message} />
     case "redacted":

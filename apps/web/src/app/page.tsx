@@ -12,6 +12,7 @@ import { CallProvider } from "@/components/nexspeak/call-context"
 import { DesktopTrayVoice } from "@/components/nexspeak/desktop-tray"
 import { DesktopUpdateNotice } from "@/components/nexspeak/desktop-update"
 import { MatrixLinkHandler } from "@/components/nexspeak/matrix-links"
+import { QuickSwitcher } from "@/components/nexspeak/quick-switcher"
 import { useAttentionBadge, useMessageNotifications } from "@/hooks/useMessageNotifications"
 import { SecurityProvider } from "@/components/nexspeak/security-context"
 import { SecurityBanner } from "@/components/nexspeak/security-panel"
@@ -236,6 +237,7 @@ export default function NexSpeakApp() {
             <DesktopTrayVoice />
             <DesktopUpdateNotice />
             <MatrixLinkHandler openRoom={openRoom} selectServer={handleServerSelect} onRoomJoined={handleRoomJoined} />
+            <QuickSwitcher directory={directory} activeServerId={serverId} activeRoomId={channelId} selectServer={handleServerSelect} openRoom={openRoom} />
             <div className="flex h-dvh w-screen flex-col overflow-hidden">
               <SecurityBanner />
               {isConnectionLost && (

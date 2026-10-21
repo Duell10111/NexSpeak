@@ -17,6 +17,7 @@ import {
   Direction,
   MatrixEventEvent,
   RoomEvent,
+  RoomStateEvent,
   ThreadEvent,
   type EventTimeline,
   type MatrixClient,
@@ -132,6 +133,7 @@ export function useRoomTimeline(client: MatrixClient | null, roomId: string, thr
     client.on(RoomEvent.Redaction, onRoomEvent)
     client.on(RoomEvent.LocalEchoUpdated, onRoomEvent)
     client.on(RoomEvent.TimelineReset, onTimelineReset)
+    client.on(RoomStateEvent.Events, onEventChanged)
     client.on(MatrixEventEvent.Decrypted, onEventChanged)
     client.on(MatrixEventEvent.Replaced, onEventChanged)
 
@@ -144,6 +146,7 @@ export function useRoomTimeline(client: MatrixClient | null, roomId: string, thr
       client.removeListener(RoomEvent.Redaction, onRoomEvent)
       client.removeListener(RoomEvent.LocalEchoUpdated, onRoomEvent)
       client.removeListener(RoomEvent.TimelineReset, onTimelineReset)
+      client.removeListener(RoomStateEvent.Events, onEventChanged)
       client.removeListener(MatrixEventEvent.Decrypted, onEventChanged)
       client.removeListener(MatrixEventEvent.Replaced, onEventChanged)
     }
