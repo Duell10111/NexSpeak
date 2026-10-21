@@ -175,3 +175,13 @@ same images. Previously sent emoji remain visible after deletion.
 
 Emoji images and their pack state are shared with the homeserver and are not
 end-to-end encrypted, even when used inside an encrypted channel.
+
+## Server soundboard
+
+In **Server settings → Soundboard**, moderators and admins can choose **Upload sound** to add
+an Opus/OGG or MP3 recording of at most five seconds and 512 KB. A server can have up to 32 sounds.
+Give each sound a **Sound name**, **Sound emoji**, and **Volume**, then choose **Save**. Choose
+**Remove sound** to remove it from the catalog. Only upload recordings you have permission to share.
+
+Everyone in a call can play the server's sounds from the **Soundboard** button. The catalog is
+stored in the server space as `io.nexspeak.soundboard`; other Matrix clients can ignore it.

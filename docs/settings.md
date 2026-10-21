@@ -26,6 +26,9 @@ depends on your homeserver.
   others join or leave**, **When a stream starts or stops**). They play on the output device at the
   call volume, and not while you are deafened.
 
+- **Soundboard**: enable or disable sounds played by call participants, and adjust their **Volume**
+  independently of call sound cues. Deafening also stops them.
+
 ### Voice activity and input sensitivity
 
 With **Voice activity**, everything your microphone picks up is sent. Turn on **Input sensitivity** to

@@ -46,6 +46,15 @@ export function SoundCueSettings({ settings }: { settings: AudioSettings }) {
           />
         </div>
       ))}
+      <div className="flex items-center justify-between gap-4 border-t pt-3">
+        <Label htmlFor="soundboard-enabled">{t("soundboard.title")}</Label>
+        <Switch id="soundboard-enabled" checked={settings.soundboardEnabled} onCheckedChange={(soundboardEnabled) => saveAudioSettings({ soundboardEnabled })} />
+      </div>
+      <div className="flex items-center gap-3">
+        <Label htmlFor="soundboard-volume" className="shrink-0">{t("soundboard.volume")}</Label>
+        <input id="soundboard-volume" type="range" min={0} max={100} value={settings.soundboardVolume} disabled={!settings.soundboardEnabled} onChange={(event) => saveAudioSettings({ soundboardVolume: Number(event.target.value) })} className="min-w-0 flex-1" />
+        <span className="text-sm tabular-nums">{settings.soundboardVolume}%</span>
+      </div>
       <p className="text-xs text-muted-foreground">{t("settings.soundCuesHint")}</p>
     </div>
   )

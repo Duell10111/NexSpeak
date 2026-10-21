@@ -28,6 +28,10 @@ export interface AudioSettings {
   pushToTalkKey: string | null
   /** Keeps transmitting this long after the key is released, so word endings aren't cut off. */
   pushToTalkReleaseDelayMs: number
+  /** Local playback of soundboard clips sent by call participants. */
+  soundboardEnabled: boolean
+  /** 0..100, multiplied by the output volume and the clip's own volume. */
+  soundboardVolume: number
   /** Turns all sound cues off at once; soundCueGroups picks individual ones. */
   soundCues: boolean
   soundCueGroups: Record<SoundCueGroup, boolean>
@@ -50,6 +54,8 @@ const DEFAULT_SETTINGS: AudioSettings = {
   inputMode: 'voice-activity',
   pushToTalkKey: null,
   pushToTalkReleaseDelayMs: 100,
+  soundboardEnabled: true,
+  soundboardVolume: 100,
   soundCues: true,
   soundCueGroups: { own: true, others: true, screenshare: true },
   noiseSuppression: DEFAULT_AUDIO_PROCESSING.noiseSuppression,
@@ -86,6 +92,8 @@ export function loadAudioSettings(): AudioSettings {
         typeof parsed.pushToTalkReleaseDelayMs === 'number'
           ? Math.min(MAX_PUSH_TO_TALK_RELEASE_DELAY_MS, Math.max(0, parsed.pushToTalkReleaseDelayMs))
           : DEFAULT_SETTINGS.pushToTalkReleaseDelayMs,
+      soundboardEnabled: parsed.soundboardEnabled !== false,
+      soundboardVolume: typeof parsed.soundboardVolume === 'number' && Number.isFinite(parsed.soundboardVolume) ? Math.max(0, Math.min(100, parsed.soundboardVolume)) : 100,
       soundCues: parsed.soundCues !== false,
       soundCueGroups: {
         own: parsed.soundCueGroups?.own !== false,
