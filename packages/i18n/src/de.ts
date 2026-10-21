@@ -833,6 +833,40 @@ export const de = {
   'quickSwitcher.mentions': '{count} Erwähnungen',
   'quickSwitcher.empty': 'Keine Unterhaltungen gefunden.',
 
+  'incomingCall.title': 'Eingehender Anruf',
+  'incomingCall.description': '{caller} ruft in {room} an.',
+  'incomingCall.privateDescription': 'Ein Anruf in einer Direktnachricht wartet auf dich.',
+  'incomingCall.join': 'Beitreten',
+  'incomingCall.decline': 'Ablehnen',
+
+  // Message search
+  'messageSearch.title': 'Nachrichten suchen',
+  'messageSearch.term': 'Suchtext',
+  'messageSearch.scope': 'Suchen in',
+  'messageSearch.currentRoom': 'Aktueller Kanal oder Direktnachricht',
+  'messageSearch.server': 'Aktueller Server',
+  'messageSearch.direct': 'Direktnachrichten',
+  'messageSearch.channel': 'Kanal oder Unterhaltung',
+  'messageSearch.allChannels': 'Alle im Suchbereich',
+  'messageSearch.author': 'Autor (Matrix-ID)',
+  'messageSearch.after': 'Ab Datum',
+  'messageSearch.before': 'Vor Datum',
+  'messageSearch.has': 'Enthält',
+  'messageSearch.any': 'Alle Nachrichten',
+  'messageSearch.link': 'Link',
+  'messageSearch.attachment': 'Anhang',
+  'messageSearch.search': 'Suchen',
+  'messageSearch.unencryptedOnly': 'Die Suche umfasst nur unverschlüsselte Räume. Verschlüsselte Nachrichten sind ausgeschlossen; es wird kein lokaler Suchindex gespeichert.',
+  'messageSearch.start': 'Suchtext eingeben und Suchen wählen, um den Nachrichtenverlauf zu durchsuchen.',
+  'messageSearch.empty': 'Keine passenden Nachrichten auf dieser Seite.',
+  'messageSearch.failed': 'Nachrichtensuche fehlgeschlagen.',
+  'messageSearch.jump': 'Zur Nachricht springen',
+  'messageSearch.loading': 'Nachrichten werden gesucht…',
+  'messageSearch.more': 'Weitere Ergebnisse laden',
+  'messageSearch.viewingContext': 'Nachrichtenverlauf wird angezeigt',
+  'messageSearch.contextFailed': 'Der Kontext dieser Nachricht konnte nicht geladen werden.',
+  'messageSearch.latest': 'Zurück zu den neuesten Nachrichten',
+
 } as const
 
 export type MessageKey = keyof typeof de

@@ -13,6 +13,7 @@ import {
   MatrixRTCSessionManagerEvents,
   type MatrixRTCSession,
 } from 'matrix-js-sdk/lib/matrixrtc/index.js'
+import { createVisibilityBatch } from '@/lib/visibility-batch'
 
 export interface RoomCallMember {
   userId: string
@@ -77,22 +78,17 @@ export function useRtcCallInfo(client: MatrixClient | null): Record<string, Room
     if (!client) return
 
     const watched = new Set<MatrixRTCSession>()
-    let frame: number | null = null
-
-    const refresh = () => {
-      if (frame !== null) return
-      frame = requestAnimationFrame(() => {
-        frame = null
-        const sessions = joinedRoomSessions(client)
-        sessions.forEach((session) => {
-          if (watched.has(session)) return
-          // Memberships are computed asynchronously; this fires once they are known.
-          session.on(MatrixRTCSessionEvent.MembershipsChanged, refresh)
-          watched.add(session)
-        })
-        setState({ client, info: readCallInfo(sessions) })
+    const batch = createVisibilityBatch(() => {
+      const sessions = joinedRoomSessions(client)
+      sessions.forEach((session) => {
+        if (watched.has(session)) return
+        // Memberships are computed asynchronously; this fires once they are known.
+        session.on(MatrixRTCSessionEvent.MembershipsChanged, refresh)
+        watched.add(session)
       })
-    }
+      setState({ client, info: readCallInfo(sessions) })
+    })
+    const refresh = batch.refresh
 
     refresh()
     client.on(ClientEvent.Room, refresh)
@@ -101,7 +97,7 @@ export function useRtcCallInfo(client: MatrixClient | null): Record<string, Room
     client.matrixRTC.on(MatrixRTCSessionManagerEvents.SessionEnded, refresh)
 
     return () => {
-      if (frame !== null) cancelAnimationFrame(frame)
+      batch.dispose()
       client.off(ClientEvent.Room, refresh)
       client.off(RoomEvent.MyMembership, refresh)
       client.matrixRTC.off(MatrixRTCSessionManagerEvents.SessionStarted, refresh)

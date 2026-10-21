@@ -131,3 +131,24 @@ Polls use Matrix polls and work with compatible clients such as Element. In encr
 rooms the question, responses and end event are encrypted by the Matrix SDK. Counts
 reflect the responses already loaded with the room's timeline; loading more history
 can fill in older responses. Opening a poll does not fetch a separate response history.
+
+## Message search
+
+Select **Search messages** in a channel or direct message header. Enter **Search text**,
+choose **Search in** (**Current channel or DM**, **Current server**, or **Direct messages**),
+and select **Search**. Narrow the search by **Channel or conversation**, **Author (Matrix ID)**,
+**From date** (inclusive), **Before date** (exclusive), or **Contains** (**Link** or **Attachment**).
+
+Search uses your homeserver and covers only joined, unencrypted rooms. Encrypted messages
+are excluded, including encrypted direct messages. NexSpeak does not keep a local search
+index. Opening the panel does not start a search. Your homeserver determines which words
+match and how far back its searchable history goes.
+
+Results are grouped by channel or conversation. **Load more results** requests another page;
+a page may have no matches after applying your filters. **Jump to message** opens the room
+and loads the surrounding messages without downloading its entire history. Scroll upwards
+to load older messages, or choose **Return to latest messages** to resume the live timeline.
+
+Jumping to an unloaded thread reply requires homeserver support for forward thread
+pagination. On older homeservers, open the thread from **Threads** instead. This avoids
+automatically downloading an entire thread when opening one search result.

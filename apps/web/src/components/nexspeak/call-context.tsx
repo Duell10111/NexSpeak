@@ -45,6 +45,8 @@ import { createSoundboardPlayer } from "@/lib/soundboard-player"
 import { subscribeIgnoredUsers } from "@nexspeak/core/matrix/safety"
 import { userIdFromIdentity } from "@nexspeak/core/matrix/rtc"
 import { emptyCallShortcutBindings } from "@nexspeak/core/global-shortcuts"
+import { useIncomingCalls } from "@/hooks/useIncomingCalls"
+import { IncomingCallPrompt } from "@/components/nexspeak/incoming-call-prompt"
 
 export type { RoomCallInfo }
 export type { CallParticipant, CallVideoFeed } from "@nexspeak/core/matrix/call-session"
@@ -123,6 +125,7 @@ function saveVoicePrefs(prefs: VoicePrefs): void {
 interface CallProviderProps {
   client: MatrixClient | null
   activeChannelId: string
+  onOpenRoom: (roomId: string) => void
   children: ReactNode
 }
 
@@ -135,7 +138,7 @@ function reportError(error: unknown, fallback: string) {
   toast.error(message)
 }
 
-export function CallProvider({ client, activeChannelId, children }: CallProviderProps) {
+export function CallProvider({ client, activeChannelId, onOpenRoom, children }: CallProviderProps) {
   const [session, setSession] = useState<CallSession | null>(null)
   const [joiningRoomId, setJoiningRoomId] = useState("")
   const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(() =>
@@ -160,6 +163,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     session ? session.getSnapshot : nullSnapshot,
     nullSnapshot,
   )
+  const { incoming, dismiss: dismissIncoming, retry: retryIncoming } = useIncomingCalls(client, callInfoByRoom, joiningRoomId || call?.roomId || "")
 
   const [videoPopout] = useState(() => new VideoPopout())
   useEffect(() => {
@@ -543,6 +547,21 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   return (
     <CallContext.Provider value={value}>
       {children}
+      {incoming && (
+        <IncomingCallPrompt
+          key={incoming.roomId}
+          incoming={incoming}
+          onDecline={() => dismissIncoming(incoming.roomId)}
+          onJoin={() => {
+            dismissIncoming(incoming.roomId)
+            onOpenRoom(incoming.roomId)
+            void joinCall(incoming.roomId).then(() => {
+              if (sessionRef.current?.roomId !== incoming.roomId) retryIncoming(incoming.roomId)
+            })
+          }}
+          onOpenRoom={onOpenRoom}
+        />
+      )}
       <ScreenshareDialog
         open={isScreenshareDialogOpen && Boolean(call)}
         onOpenChange={setIsScreenshareDialogOpen}

@@ -19,6 +19,7 @@ import {
   RoomEvent,
   RoomStateEvent,
   ThreadEvent,
+  Thread,
   type EventTimeline,
   type MatrixClient,
   type MatrixEvent,
@@ -36,11 +37,13 @@ interface UseRoomTimelineReturn {
   isLoading: boolean
   hasMore: boolean
   loadMore: () => Promise<void>
+  contextError: boolean
 }
 
 interface TimelineState {
   roomId: string
   threadId?: string
+  targetEventId?: string
   messages: MatrixMessage[]
   hasMore: boolean
 }
@@ -51,7 +54,12 @@ function liveTimelineOf(room: Room, threadId?: string): EventTimeline | null {
   return room.getThread(threadId)?.liveTimeline ?? null
 }
 
-function timelineEvents(room: Room, threadId?: string): MatrixEvent[] {
+function timelineEvents(room: Room, threadId?: string, focusedTimeline?: EventTimeline | null): MatrixEvent[] {
+  if (focusedTimeline) {
+    const events = focusedTimeline.getEvents()
+    const root = threadId ? room.getThread(threadId)?.rootEvent : undefined
+    return root ? [root, ...events.filter((event) => event.getId() !== threadId)] : events
+  }
   // Local echoes of all threads share one list (detached pending events).
   const pending = room.getPendingEvents().filter((event) => (threadId ? event.threadRootId === threadId : !isThreadReply(event)))
   if (!threadId) return [...room.getLiveTimeline().getEvents().filter((event) => !isThreadReply(event)), ...pending]
@@ -63,8 +71,8 @@ function timelineEvents(room: Room, threadId?: string): MatrixEvent[] {
   return [...(root ? [root] : []), ...replies, ...pending]
 }
 
-function buildMessages(room: Room, threadId?: string): MatrixMessage[] {
-  const events = timelineEvents(room, threadId)
+function buildMessages(room: Room, threadId?: string, focusedTimeline?: EventTimeline | null): MatrixMessage[] {
+  const events = timelineEvents(room, threadId, focusedTimeline)
   const context = { room, ownUserId: room.client.getUserId() }
   const messages: MatrixMessage[] = []
   events.forEach((event) => {
@@ -82,7 +90,10 @@ function canPaginateBackwards(room: Room, threadId?: string): boolean {
   return Boolean(timeline && timeline.getPaginationToken(Direction.Backward) !== null)
 }
 
-export function useRoomTimeline(client: MatrixClient | null, roomId: string, threadId?: string): UseRoomTimelineReturn {
+export function useRoomTimeline(client: MatrixClient | null, roomId: string, threadId?: string, targetEventId?: string): UseRoomTimelineReturn {
+  const [focused, setFocused] = useState<{ client: MatrixClient; roomId: string; eventId: string; threadId?: string; timeline: EventTimeline | null; error: boolean } | null>(null)
+  const focusedTimeline = focused?.client === client && focused.roomId === roomId && focused.eventId === targetEventId && focused.threadId === threadId ? focused.timeline : null
+  const contextError = Boolean(targetEventId && focused?.client === client && focused.roomId === roomId && focused.eventId === targetEventId && focused.threadId === threadId && focused.error)
   const [state, setState] = useState<TimelineState | null>(null)
   const [loadingRoomId, setLoadingRoomId] = useState<string | null>(null)
   const loadingRef = useRef(false)
@@ -90,7 +101,46 @@ export function useRoomTimeline(client: MatrixClient | null, roomId: string, thr
   const [roomAvailableTick, setRoomAvailableTick] = useState(0)
 
   useEffect(() => {
-    if (!client || !roomId) return
+    if (!client || !roomId || !targetEventId) return
+    const room = client.getRoom(roomId)
+    if (!room) return
+    let cancelled = false
+    // The SDK requests /context with limit=0. Load a small window in each direction
+    // explicitly, instead of backfilling the entire history to reach a search result.
+    const loadContext = async () => {
+      if (!threadId) {
+        const timeline = await client.getEventTimeline(room.getUnfilteredTimelineSet(), targetEventId)
+        if (!timeline || cancelled || timeline === room.getLiveTimeline()) return timeline
+        for (const backwards of [true, false]) {
+          if (cancelled) return null
+          const direction = backwards ? Direction.Backward : Direction.Forward
+          if (timeline.getPaginationToken(direction) !== null) {
+            await client.paginateEventTimeline(timeline, { backwards, limit: 15 })
+          }
+        }
+        return timeline
+      }
+      await client.getEventTimeline(room.getUnfilteredTimelineSet(), threadId)
+      if (cancelled) return null
+      const thread = ensureThread(room, threadId)
+      if (!thread) return null
+      const cached = thread.timelineSet.getTimelineForEvent(targetEventId)
+      if (cached) return cached
+      // The SDK's compatibility path downloads every newer reply on old homeservers.
+      // Fail this context request rather than starting an unbounded history download.
+      if (!Thread.hasServerSideFwdPaginationSupport) return null
+      return client.getEventTimeline(thread.timelineSet, targetEventId)
+    }
+    void loadContext().then((timeline) => {
+      if (!cancelled) setFocused({ client, roomId, eventId: targetEventId, threadId, timeline: timeline ?? null, error: !timeline })
+    }).catch(() => {
+      if (!cancelled) setFocused({ client, roomId, eventId: targetEventId, threadId, timeline: null, error: true })
+    })
+    return () => { cancelled = true }
+  }, [client, roomId, targetEventId, threadId])
+
+  useEffect(() => {
+    if (!client || !roomId || (targetEventId && !focusedTimeline)) return
 
     const room = client.getRoom(roomId)
     if (!room) {
@@ -108,7 +158,7 @@ export function useRoomTimeline(client: MatrixClient | null, roomId: string, thr
     let frame: number | null = null
     const recomputeNow = () => {
       frame = null
-      setState({ roomId, threadId, messages: buildMessages(room, threadId), hasMore: canPaginateBackwards(room, threadId) })
+      setState({ roomId, threadId, targetEventId, messages: buildMessages(room, threadId, focusedTimeline), hasMore: focusedTimeline ? focusedTimeline.getPaginationToken(Direction.Backward) !== null : canPaginateBackwards(room, threadId) })
     }
     const scheduleRecompute = () => {
       if (frame === null) frame = requestAnimationFrame(recomputeNow)
@@ -150,13 +200,13 @@ export function useRoomTimeline(client: MatrixClient | null, roomId: string, thr
       client.removeListener(MatrixEventEvent.Decrypted, onEventChanged)
       client.removeListener(MatrixEventEvent.Replaced, onEventChanged)
     }
-  }, [client, roomId, threadId, roomAvailableTick])
+  }, [client, roomId, threadId, roomAvailableTick, targetEventId, focusedTimeline])
 
   const loadMore = useCallback(async () => {
     if (!client || !roomId || loadingRef.current) return
     const room = client.getRoom(roomId)
-    const timeline = room ? liveTimelineOf(room, threadId) : null
-    if (!room || !timeline || !canPaginateBackwards(room, threadId)) return
+    const timeline = focusedTimeline ?? (room ? liveTimelineOf(room, threadId) : null)
+    if (!room || !timeline || timeline.getPaginationToken(Direction.Backward) === null) return
 
     loadingRef.current = true
     setLoadingRoomId(roomId)
@@ -166,20 +216,21 @@ export function useRoomTimeline(client: MatrixClient | null, roomId: string, thr
         backwards: true,
         limit: BACKFILL_LIMIT,
       })
-      setState((prev) => (prev && prev.roomId === roomId && prev.threadId === threadId ? { ...prev, hasMore } : prev))
+      setState((prev) => (prev && prev.roomId === roomId && prev.threadId === threadId && prev.targetEventId === targetEventId ? { ...prev, hasMore } : prev))
     } catch (error) {
       console.error('Failed to load more messages:', error)
     } finally {
       loadingRef.current = false
       setLoadingRoomId(null)
     }
-  }, [client, roomId, threadId])
+  }, [client, roomId, threadId, targetEventId, focusedTimeline])
 
-  const current = state && state.roomId === roomId && state.threadId === threadId ? state : null
+  const current = state && state.roomId === roomId && state.threadId === threadId && state.targetEventId === targetEventId ? state : null
 
   return {
     messages: current?.messages ?? [],
-    isLoading: loadingRoomId === roomId || (Boolean(roomId) && !current),
+    isLoading: !contextError && (loadingRoomId === roomId || (Boolean(roomId) && !current)),
+    contextError,
     hasMore: current?.hasMore ?? false,
     loadMore,
   }

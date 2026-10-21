@@ -24,6 +24,20 @@ With **Input sensitivity** enabled, your own indicator follows your microphone's
 Other participants' indicators use the call server's activity detection and bridge brief pauses to
 reduce flicker. Very quiet speech can be audible without meeting the server's activity threshold.
 
+### Incoming calls in direct messages
+
+When someone starts a call in a direct message, **Incoming call** shows who is calling. Choose
+**Join** to open the conversation and join the call, or **Decline** to dismiss it on this device.
+Declining does not end the call for others; you can still join from the conversation later.
+The prompt disappears when the call ends or you join it on another device. Calls in server
+channels do not open this prompt.
+
+While NexSpeak is in the background, an incoming call also sends a system notification if you
+enabled notifications and granted permission in **Settings → Notifications**. Clicking it brings
+NexSpeak forward and opens the conversation; choose **Join** to answer. Turning off message
+previews also hides caller and conversation details in call notifications. No microphone or camera
+is opened before you choose to join.
+
 ## Volume of each person
 
 Right-click a person in the call for **User volume**, or **Mute** them just for you (**Muted for

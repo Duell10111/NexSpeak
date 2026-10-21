@@ -77,6 +77,7 @@ export default function NexSpeakApp() {
     typeof window === "undefined" ? { serverId: "", channelId: "" } : loadSelection(),
   )
   const [lastChannelByServer, setLastChannelByServer] = useState<Record<string, string>>({})
+  const [messageTarget, setMessageTarget] = useState<{ roomId: string; eventId: string; threadId?: string } | null>(null)
   const [showMembers, setShowMembers] = useState(true)
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
   const [isMemberSheetOpen, setIsMemberSheetOpen] = useState(false)
@@ -135,6 +136,7 @@ export default function NexSpeakApp() {
     incomingFriendRequests(directory)
 
   const handleServerSelect = (nextServerId: string) => {
+    setMessageTarget(null)
     setSelection({ serverId: nextServerId, channelId: lastChannelByServer[nextServerId] || "" })
   }
 
@@ -147,6 +149,7 @@ export default function NexSpeakApp() {
   }
 
   const openRoom = (roomId: string, targetServer?: string) => {
+    setMessageTarget(null)
     setIsNavigationOpen(false)
     setIsMemberSheetOpen(false)
     // Unknown yet (e.g. just joined): let the server be derived once the directory catches up.
@@ -156,6 +159,7 @@ export default function NexSpeakApp() {
   }
 
   const handleRoomJoined = (roomId: string) => {
+    setMessageTarget(null)
     setSelection({ serverId: "", channelId: roomId })
   }
 
@@ -233,7 +237,7 @@ export default function NexSpeakApp() {
     <SecurityProvider client={client}>
       <NavigationProvider openRoom={openRoom} activeRoomId={channelId}>
         <FriendsProvider friends={directory.friends}>
-          <CallProvider client={client} activeChannelId={channelId}>
+          <CallProvider client={client} activeChannelId={channelId} onOpenRoom={openRoom}>
             <DesktopTrayVoice />
             <DesktopUpdateNotice />
             <MatrixLinkHandler openRoom={openRoom} selectServer={handleServerSelect} onRoomJoined={handleRoomJoined} />
@@ -257,6 +261,13 @@ export default function NexSpeakApp() {
                   <ChatArea
                     key={channelId}
                     activeChannelId={channelId}
+                    targetEventId={messageTarget?.roomId === channelId ? messageTarget.eventId : undefined}
+                    targetThreadId={messageTarget?.roomId === channelId ? messageTarget.threadId : undefined}
+                    onReturnToLatest={() => setMessageTarget(null)}
+                    onJumpToMessage={(roomId, eventId, threadId) => {
+                      openRoom(roomId)
+                      setMessageTarget({ roomId, eventId, threadId })
+                    }}
                     serverId={isDirectMessages || !serverId ? undefined : serverId}
                     showMembers={showMembers}
                     onToggleMembers={handleToggleMembers}
