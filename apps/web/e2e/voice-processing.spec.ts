@@ -13,6 +13,95 @@ function updateAudioSettings(page: Page, update: Record<string, unknown>) {
   }, update)
 }
 
+test("audio settings enumerate devices without opening the microphone", async ({ browser }) => {
+  const user = await registerUser("audio-devices")
+  const page = await newPage(browser)
+  await page.addInitScript(() => {
+    const scope = window as typeof window & { microphoneRequests: number; deviceRevision: number }
+    scope.microphoneRequests = 0
+    scope.deviceRevision = 0
+    const media = navigator.mediaDevices
+    const capture = media.getUserMedia.bind(media)
+    media.getUserMedia = (constraints) => {
+      if (constraints?.audio) scope.microphoneRequests++
+      return capture(constraints)
+    }
+    const enumerate = media.enumerateDevices.bind(media)
+    media.enumerateDevices = async () => [
+      ...await enumerate(),
+      { deviceId: "test-microphone", kind: "audioinput", label: `Test microphone ${scope.deviceRevision}`, groupId: "test" } as MediaDeviceInfo,
+    ]
+  })
+  await login(page, user)
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Einstellungen", exact: true })
+  const input = dialog.getByRole("combobox", { name: "Eingabegerät (Mikrofon)", exact: true })
+  await input.click()
+  await expect(page.getByRole("option", { name: "Test microphone 0", exact: true })).toBeVisible()
+  await page.keyboard.press("Escape")
+  expect(await page.evaluate(() => (window as typeof window & { microphoneRequests: number }).microphoneRequests)).toBe(0)
+
+  await page.evaluate(() => {
+    ;(window as typeof window & { deviceRevision: number }).deviceRevision++
+    navigator.mediaDevices.dispatchEvent(new Event("devicechange"))
+  })
+  await input.click()
+  await expect(page.getByRole("option", { name: "Test microphone 1", exact: true })).toBeVisible()
+  await page.keyboard.press("Escape")
+  expect(await page.evaluate(() => (window as typeof window & { microphoneRequests: number }).microphoneRequests)).toBe(0)
+
+  await dialog.getByRole("button", { name: "Mikrofon testen", exact: true }).click()
+  await expect(dialog.getByRole("progressbar", { name: "Mikrofonpegel" })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { microphoneRequests: number }).microphoneRequests)).toBe(1)
+  await dialog.getByRole("button", { name: "Mikrofontest stoppen" }).click()
+  await page.keyboard.press("Escape")
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  await input.click()
+  await expect(page.getByRole("option", { name: "Test microphone 1", exact: true })).toBeVisible()
+  expect(await page.evaluate(() => (window as typeof window & { microphoneRequests: number }).microphoneRequests)).toBe(1)
+  await page.context().close()
+})
+
+test("audio settings handle hidden device IDs without prompting and refresh after an explicit microphone test", async ({ browser }) => {
+  const user = await registerUser("audio-permission")
+  const page = await newPage(browser)
+  await page.addInitScript(() => {
+    let captured = false
+    // Browsers without a microphone permission query must still list devices safely.
+    const query = navigator.permissions.query.bind(navigator.permissions)
+    navigator.permissions.query = (descriptor) => descriptor.name === ("microphone" as PermissionName)
+      ? Promise.reject(new TypeError("Unsupported permission")) : query(descriptor)
+    const media = navigator.mediaDevices
+    const capture = media.getUserMedia.bind(media)
+    media.getUserMedia = async (constraints) => {
+      const stream = await capture(constraints)
+      captured = true
+      return stream
+    }
+    media.enumerateDevices = async () => [
+      { deviceId: captured ? "test-microphone" : "", kind: "audioinput", label: captured ? "Unhidden microphone" : "", groupId: "" } as MediaDeviceInfo,
+      { deviceId: "", kind: "audiooutput", label: "", groupId: "" } as MediaDeviceInfo,
+    ]
+  })
+  await login(page, user)
+  await page.getByRole("button", { name: "Einstellungen", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Einstellungen", exact: true })
+  await expect(dialog.getByText("Gerätenamen werden eventuell erst", { exact: false })).toBeVisible()
+  const input = dialog.getByRole("combobox", { name: "Eingabegerät (Mikrofon)", exact: true })
+  await input.click()
+  await expect(page.getByRole("option")).toHaveCount(1)
+  await expect(page.getByRole("option", { name: "Systemstandard", exact: true })).toBeVisible()
+  await page.keyboard.press("Escape")
+
+  await dialog.getByRole("button", { name: "Mikrofon testen", exact: true }).click()
+  await expect(dialog.getByText("Gerätenamen werden eventuell erst", { exact: false })).toHaveCount(0)
+  await input.click()
+  await expect(page.getByRole("option", { name: "Unhidden microphone", exact: true })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await dialog.getByRole("button", { name: "Mikrofontest stoppen" }).click()
+  await page.context().close()
+})
+
 test("voice processing and input sensitivity are set up in the settings", async ({ browser }) => {
   const alice = await registerUser("alice")
   const page = await newPage(browser)

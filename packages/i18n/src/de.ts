@@ -452,6 +452,7 @@ export const de = {
   'settings.account': 'Konto',
   'settings.language': 'Sprache',
   'settings.noMicAccess': 'Kein Zugriff auf das Mikrofon. Erlaube den Zugriff in den Browser-Einstellungen, um Geräte auszuwählen.',
+  'settings.audioDeviceNamesHidden': 'Gerätenamen werden eventuell erst nach einem Mikrofontest oder dem Beitritt zu einem Anruf angezeigt.',
   'settings.inputDevice': 'Eingabegerät (Mikrofon)',
   'settings.outputDevice': 'Ausgabegerät (Lautsprecher)',
   'settings.systemDefault': 'Systemstandard',

@@ -177,7 +177,9 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Reliable speaking feedback and live microphone sensitivity testing (#94)
 - [x] Skip redundant service discovery on call joins, cache discovery and add opt-in join timings (#92)
 - [x] Bound pending call discovery and recheck memberships after slow discovery (#92)
-- [ ] Investigate attenuation of other PC audio on the first call join (#94)
+- [ ] Verify remaining call-start audio attenuation on Firefox/macOS after upstream fixes (#94; Mozilla #2054983)
+  — reported with Firefox 158.0 and the built-in Mac microphone/speakers; Chrome is unaffected in the same setup.
+- [x] Avoid activating the microphone to list audio devices in settings (#94)
 - [x] Camera selection and camera preview (#43)
 - [x] Pop out streams and video into an always-on-top window, reusing the existing track (#47)
 - [ ] Voice moderation: mute for everyone, disconnect, move (#46), designed with #32/#33;

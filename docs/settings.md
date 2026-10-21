@@ -12,7 +12,9 @@ depends on your homeserver.
 ## Audio
 
 - **Input device** and **Output device**, **Call volume** and **Play test tone**. Some browsers can't
-  choose the output device.
+  choose the output device. Opening settings and refreshing the device list do not activate the
+  microphone. If your browser hides device names, use **Test microphone** and grant access, or join
+  a call; the device list then refreshes.
 - **Input mode**: **Voice activity** or **Push to talk**.
 - **Voice processing**: noise suppression, echo cancellation and automatic gain control, see
   [below](#voice-processing).

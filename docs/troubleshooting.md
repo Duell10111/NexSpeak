@@ -28,7 +28,25 @@ Others don't hear you
   is set. On macOS, the key only works in games with the accessibility permission.
 
 Other apps become quieter when you join a call
-: On Windows, the system can lower other apps when it detects communication activity. Check
+: Opening **Settings → Audio** does not activate the microphone. If the volume changes when you
+  join a call or choose **Test microphone**, the browser or operating system may be changing its
+  audio processing or device mode.
+
+  On macOS, Firefox and Safari can briefly fade other audio when initializing system voice
+  processing, particularly with the built-in microphone and speakers. If this happens in Firefox
+  but not Chrome, it matches the behavior in
+  [Mozilla's browser bug report](https://bugzilla.mozilla.org/show_bug.cgi?id=2054983).
+  Firefox 156 includes a change that avoids forcing system voice processing for the built-in
+  microphone when all capture processing is disabled. This does not mean that calls with echo
+  cancellation enabled are unaffected. Update Firefox first. For a comparison with headphones,
+  turn off **Echo cancellation** and **Automatic gain control**, set **Noise suppression** to
+  **Off** in **Settings → Audio**, then start a fresh **Test microphone**. Restore your preferred
+  settings afterward; use echo cancellation with speakers to prevent feedback. Older Firefox
+  versions can still initialize system voice processing even with these options off.
+  Compare with Chrome or external audio devices if the problem persists. Include your Firefox
+  version, macOS version and input/output devices when reporting it.
+
+  On Windows, the system can lower other apps when it detects communication activity. Check
   **Sound Control Panel → Communications → Do nothing**; see Microsoft's
   [default ducking documentation](https://learn.microsoft.com/en-us/windows/win32/coreaudio/stream-attenuation).
   This is a system-wide preference. If the sound also changes quality when using a Bluetooth headset,

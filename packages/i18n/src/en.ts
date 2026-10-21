@@ -450,6 +450,7 @@ export const en: Record<MessageKey, string> = {
   'settings.account': 'Account',
   'settings.language': 'Language',
   'settings.noMicAccess': 'No access to the microphone. Allow access in your browser settings to choose devices.',
+  'settings.audioDeviceNamesHidden': 'Device names may only appear after testing your microphone or joining a call.',
   'settings.inputDevice': 'Input device (microphone)',
   'settings.outputDevice': 'Output device (speakers)',
   'settings.systemDefault': 'System default',
