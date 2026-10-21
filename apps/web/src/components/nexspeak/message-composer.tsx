@@ -14,7 +14,10 @@ import { AtSign, Hash, PlusCircle, SendHorizonal, Smile, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
-import { EmojiPicker } from "@/components/nexspeak/emoji-picker"
+import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
+import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
+import { useServerEmojis } from "@/hooks/useServerEmojis"
+import { findEmojiTrigger } from "@nexspeak/core/matrix/custom-emojis"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
@@ -33,6 +36,7 @@ export interface ComposedMessage {
   body: string
   mentions: MessageMention[]
   mentionsRoom: boolean
+  customEmojis: Array<{ text: string; url: string }>
 }
 
 export interface MessageComposerHandle {
@@ -135,6 +139,10 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
   const { client } = useMatrixClient()
   const [value, setValue] = useState("")
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
+  const [emojiTrigger, setEmojiTrigger] = useState<{ start: number; end: number; query: string; selected: number } | null>(null)
+  const emojis = useServerEmojis(Boolean(emojiTrigger))
+  const emojiCandidates = emojiTrigger ? emojis.filter((emoji) => emoji.name.toLowerCase().includes(emojiTrigger.query.toLowerCase())).slice(0, 8) : []
+  const selectedEmojisRef = useRef<Array<{ text: string; url: string }>>([])
   // Mentions picked from the suggestions; only those still in the text count when sending.
   const mentionsRef = useRef<MentionCandidate[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -165,6 +173,8 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
 
   /** Only computed while a trigger is typed; nothing runs for normal text. */
   const updateSuggestions = (text: string, caret: number) => {
+    const emoji = findEmojiTrigger(text, caret)
+    setEmojiTrigger(emoji ? { ...emoji, end: caret, selected: 0 } : null)
     const trigger = findMentionTrigger(text, caret)
     const room = client?.getRoom(roomId)
     if (!trigger || !client || !room) {
@@ -205,8 +215,11 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     const mayNotifyRoom = Boolean(
       client && client.getRoom(roomId)?.currentState.mayTriggerNotifOfType("room", client.getUserId() ?? ""),
     )
-    onSend({ body, mentions, mentionsRoom: mayNotifyRoom && new RegExp(`(^|\\s)${ROOM_MENTION}(?!\\w)`).test(body) })
+    const customEmojis = selectedEmojisRef.current.filter((emoji) => body.includes(emoji.text))
+    onSend({ body, mentions, customEmojis, mentionsRoom: mayNotifyRoom && new RegExp(`(^|\\s)${ROOM_MENTION}(?!\\w)`).test(body) })
     mentionsRef.current = []
+    selectedEmojisRef.current = []
+    setEmojiTrigger(null)
     setValue("")
     setSuggestions(null)
     onStopTyping?.()
@@ -221,8 +234,33 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     setValue(value.slice(0, start) + emoji + value.slice(end))
   }
 
+  const pickCustomEmoji = (emoji: { name: string; url: string }) => {
+    const text = `:${emoji.name}:`
+    selectedEmojisRef.current = [...selectedEmojisRef.current.filter((selected) => selected.text !== text), { text, url: emoji.url }]
+    if (emojiTrigger) {
+      const insert = `${text} `
+      pendingCaretRef.current = emojiTrigger.start + insert.length
+      setValue(value.slice(0, emojiTrigger.start) + insert + value.slice(emojiTrigger.end))
+    } else insertEmoji(text)
+    setEmojiTrigger(null)
+  }
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
+
+    if (emojiTrigger && emojiCandidates.length) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault()
+        setEmojiTrigger({ ...emojiTrigger, selected: (emojiTrigger.selected + (event.key === "ArrowDown" ? 1 : -1) + emojiCandidates.length) % emojiCandidates.length })
+        return
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault()
+        pickCustomEmoji(emojiCandidates[Math.min(emojiTrigger.selected, emojiCandidates.length - 1)])
+        return
+      }
+      if (event.key === "Escape") { event.preventDefault(); setEmojiTrigger(null); return }
+    }
 
     if (suggestions) {
       const count = suggestions.candidates.length
@@ -270,6 +308,16 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
 
   return (
     <div className="relative">
+      {emojiTrigger && emojiCandidates.length > 0 && (
+        <div role="listbox" aria-label={t("customEmoji.suggestions")} className="absolute right-0 bottom-full left-0 z-30 mb-2 rounded-lg border border-border bg-popover py-1 shadow-lg">
+          {emojiCandidates.map((emoji, index) => <button type="button" role="option" aria-selected={index === emojiTrigger.selected}
+            key={`${emoji.packId}:${emoji.name}`} onMouseDown={(event) => event.preventDefault()} onClick={() => pickCustomEmoji(emoji)}
+            onMouseEnter={() => setEmojiTrigger({ ...emojiTrigger, selected: index })}
+            className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm", index === emojiTrigger.selected && "bg-nx-hover")}>
+            <CustomEmojiImage mxc={emoji.url} name={`:${emoji.name}:`} /> <span>:{emoji.name}:</span>
+          </button>)}
+        </div>
+      )}
       {suggestions && (
         <MentionSuggestions
           suggestions={suggestions}
@@ -327,9 +375,10 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          onSelect={(event) => suggestions && updateSuggestions(event.currentTarget.value, event.currentTarget.selectionStart)}
+          onSelect={(event) => (suggestions || emojiTrigger) && updateSuggestions(event.currentTarget.value, event.currentTarget.selectionStart)}
           onBlur={() => {
             setSuggestions(null)
+            setEmojiTrigger(null)
             onStopTyping?.()
           }}
           placeholder={placeholder}
@@ -342,7 +391,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           disabled={disabled}
         />
         <div className="flex h-11 shrink-0 items-center gap-1">
-          <EmojiPicker onSelect={insertEmoji}>
+          <ServerEmojiPicker onSelect={insertEmoji} onSelectCustom={pickCustomEmoji}>
             <button
               className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               aria-label={t("chat.insertEmoji")}
@@ -350,7 +399,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
             >
               <Smile className="h-6 w-6" />
             </button>
-          </EmojiPicker>
+          </ServerEmojiPicker>
           {value.trim() && (
             <button
               onClick={send}

@@ -1,5 +1,6 @@
 "use client"
 
+import { EmojiServerContext } from "@/hooks/useServerEmojis"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
@@ -100,7 +101,7 @@ function NotificationModeButton({ roomId }: { roomId: string }) {
   )
 }
 
-export function ChatArea({ activeChannelId, serverId, showMembers, onToggleMembers, onOpenNavigation, leavable }: ChatAreaProps) {
+function ChatAreaContent({ activeChannelId, serverId, showMembers, onToggleMembers, onOpenNavigation, leavable }: ChatAreaProps) {
   const { t } = useTranslation()
   const { isInCallInActiveChannel, joinCall, joiningRoomId } = useCallContext()
   const { client } = useMatrixClient()
@@ -221,4 +222,8 @@ export function ChatArea({ activeChannelId, serverId, showMembers, onToggleMembe
       </div>
     </div>
   )
+}
+
+export function ChatArea(props: ChatAreaProps) {
+  return <EmojiServerContext.Provider value={props.serverId}><ChatAreaContent {...props} /></EmojiServerContext.Provider>
 }

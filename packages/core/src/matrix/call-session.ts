@@ -65,6 +65,8 @@ import {
   type AudioProcessingOptions,
 } from '../audio-processing'
 import { t } from '@nexspeak/i18n'
+import { SoundboardTransport } from '../soundboard-transport'
+import { callSounds, SOUNDBOARD_TOPIC } from './soundboard'
 
 export const LIVEKIT_E2EE_WORKER_URL = '/livekit-e2ee-worker.mjs'
 const LEAVE_TIMEOUT_MS = 5000
@@ -187,6 +189,7 @@ export interface CallAudioOptions {
   processing?: AudioProcessingOptions
   /** Called for sound cues (never while deafened, nor for the people already there when we join). */
   onCue?: (cue: CallCue) => void
+  onSound?: (id: string, sender: string) => void
 }
 
 /** Feeds MatrixRTC media keys into LiveKit's per-participant frame encryption. */
@@ -239,6 +242,8 @@ export class CallSession {
   private isLeaving = false
   private hasConnected = false
   private readonly onCue?: (cue: CallCue) => void
+  private readonly soundboard: SoundboardTransport
+  private readonly onSound?: (id: string, sender: string) => void
   private cuesQuietUntil = 0
   private readonly cleanups: Array<() => void> = []
   private speakingChangeQueued = false
@@ -271,6 +276,7 @@ export class CallSession {
     private readonly keyProvider: MatrixKeyProvider | null,
     private readonly ownIdentity: string,
     audio: CallAudioOptions,
+    private readonly client: MatrixClient,
   ) {
     this.ownKeyReady = keyProvider
       ? new Promise((resolve) => {
@@ -285,6 +291,8 @@ export class CallSession {
     this.pushToTalk = audio.pushToTalk ?? false
     this.processing = audio.processing ?? DEFAULT_AUDIO_PROCESSING
     this.onCue = audio.onCue
+    this.onSound = audio.onSound
+    this.soundboard = new SoundboardTransport(ownIdentity, this.isEncrypted)
     this.audioContainer = document.createElement('div')
     this.audioContainer.hidden = true
     document.body.appendChild(this.audioContainer)
@@ -341,7 +349,7 @@ export class CallSession {
     })
 
     const ownIdentity = `${userId}:${client.getDeviceId() ?? ''}`
-    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio)
+    const session = new CallSession(rtcSession, livekitRoom, keyProvider, ownIdentity, audio, client)
     try {
       await session.connect(serviceUrl, sfu, userId, client.getDeviceId() ?? '')
     } catch (error) {
@@ -516,16 +524,31 @@ export class CallSession {
     room.on(LivekitRoomEvent.LocalTrackUnpublished, onLocalScreenshareStopped)
 
     const onKey = (key: Uint8Array<ArrayBuffer>, index: number, _membership: unknown, rtcBackendIdentity: string) => {
+      this.soundboard.setKey(key, index, rtcBackendIdentity)
       void this.keyProvider?.setMediaKey(key, index, rtcBackendIdentity).then((imported) => {
         if (imported && rtcBackendIdentity === this.ownIdentity) this.resolveOwnKey()
       })
     }
+    const onData = (payload: Uint8Array, participant?: RemoteParticipant, _kind?: unknown, topic?: string) => {
+      if (topic !== SOUNDBOARD_TOPIC || !participant || this.isLeaving || this.isDeafened) return
+      const sender = participant.identity
+      if (this.client.isUserIgnored(userIdFromIdentity(sender))) return
+      void this.soundboard.decode(payload, sender).then((id) => {
+        if (id) this.receiveSound(id, sender)
+      })
+    }
+    room.on(LivekitRoomEvent.DataReceived, onData)
     const onManagerError = (error: unknown) => {
       console.error('MatrixRTC membership error:', error)
       void this.leave(t('call.error.membershipLost'))
     }
     this.rtcSession.on(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
-    this.rtcSession.on(MatrixRTCSessionEvent.MembershipsChanged, changed)
+    this.rtcSession.reemitEncryptionKeys()
+    const onMemberships = (_old: CallMembership[], memberships: CallMembership[]) => {
+      this.soundboard.retain(new Set([this.ownIdentity, ...memberships.map((membership) => `${membership.sender}:${membership.deviceId}`)]))
+      this.changed()
+    }
+    this.rtcSession.on(MatrixRTCSessionEvent.MembershipsChanged, onMemberships)
     this.rtcSession.on(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
 
     this.cleanups.push(() => {
@@ -534,6 +557,7 @@ export class CallSession {
       room.off(LivekitRoomEvent.TrackUnsubscribed, onTrackUnsubscribed)
       room.off(LivekitRoomEvent.ConnectionStateChanged, onConnectionStateChanged)
       room.off(LivekitRoomEvent.Disconnected, onDisconnected)
+      room.off(LivekitRoomEvent.DataReceived, onData)
       simpleEvents.forEach((event) => room.off(event, changed))
       room.off(LivekitRoomEvent.ActiveSpeakersChanged, onSpeakersChanged)
       room.off(LivekitRoomEvent.LocalTrackPublished, onLocalTrackPublished)
@@ -546,9 +570,25 @@ export class CallSession {
       room.off(LivekitRoomEvent.LocalTrackPublished, onLocalScreenshareStarted)
       room.off(LivekitRoomEvent.LocalTrackUnpublished, onLocalScreenshareStopped)
       this.rtcSession.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
-      this.rtcSession.off(MatrixRTCSessionEvent.MembershipsChanged, changed)
+      this.rtcSession.off(MatrixRTCSessionEvent.MembershipsChanged, onMemberships)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
     })
+  }
+
+  private receiveSound(id: string, sender: string): void {
+    if (this.isLeaving || this.isDeafened || this.client.isUserIgnored(userIdFromIdentity(sender))) return
+    if (!callSounds(this.client, this.roomId).some((sound) => sound.id === id)) return
+    this.onSound?.(id, sender)
+  }
+
+  /** Publish only the sound ID; local playback never opens or modifies a media track. */
+  async playSound(id: string): Promise<void> {
+    if (this.isLeaving || this.isDeafened || this.connectionState !== 'connected') return
+    if (!callSounds(this.client, this.roomId).some((sound) => sound.id === id)) return
+    const packet = await this.soundboard.encode(id)
+    if (!await this.soundboard.decode(packet, this.ownIdentity)) return
+    await this.livekitRoom.localParticipant.publishData(packet, { reliable: true, topic: SOUNDBOARD_TOPIC })
+    this.receiveSound(id, this.ownIdentity)
   }
 
   subscribe = (listener: Listener): (() => void) => {
@@ -1035,6 +1075,7 @@ export class CallSession {
   async leave(reason: string | null = null): Promise<void> {
     if (this.isLeaving) return
     this.isLeaving = true
+    this.soundboard.dispose()
     this.connectionState = 'disconnected'
     if (this.hasConnected && !this.isDeafened) this.onCue?.('self-leave')
 

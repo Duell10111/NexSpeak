@@ -40,6 +40,10 @@ import { ScreenshareDialog } from "@/components/nexspeak/screenshare-dialog"
 import { DesktopSourcePicker } from "@/components/nexspeak/desktop-source-picker"
 import { usePushToTalk } from "@/hooks/usePushToTalk"
 import { createCallSoundPlayer, isCueEnabled } from "@/lib/call-sounds"
+import { callSounds } from "@nexspeak/core/matrix/soundboard"
+import { createSoundboardPlayer } from "@/lib/soundboard-player"
+import { subscribeIgnoredUsers } from "@nexspeak/core/matrix/safety"
+import { userIdFromIdentity } from "@nexspeak/core/matrix/rtc"
 import { emptyCallShortcutBindings } from "@nexspeak/core/global-shortcuts"
 
 export type { RoomCallInfo }
@@ -74,6 +78,7 @@ interface CallContextValue {
   createScreenShareEncoderSampler: () => (() => Promise<EncoderInfo | null>) | null
   /** Stats sampler for ping, packet loss and transport of the running call. */
   createConnectionSampler: () => (() => Promise<ConnectionInfo | null>) | null
+  playSound: (id: string) => Promise<void>
   toggleDeafen: () => void
   resumeAudio: () => Promise<void>
   setParticipantVolume: (identity: string, volume: number) => void
@@ -142,6 +147,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   )
   const [isScreenshareDialogOpen, setIsScreenshareDialogOpen] = useState(false)
   const sessionRef = useRef<CallSession | null>(null)
+  const boardPlayerRef = useRef<ReturnType<typeof createSoundboardPlayer> | null>(null)
   /** A room whose pending join was given up (e.g. the room is being left): the join ends itself. */
   const abandonedJoinRef = useRef("")
   const callInfoByRoom = useRtcCallInfo(client)
@@ -171,7 +177,11 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   }, [])
 
   const endSession = useCallback((ended: CallSession) => {
-    if (sessionRef.current === ended) sessionRef.current = null
+    if (sessionRef.current === ended) {
+      sessionRef.current = null
+      boardPlayerRef.current?.dispose()
+      boardPlayerRef.current = null
+    }
     setSession((current) => (current === ended ? null : current))
   }, [])
 
@@ -198,6 +208,9 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       try {
         const settings = loadAudioSettings()
         const sounds = createCallSoundPlayer()
+        const boardPlayer = createSoundboardPlayer(client)
+        boardPlayerRef.current?.dispose()
+        boardPlayerRef.current = boardPlayer
         const next = await CallSession.start(client, roomId, {
           inputDeviceId: settings.inputDeviceId,
           cameraDeviceId: loadCameraDevice(),
@@ -207,6 +220,14 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
           startDeafened: voicePrefsRef.current.deafened,
           pushToTalk: settings.inputMode === "push-to-talk",
           processing: audioProcessingOptions(settings),
+          onSound: (id, sender) => {
+            const current = loadAudioSettings()
+            if (!current.soundboardEnabled) return
+            const sound = callSounds(client, roomId).find((item) => item.id === id)
+            if (!sound) return
+            void boardPlayer.play(sound, current.outputVolume * current.soundboardVolume / 10_000, current.outputDeviceId,
+              () => sessionRef.current?.roomId === roomId && !sessionRef.current.getSnapshot().isDeafened && !client.isUserIgnored(userIdFromIdentity(sender)) && loadAudioSettings().soundboardEnabled)
+          },
           onCue: (cue) => {
             const current = loadAudioSettings()
             if (!isCueEnabled(current, cue)) return
@@ -224,6 +245,8 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
         sessionRef.current = next
         setSession(next)
       } catch (error) {
+        boardPlayerRef.current?.dispose()
+        boardPlayerRef.current = null
         if (abandonedJoinRef.current === roomId) return
         if (error instanceof CallPermissionError && error.canEnable) {
           // Admins can fix the room right away, like Element offers.
@@ -332,6 +355,11 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     [updateScreenShareQuality],
   )
 
+  const playSound = useCallback(async (id: string) => {
+    try { await sessionRef.current?.playSound(id) }
+    catch (error) { reportError(error, t("soundboard.playFailed")) }
+  }, [])
+
   const toggleDeafen = useCallback(() => {
     const current = sessionRef.current
     const prefs = voicePrefsRef.current
@@ -399,6 +427,22 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
     }
   }, [])
 
+  useEffect(() => {
+    if (!audioSettings.soundboardEnabled || call?.isDeafened) boardPlayerRef.current?.stop()
+  }, [audioSettings.soundboardEnabled, call?.isDeafened])
+
+  useEffect(() => {
+    boardPlayerRef.current?.refresh(audioSettings.outputVolume * audioSettings.soundboardVolume / 10_000, audioSettings.outputDeviceId)
+  }, [audioSettings.outputVolume, audioSettings.soundboardVolume, audioSettings.outputDeviceId])
+
+  useEffect(() => {
+    if (!client || !session) return
+    return subscribeIgnoredUsers(client, () => {
+      const settings = loadAudioSettings()
+      boardPlayerRef.current?.refresh(settings.outputVolume * settings.soundboardVolume / 10_000, settings.outputDeviceId)
+    })
+  }, [client, session])
+
   // Apply device and volume preferences to a running call.
   useEffect(() => {
     if (!session) return
@@ -440,7 +484,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
   }, [])
 
   // Leave the call when the provider goes away (logout).
-  useEffect(() => () => void sessionRef.current?.leave(), [])
+  useEffect(() => () => { boardPlayerRef.current?.dispose(); void sessionRef.current?.leave() }, [])
 
   const value = useMemo<CallContextValue>(
     () => ({
@@ -462,6 +506,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       changeScreenShareQuality,
       createScreenShareEncoderSampler,
       createConnectionSampler,
+      playSound,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,
@@ -486,6 +531,7 @@ export function CallProvider({ client, activeChannelId, children }: CallProvider
       changeScreenShareQuality,
       createScreenShareEncoderSampler,
       createConnectionSampler,
+      playSound,
       toggleDeafen,
       resumeAudio,
       setParticipantVolume,

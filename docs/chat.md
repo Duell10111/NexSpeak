@@ -9,7 +9,11 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
 - **Edit:** Escape cancels, Enter saves. Edited messages show **(edited)**.
 - **Files:** attach them with the clip, drag and drop them into the chat, or paste them. Up to 100 MB;
   in encrypted channels files are encrypted too.
-- **Emoji:** the emoji button in the message field, or reactions on messages.
+- **Emoji:** the emoji button in the message field, or reactions on messages, opens the same
+  picker. **Search emoji** searches English and German names and keywords. Use **Emoji category**
+  to browse a category and **Skin tone** to choose a variant; **All skin tones** includes mixed
+  tones. Your skin tone and up to 32 **Frequently used** emoji are remembered on this device.
+  Emoji use your system font, so newer characters may depend on your operating system.
 - **Reactions:** choose **Add reaction**, then an emoji. The picker stays next to the message while
   you move the pointer to it. Escape closes it without adding a reaction.
 - A message that failed to send can be **resent** or **discarded**.
@@ -64,3 +68,16 @@ invites you again. Leaving a direct message with a friend also ends the friendsh
   notifications anymore, in any room. They aren't told. **Settings → Account** lists ignored people.
 - **Report** a message or channel: the report goes to the admins of your homeserver. They can only
   read the message if it isn't encrypted.
+
+## Server emoji
+
+Open the emoji picker to find the current server's **Server emoji** section. Select
+an emoji to insert its `:shortcode:` into the message. You can also type `:` followed
+by its name, then choose a suggestion with the arrow keys and Enter or Tab.
+The sent message contains the image and a text fallback for other Matrix clients.
+Use **Add reaction** to select a server emoji as a reaction; click the reaction again
+to remove it. Editing a message keeps its existing custom emoji.
+
+Emoji use fixed-size, static thumbnails, including GIF and animated WebP uploads.
+Images are fetched only when an emoji becomes visible; closing a picker releases its
+contents. This avoids animation and image processing while gaming.

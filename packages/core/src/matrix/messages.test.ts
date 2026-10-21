@@ -53,3 +53,24 @@ describe("editTextMessage", () => {
     expect(content["m.relates_to"]).toEqual({ rel_type: "m.replace", event_id: "$orig" })
   })
 })
+
+describe('custom emoji messages', () => {
+  it('sends interoperable custom emoji inside markdown but keeps code and URLs literal', async () => {
+    const client = fakeClient()
+    await sendTextMessage(client as unknown as MatrixClient, '!r', '**:cat:** `:cat:` https://test/:cat:', { customEmojis: [{ text: ':cat:', url: 'mxc://test/cat' }] })
+    expect(client.sendMessage.mock.calls[0][1]).toMatchObject({
+      body: '**:cat:** `:cat:` https://test/:cat:',
+      formatted_body: '<strong><img data-mx-emoticon src="mxc://test/cat" alt=":cat:" title=":cat:" height="32"></strong> <code>:cat:</code> https://test/:cat:',
+    })
+  })
+
+  it('retains emoji when editing and escapes their fallback', async () => {
+    const client = fakeClient()
+    const original = new MatrixEvent({ event_id: '$orig', type: 'm.room.message', content: {
+      msgtype: 'm.text', body: ':cat:', format: 'org.matrix.custom.html',
+      formatted_body: '<img data-mx-emoticon src="mxc://test/cat" alt=":cat:">',
+    } })
+    await editTextMessage(client as unknown as MatrixClient, '!r', original, 'hello :cat:')
+    expect(client.sendMessage.mock.calls[0][1]['m.new_content'].formatted_body).toContain('<img data-mx-emoticon src="mxc://test/cat"')
+  })
+})

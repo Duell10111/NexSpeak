@@ -27,6 +27,7 @@ const COMPATIBLE = new Set([
   "MPL-2.0",
   "Python-2.0",
   "Unlicense",
+  "Unicode-3.0",
   "Zlib",
   "LGPL-3.0-only",
   "LGPL-3.0-or-later",
@@ -111,6 +112,15 @@ for (const entryDir of entryDirs) {
   const manifest = readJson(join(entryDir, "package.json"))
   for (const dependency of Object.keys(manifest.dependencies ?? {})) visit(dependency, entryDir)
 }
+
+// Vendored data has no npm package, but must ship its attribution with the app.
+packages.set("unicode-emoji-cldr", {
+  name: "Unicode emoji and CLDR annotations",
+  version: "Emoji 17.0 / CLDR 48",
+  license: "Unicode-3.0",
+  repository: "https://unicode.org/Public/17.0.0/emoji/emoji-test.txt",
+  text: checkOnly ? undefined : readFileSync(join(webDir, "public/licenses/unicode.txt"), "utf8").trim(),
+})
 
 const list = [...packages.values()].filter(Boolean).sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
 const incompatible = list.filter((entry) => !isCompatible(entry.license))

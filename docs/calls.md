@@ -119,3 +119,19 @@ members of this room yet". Admins can change that with **Allow everyone** in the
 **Everyone can join the voice channel** in **Channel settings**.
 
 See [Troubleshooting](troubleshooting.md) if a call doesn't connect.
+
+## Soundboard
+
+Open **Soundboard** in the call controls and choose a sound to play it for everyone in the
+voice channel. NexSpeak includes **Celebrate**, **Chime**, and **Drum**; servers can add their
+own sounds in **Server settings**. Each person can play one sound every two seconds, including
+when using several devices.
+
+In **Settings → Audio**, next to the sound cues, turn **Soundboard** off or adjust its
+**Volume** locally. Deafening also stops soundboard playback. Sounds from ignored people are
+not played. Playback uses your chosen output device and never passes through your microphone.
+
+Only a small sound trigger travels through the call. In encrypted calls, triggers are encrypted
+with a separate key derived from the MatrixRTC media keys. Audio is downloaded only when a sound
+is first played, cached for that call, and released when you leave. Server sound files themselves
+are ordinary Matrix media, like server icons, and are not end-to-end encrypted.

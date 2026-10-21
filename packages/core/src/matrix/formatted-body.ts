@@ -5,14 +5,14 @@
  */
 
 export type FormattedTag =
-  | 'a' | 'b' | 'blockquote' | 'br' | 'caption' | 'code' | 'del' | 'details' | 'div' | 'em'
+  | 'img' | 'a' | 'b' | 'blockquote' | 'br' | 'caption' | 'code' | 'del' | 'details' | 'div' | 'em'
   | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'hr' | 'i' | 'li' | 'ol' | 'p' | 'pre' | 's'
   | 'span' | 'strike' | 'strong' | 'sub' | 'summary' | 'sup' | 'table' | 'tbody' | 'td' | 'th'
   | 'thead' | 'tr' | 'u' | 'ul'
 
 export interface FormattedElement {
   tag: FormattedTag
-  attrs: Partial<Record<'href' | 'start' | 'language' | 'spoiler' | 'color' | 'background', string>>
+  attrs: Partial<Record<'src' | 'alt' | 'title' | 'href' | 'start' | 'language' | 'spoiler' | 'color' | 'background', string>>
   children: FormattedNode[]
 }
 
@@ -144,10 +144,13 @@ export function parseFormattedBody(html: string): FormattedNode[] {
         continue
       }
       if (name === 'img') {
-        // No remote images (tracking); custom emoji and the like show their text instead.
         const attributes = parseAttributes(rawAttributes)
-        const alt = attributes.get('alt') ?? attributes.get('title')
-        if (alt) appendText(current().children, alt)
+        const src = attributes.get('src') ?? ''
+        const alt = attributes.get('alt') ?? attributes.get('title') ?? ''
+        // Only explicitly marked MXC emoticons, never arbitrary remote tracking images.
+        if (attributes.has('data-mx-emoticon') && /^mxc:\/\/[^/\s]+\/[^/?#\s]+$/.test(src)) {
+          current().children.push({ tag: 'img', attrs: { src, alt, title: attributes.get('title') ?? alt }, children: [] })
+        } else if (alt) appendText(current().children, alt)
         continue
       }
       const allowed = ALLOWED.has(name) || name === 'font'
@@ -179,7 +182,7 @@ export function parseFormattedBody(html: string): FormattedNode[] {
 
 /** The plain text of a tree (for previews and the edit composer's mention links). */
 export function formattedText(nodes: FormattedNode[]): string {
-  return nodes.map((node) => (typeof node === 'string' ? node : node.tag === 'br' ? '\n' : formattedText(node.children))).join('')
+  return nodes.map((node) => (typeof node === 'string' ? node : node.tag === 'br' ? '\n' : node.tag === 'img' ? node.attrs.alt ?? '' : formattedText(node.children))).join('')
 }
 
 /** All links of a tree with their text, e.g. mention pills. */
@@ -189,4 +192,10 @@ export function formattedLinks(nodes: FormattedNode[]): Array<{ text: string; hr
     if (node.tag === 'a' && node.attrs.href) return [{ text: formattedText(node.children), href: node.attrs.href }]
     return formattedLinks(node.children)
   })
+}
+
+/** Emoji mappings retained when editing a received message. */
+export function formattedEmojis(nodes: FormattedNode[]): Array<{ text: string; url: string }> {
+  return nodes.flatMap((node) => typeof node === 'string' ? [] : node.tag === 'img' && node.attrs.src && node.attrs.alt
+    ? [{ text: node.attrs.alt, url: node.attrs.src }] : formattedEmojis(node.children))
 }

@@ -57,3 +57,13 @@ describe("parseFormattedBody", () => {
     expect(formattedLinks(tree)).toEqual([{ text: "@A", href: "https://matrix.to/#/@a:b" }])
   })
 })
+
+describe('custom emoji images', () => {
+  it('only keeps explicitly marked MXC images and their safe attributes', () => {
+    expect(parseFormattedBody('<img data-mx-emoticon src="mxc://test/cat" alt=":cat:" onerror="bad()" width="99999">')).toEqual([
+      { tag: 'img', attrs: { src: 'mxc://test/cat', alt: ':cat:', title: ':cat:' }, children: [] },
+    ])
+    expect(parseFormattedBody('<img data-mx-emoticon src="https://tracker.test/pixel" alt="fallback">')).toEqual(['fallback'])
+    expect(parseFormattedBody('<img src="mxc://test/cat" alt="ordinary image">')).toEqual(['ordinary image'])
+  })
+})

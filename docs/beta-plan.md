@@ -103,8 +103,10 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - Done (2026-10-17): `apps/web/scripts/third-party-licenses.mjs` (no dependency) collects the
   production dependencies of web and desktop into `public/third-party-licenses.json` at build time;
   *Settings → About* shows it. `--check` (CI step "License check") fails on unknown or incompatible
-  licenses. Open: a `THIRD_PARTY_NOTICES.md` for the repository.
-- List bundled emoji data and icons (lucide: ISC) separately.
+  licenses. Bundled assets are documented in `THIRD_PARTY_NOTICES.md` in the repository.
+- Bundled emoji names and keywords: Unicode Emoji 17.0 and CLDR 48 (Unicode-3.0);
+  the picker loads this data only on first open. See `THIRD_PARTY_NOTICES.md` and the bundled
+  `public/licenses/unicode.txt` license. Icons: lucide (ISC).
 - **About dialog:** version, git commit, links (source, issues, privacy), licenses, contributors. Done
   except privacy (depends on the hosting instance) and contributors.
 
@@ -159,9 +161,11 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
 - [x] Keep the reaction emoji picker anchored while the pointer leaves the message (#90)
-- Message search with filters (#37), link previews (opt-in, #40), custom emoji (`im.ponies`, #39),
-  polls (#38)
-- Full emoji picker with search and categories, loaded on first open (#50); stickers (#51)
+- [x] Keep the add-server menu open when reopened before its previous exit animation ends (#86)
+- Message search with filters (#37), link previews (opt-in, #40), polls (#38)
+- [x] Custom server emoji (`im.ponies`), inline messages, reactions and shortcode completion (#39)
+- [x] Full emoji picker with search, categories, skin tones and frequent emoji, loaded on first open (#50)
+- Stickers (#51)
 - GIF picker (opt-in, uploaded to the homeserver) and GIF playback only while visible (#27)
 - Play audio and video attachments inline, loaded only on play (#42)
 - Quick switcher (Ctrl/Cmd+K) for channels, servers and DMs (#44)
@@ -176,7 +180,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
   [implementation prerequisites](voice-moderation-design.md)
 - [x] Sound cues for join, leave and screensharing, can be turned off (#22)
 - Stream viewers: who is watching your stream, and sound cues when someone starts or stops watching (#79)
-- Soundboard like Discord: server sounds played on each client, can be turned off (#26)
+- [x] Soundboard like Discord: server sounds played on each client, can be turned off (#26)
 - [x] Call duration next to active voice channels in the sidebar (#29)
 - Incoming-call prompt with join/decline for direct calls (#34)
 - [x] Configurable global call shortcuts for mute, deafen, disconnect and stopping screen sharing (#35)

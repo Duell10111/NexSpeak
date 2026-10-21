@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
@@ -175,6 +175,7 @@ export function ServerSidebar({
   const [joinOpen, setJoinOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
   const [addTooltipOpen, setAddTooltipOpen] = useState(false)
   const { call } = useCallContext()
   const isHomeActive = activeServerId === DIRECT_MESSAGES_ID
@@ -242,6 +243,7 @@ export function ServerSidebar({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
+                ref={addButtonRef}
                 className="mx-3 mt-2 flex h-12 w-12 items-center justify-center rounded-[24px] bg-nx-guild-bar text-nx-online transition-all hover:rounded-[16px] hover:bg-nx-online hover:text-primary-foreground"
                 aria-label={t("createServer.add")}
               >
@@ -253,7 +255,12 @@ export function ServerSidebar({
             {t("createServer.add")}
           </TooltipContent>
         </Tooltip>
-        <DropdownMenuContent side="right" align="end">
+        <DropdownMenuContent side="right" align="end" onPointerDownOutside={(event) => {
+          // The closing menu still observes outside clicks during its exit animation. Its trigger
+          // already toggles the state; dismissing too would immediately close a reopened menu.
+          const target = event.detail.originalEvent.target
+          if (target instanceof Node && addButtonRef.current?.contains(target)) event.preventDefault()
+        }}>
           <DropdownMenuItem onSelect={() => setCreateOpen(true)}>{t("createServer.title")}</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setJoinOpen(true)}>{t("join.server")}</DropdownMenuItem>
         </DropdownMenuContent>

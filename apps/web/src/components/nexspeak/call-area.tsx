@@ -1,5 +1,7 @@
 "use client"
 
+import { SoundboardControl } from "@/components/nexspeak/soundboard"
+
 import {
   useCallback,
   useEffect,
@@ -960,6 +962,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
             {call.isCameraOn ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
           </ControlButton>
           <ScreenshareControl />
+          <SoundboardControl />
           <div className="mx-1 h-8 w-px bg-white/15 sm:mx-2" />
           <ControlButton
             label={isMicMuted ? t("call.unmuteMic") : t("call.muteMic")}

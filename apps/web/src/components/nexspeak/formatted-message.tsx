@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { useTranslation } from "@/hooks/useTranslation"
 import { parseMatrixLink } from "@nexspeak/core/matrix/links"
 import type { FormattedElement, FormattedNode } from "@nexspeak/core/matrix/formatted-body"
+import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
 import { setPendingLink } from "@/lib/pending-link"
 
 const URL_PATTERN = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g
@@ -83,6 +84,8 @@ function renderNode(node: FormattedNode, inCode: boolean): ReactNode {
   const children = (code = inCode) => renderChildren(node.children, code)
 
   switch (node.tag) {
+    case "img":
+      return node.attrs.src ? <CustomEmojiImage mxc={node.attrs.src} name={node.attrs.alt ?? node.attrs.title ?? ""} /> : node.attrs.alt
     case "a":
       if (!node.attrs.href) return children()
       if (isPill(node)) {

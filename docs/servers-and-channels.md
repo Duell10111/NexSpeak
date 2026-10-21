@@ -159,3 +159,29 @@ that is above your own role. The editor never changes who may change roles and p
 
 Matrix has no inheritance, so each synced room gets its own update (one per room). Element shows
 the same permissions in a room's **Roles & Permissions** settings.
+
+## Managing server emoji
+
+Open the server menu, choose **Server settings**, then **Server emoji**. Moderators
+and administrators who can change the server's emoji state can upload images, edit
+their shortcodes with **Save**, and remove them with **Delete**. Members can view the
+list but cannot change it.
+
+Enter an **Emoji shortcode**, then choose **Upload emoji**. PNG, JPEG, GIF and WebP
+images up to 2 MiB are accepted. Use up to 100 letters, digits, hyphens or underscores
+in the name. Names must be unique within the pack. Renaming and deleting update the
+server's `im.ponies.room_emotes` Matrix state, so other compatible clients can use the
+same images. Previously sent emoji remain visible after deletion.
+
+Emoji images and their pack state are shared with the homeserver and are not
+end-to-end encrypted, even when used inside an encrypted channel.
+
+## Server soundboard
+
+In **Server settings → Soundboard**, moderators and admins can choose **Upload sound** to add
+an Opus/OGG or MP3 recording of at most five seconds and 512 KB. A server can have up to 32 sounds.
+Give each sound a **Sound name**, **Sound emoji**, and **Volume**, then choose **Save**. Choose
+**Remove sound** to remove it from the catalog. Only upload recordings you have permission to share.
+
+Everyone in a call can play the server's sounds from the **Soundboard** button. The catalog is
+stored in the server space as `io.nexspeak.soundboard`; other Matrix clients can ignore it.
