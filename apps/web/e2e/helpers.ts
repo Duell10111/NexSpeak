@@ -1,4 +1,4 @@
-import { expect, type Browser, type BrowserContextOptions, type Page } from "@playwright/test"
+import { expect, test, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from "@playwright/test"
 
 export const HOMESERVER_URL = "http://localhost:8008"
 export const JWT_SERVICE_URL = "http://localhost:8070"
@@ -126,9 +126,20 @@ export async function getRoomMessages(user: TestUser, roomId: string) {
   return result.chunk
 }
 
+/** Contexts opened by the running test; closed when the next test opens its first page. */
+let testContexts: { testId: string; contexts: BrowserContext[] } | null = null
+
 export async function newPage(browser: Browser, options: BrowserContextOptions = {}): Promise<Page> {
+  const { testId } = test.info()
+  if (testContexts?.testId !== testId) {
+    // The browser is shared by all tests: pages left open keep their calls, microphones and screen
+    // captures running, and later tests then fail to open the fake microphone (NotReadableError).
+    await Promise.allSettled(testContexts?.contexts.map((context) => context.close()) ?? [])
+    testContexts = { testId, contexts: [] }
+  }
   // Contexts created by hand don't inherit `use.permissions` and `use.locale` from the config.
   const context = await browser.newContext({ permissions: ["microphone", "camera"], locale: "de-DE", ...options })
+  testContexts.contexts.push(context)
   const page = await context.newPage()
   page.on("pageerror", (error) => console.log(`[pageerror] ${error.message}`))
   if (process.env.E2E_CONSOLE) {
