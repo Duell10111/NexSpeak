@@ -200,6 +200,87 @@ async function readImageSize(file: File): Promise<{ w: number; h: number } | und
   }
 }
 
+/** In encrypted rooms the homeserver only ever stores ciphertext. */
+async function uploadMedia(
+  client: MatrixClient,
+  data: Blob,
+  name: string,
+  type: string,
+  encrypt: boolean,
+): Promise<{ url: string } | { file: Record<string, unknown> }> {
+  if (encrypt) {
+    const { ciphertext, info } = await encryptAttachment(await data.arrayBuffer())
+    const { content_uri: url } = await client.uploadContent(new Blob([ciphertext]), {
+      type: 'application/octet-stream',
+      includeFilename: false,
+    })
+    return { file: { ...info, url } }
+  }
+  const { content_uri: url } = await client.uploadContent(data, { name, type })
+  return { url }
+}
+
+/**
+ * Looping, silent playback without controls. The fi.mau.* flags are the convention of the mautrix
+ * bridges, so GIFs bridged from Discord or Telegram play the same way.
+ */
+export const GIF_VIDEO_INFO = {
+  'fi.mau.gif': true,
+  'fi.mau.loop': true,
+  'fi.mau.autoplay': true,
+  'fi.mau.hide_controls': true,
+  'fi.mau.no_audio': true,
+} as const
+
+export interface GifUpload {
+  title: string
+  data: Blob
+  mimetype: string
+  width: number
+  height: number
+  durationMs?: number
+  /** First frame, so clients can show something before (or instead of) playing. */
+  thumbnail?: { data: Blob; mimetype: string; width: number; height: number }
+}
+
+/** A picked GIF as a normal media message: a looping video, or m.image for real GIF files. */
+export async function sendGif(
+  client: MatrixClient,
+  roomId: string,
+  gif: GifUpload,
+  encrypt: boolean,
+  options: SendOptions = {},
+): Promise<unknown> {
+  const isVideo = gif.mimetype.startsWith('video/')
+  const title = gif.title.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'GIF'
+  const name = `${title}.${isVideo ? gif.mimetype.slice('video/'.length) : 'gif'}`
+  const source = await uploadMedia(client, gif.data, name, gif.mimetype, encrypt)
+  const thumbnail = isVideo && gif.thumbnail
+    ? { ...gif.thumbnail, source: await uploadMedia(client, gif.thumbnail.data, 'thumbnail', gif.thumbnail.mimetype, encrypt) }
+    : undefined
+  const info = {
+    mimetype: gif.mimetype,
+    size: gif.data.size,
+    ...(gif.width && gif.height && { w: gif.width, h: gif.height }),
+    ...(isVideo && gif.durationMs && { duration: Math.round(gif.durationMs) }),
+    ...(thumbnail && {
+      ...('url' in thumbnail.source ? { thumbnail_url: thumbnail.source.url } : { thumbnail_file: thumbnail.source.file }),
+      thumbnail_info: { mimetype: thumbnail.mimetype, size: thumbnail.data.size, w: thumbnail.width, h: thumbnail.height },
+    }),
+    ...(isVideo && GIF_VIDEO_INFO),
+  }
+  const content = {
+    msgtype: isVideo ? MsgType.Video : MsgType.Image,
+    body: gif.title.trim() || 'GIF',
+    filename: name,
+    info,
+    ...source,
+    ...relation(options),
+    ...intentionalMentions(client, options),
+  } as RoomMessageEventContent
+  return client.sendMessage(roomId, content)
+}
+
 /**
  * Upload a file and post it. In encrypted rooms the file is encrypted client-side first,
  * so the homeserver only ever stores ciphertext.
@@ -214,19 +295,7 @@ export async function sendAttachment(
   const isImage = file.type.startsWith('image/')
   const imageSize = isImage ? await readImageSize(file) : undefined
   const info = { mimetype: file.type || undefined, size: file.size, ...imageSize }
-
-  let source: { url: string } | { file: Record<string, unknown> }
-  if (encrypt) {
-    const { ciphertext, info: encryptionInfo } = await encryptAttachment(await file.arrayBuffer())
-    const { content_uri: url } = await client.uploadContent(new Blob([ciphertext]), {
-      type: 'application/octet-stream',
-      includeFilename: false,
-    })
-    source = { file: { ...encryptionInfo, url } }
-  } else {
-    const { content_uri: url } = await client.uploadContent(file, { name: file.name, type: file.type })
-    source = { url }
-  }
+  const source = await uploadMedia(client, file, file.name, file.type, encrypt)
 
   const content = {
     msgtype: isImage ? MsgType.Image : file.type.startsWith('video/') ? MsgType.Video : file.type.startsWith('audio/') ? MsgType.Audio : MsgType.File,

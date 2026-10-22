@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { EventStatus, MatrixError, MatrixEvent, type MatrixClient } from "matrix-js-sdk"
-import { editTextMessage, hideLinkPreview, sendTextMessage, sendSticker } from "./messages"
+import { editTextMessage, hideLinkPreview, sendGif, sendTextMessage, sendSticker } from "./messages"
 
 function fakeClient() {
   return { getUserId: () => "@me:example.org", sendMessage: vi.fn().mockResolvedValue({ event_id: "$new" }) }
@@ -137,5 +137,66 @@ describe('sender link preview suppression', () => {
       msgtype: 'm.notice', 'm.mentions': {}, 'm.relates_to': { rel_type: 'm.replace', event_id: '$original' },
       'm.new_content': { ...originalContent, 'org.nexspeak.hide_link_previews': true },
     })
+  })
+})
+
+describe('sendGif', () => {
+  function uploadingClient() {
+    let count = 0
+    return {
+      ...fakeClient(),
+      uploadContent: vi.fn().mockImplementation(async () => ({ content_uri: `mxc://hs/${++count}` })),
+    }
+  }
+  const gif = {
+    title: 'Happy: dance',
+    data: new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' }),
+    mimetype: 'video/mp4',
+    width: 320,
+    height: 240,
+    durationMs: 1500.4,
+    thumbnail: { data: new Blob([new Uint8Array([4])], { type: 'image/jpeg' }), mimetype: 'image/jpeg', width: 320, height: 240 },
+  }
+
+  it('sends a looping, silent video with a thumbnail', async () => {
+    const client = uploadingClient()
+    await sendGif(client as unknown as MatrixClient, '!r', gif, false)
+    expect(client.uploadContent).toHaveBeenCalledWith(gif.data, { name: 'Happy dance.mp4', type: 'video/mp4' })
+    expect(client.sendMessage).toHaveBeenCalledWith('!r', {
+      msgtype: 'm.video',
+      body: 'Happy: dance',
+      filename: 'Happy dance.mp4',
+      url: 'mxc://hs/1',
+      info: {
+        mimetype: 'video/mp4', size: 3, w: 320, h: 240, duration: 1500,
+        thumbnail_url: 'mxc://hs/2',
+        thumbnail_info: { mimetype: 'image/jpeg', size: 1, w: 320, h: 240 },
+        'fi.mau.gif': true, 'fi.mau.loop': true, 'fi.mau.autoplay': true, 'fi.mau.hide_controls': true, 'fi.mau.no_audio': true,
+      },
+      'm.mentions': {},
+    })
+  })
+
+  it('encrypts the video and its thumbnail in encrypted rooms', async () => {
+    const client = uploadingClient()
+    await sendGif(client as unknown as MatrixClient, '!r', gif, true, { threadRootId: '$root', threadLatestEventId: '$last' })
+    const content = client.sendMessage.mock.calls[0][1]
+    expect(content.url).toBeUndefined()
+    expect(content.file).toMatchObject({ url: 'mxc://hs/1', v: 'v2' })
+    expect(content.info.thumbnail_file).toMatchObject({ url: 'mxc://hs/2', v: 'v2' })
+    expect(content.info.thumbnail_url).toBeUndefined()
+    expect(content['m.relates_to']).toMatchObject({ rel_type: 'm.thread', event_id: '$root' })
+    for (const [blob, options] of client.uploadContent.mock.calls) {
+      expect(options).toEqual({ type: 'application/octet-stream', includeFilename: false })
+      expect(blob.type).toBe('')
+    }
+  })
+
+  it('falls back to m.image for real GIF files', async () => {
+    const client = uploadingClient()
+    const data = new Blob([new Uint8Array([1])], { type: 'image/gif' })
+    await sendGif(client as unknown as MatrixClient, '!r', { title: '', data, mimetype: 'image/gif', width: 0, height: 0 }, false)
+    expect(client.sendMessage.mock.calls[0][1]).toMatchObject({ msgtype: 'm.image', body: 'GIF', filename: 'GIF.gif', info: { mimetype: 'image/gif', size: 1 } })
+    expect(client.sendMessage.mock.calls[0][1].info['fi.mau.gif']).toBeUndefined()
   })
 })

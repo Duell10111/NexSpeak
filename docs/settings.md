@@ -182,6 +182,15 @@ client previously disabled the matching notification rule.
 separate opt-in. Preview requests reveal the link to your homeserver, including links from
 encrypted messages. See [Link previews](chat.md#link-previews).
 
+### GIFs
+
+- **GIF search (KLIPY)**: lets the GIF picker search KLIPY. Off by default, because your search
+  terms and IP address are sent to KLIPY, see [GIFs](chat.md#gifs).
+- **Play GIFs automatically**: on, GIFs play while they are visible and the window is focused. Off,
+  they play only while you hover over them or after you click them.
+
+Both settings apply to this browser or desktop app only.
+
 ## Security
 
 Recovery key, device verification and key backup, see [Encryption](encryption.md).

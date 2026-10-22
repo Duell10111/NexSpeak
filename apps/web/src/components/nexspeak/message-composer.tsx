@@ -32,6 +32,8 @@ import type { MessageMention } from "@nexspeak/core/matrix/messages"
 
 import { firstPreviewUrl } from "@nexspeak/core/matrix/link-previews"
 import { PollComposer } from "@/components/nexspeak/poll-composer"
+import { GifPicker } from "@/components/nexspeak/gif-picker"
+import type { Gif } from "@nexspeak/core/gifs"
 import type { PollDraft } from "@nexspeak/core/matrix/polls"
 
 const MAX_COMPOSER_HEIGHT_PX = 200
@@ -58,6 +60,8 @@ interface MessageComposerProps {
   onSend: (message: ComposedMessage) => void
   onPoll?: (draft: PollDraft) => Promise<unknown>
   onSticker?: (sticker: Sticker) => void
+  /** Picking a GIF sends it right away, like a sticker. */
+  onGif?: (gif: Gif) => void
   onFiles?: (files: File[]) => void
   isUploading?: boolean
   attachLabel?: string
@@ -133,6 +137,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     onCancelReply,
     onSend,
     onSticker,
+    onGif,
     onPoll,
     onFiles,
     isUploading = false,
@@ -407,6 +412,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
         />
         <div className="flex h-11 shrink-0 items-center gap-1">
           {onPoll && <button type="button" disabled={disabled} aria-label={t("poll.create")} onClick={() => { onStopTyping?.(); setPollOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-50"><ChartNoAxesColumn className="h-5 w-5" /></button>}
+          {onGif && <GifPicker disabled={disabled} onSelect={onGif} />}
           <ServerEmojiPicker onSelect={insertEmoji} onSelectCustom={pickCustomEmoji} onSelectSticker={disabled ? undefined : onSticker}>
             <button
               className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"

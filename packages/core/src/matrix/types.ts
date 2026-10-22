@@ -92,6 +92,8 @@ export interface MatrixMessage {
     size?: number
     /** A separate preview supplied by the sender, never the video itself. */
     thumbnail?: { mxc?: string; file?: EncryptedFile; mimetype?: string }
+    /** Plays like a GIF: looping and silent, only while visible (videos flagged as GIF, image/gif). */
+    gif?: boolean
   }
   poll?: MatrixPoll
   reactions: MessageReaction[]
@@ -181,12 +183,20 @@ export function stripReplyFallback(body: string): string {
   return body.replace(REPLY_FALLBACK_PATTERN, '')
 }
 
+/** Videos flagged as GIF (our own and the mautrix bridges' fi.mau.* flags) and image/gif files. */
+export function isGifContent(content: Record<string, unknown>): boolean {
+  const info = (content.info && typeof content.info === 'object' ? content.info : {}) as Record<string, unknown>
+  if (content.msgtype === 'm.image') return info.mimetype === 'image/gif'
+  return content.msgtype === 'm.video' && (info['fi.mau.gif'] === true || (info['fi.mau.loop'] === true && info['fi.mau.autoplay'] === true))
+}
+
 /** One-line text for a message: its body, or "Image", "File", … for attachments. */
 export function summarizeEvent(event: MatrixEvent): string {
   if (event.isRedacted()) return t('message.redacted')
   if (event.isDecryptionFailure()) return t('message.encrypted')
   const content = event.getContent()
   if (isPollStart(event)) return pollFromRoom(event)?.question ?? ''
+  if (isGifContent(content)) return t('message.gif')
   switch (content.msgtype) {
     case 'm.image':
       return t('message.image')
@@ -350,10 +360,12 @@ export function eventToMatrixMessage(
       const originals = [content.url, file?.url]
       const thumbnailFile = isEncryptedFile(info.thumbnail_file) && !originals.includes(info.thumbnail_file.url) ? info.thumbnail_file : undefined
       const thumbnailMxc = typeof info.thumbnail_url === 'string' && isEmojiMxc(info.thumbnail_url) && !originals.includes(info.thumbnail_url) ? info.thumbnail_url : undefined
+      const gif = isGifContent(content)
       return {
         ...base,
         kind: content.msgtype.slice(2) as 'image' | 'video' | 'audio' | 'file',
-        body: (typeof content.filename === 'string' && content.filename) || body || t('message.file'),
+        // A GIF's body is its title; its file name is made up.
+        body: (gif && body) || (typeof content.filename === 'string' && content.filename) || body || t('message.file'),
         media: {
           mxc: typeof content.url === 'string' ? content.url : undefined,
           file,
@@ -364,6 +376,7 @@ export function eventToMatrixMessage(
           thumbnail: thumbnailFile || thumbnailMxc ? {
             mxc: thumbnailMxc, file: thumbnailFile, mimetype: info.thumbnail_info?.mimetype,
           } : undefined,
+          ...(gif && { gif }),
         },
       }
     }

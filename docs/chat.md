@@ -147,6 +147,34 @@ visible. Animated stickers play only while visible and the window is focused; ot
 a static thumbnail is shown. Stickers larger than 4 MiB always show the static thumbnail. Pack images are shared with the homeserver and are not
 end-to-end encrypted, including when sent in an encrypted channel.
 
+## GIFs
+
+Select **GIF** in the message field to open the GIF picker. It shows **Trending** GIFs and your
+**Favourites**; type in **Search KLIPY** to search. Select a GIF to send it immediately; text already
+in the message field stays as a draft. GIFs also work in replies and threads. Hover over a GIF and
+select the star (**Add to favourites**) to keep it. Favourites are stored in your Matrix account, so
+they appear on all your devices (up to 50).
+
+GIF search is off until you turn it on: the first time you open the picker, NexSpeak asks before
+contacting the provider. You can change this later in [Settings → Messages](settings.md#gifs).
+
+```{note}
+**Privacy:** GIF search is provided by [KLIPY](https://klipy.com). While the picker is open, your
+search terms and your IP address are sent to KLIPY, and the previews are loaded from KLIPY. A GIF you
+send is downloaded and uploaded to your homeserver like any attachment (end-to-end encrypted in
+encrypted channels), so the people who see it never contact KLIPY.
+```
+
+GIFs are sent as short, silent, looping videos, which are far smaller than GIF files and decoded by
+the graphics hardware. Element and other Matrix clients show them as videos. GIFs play only while
+they are visible and the NexSpeak window is focused; otherwise they show a still frame with a
+**GIF** badge. This also applies to GIF images and GIF videos sent from other clients and bridges.
+With **Play GIFs automatically** turned off, GIFs play only while you hover over them or after you
+click them.
+
+The GIF button is missing when the NexSpeak build has no KLIPY key (see
+[Hosting](hosting.md#build-time-configuration)).
+
 ## Polls
 
 Choose **Create poll** next to the message field. Enter a **Question** and 2–20 answers;

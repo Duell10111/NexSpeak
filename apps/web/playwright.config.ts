@@ -35,5 +35,7 @@ export default defineConfig({
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: true,
     timeout: 300_000,
+    // KLIPY is mocked in the tests (gifs.spec.ts); the GIF button only exists with a key.
+    env: { NEXT_PUBLIC_KLIPY_API_KEY: process.env.NEXT_PUBLIC_KLIPY_API_KEY || "e2e-klipy-key" },
   },
 })

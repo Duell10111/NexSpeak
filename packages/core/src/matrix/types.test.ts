@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { MatrixEvent, type Room, type Thread } from "matrix-js-sdk"
-import { eventToMatrixMessage, stripReplyFallback, threadSummary } from "./types"
+import { eventToMatrixMessage, stripReplyFallback, summarizeEvent, threadSummary } from "./types"
 
 const ROOM = "!room:example.org"
 
@@ -116,6 +116,19 @@ describe("eventToMatrixMessage", () => {
     const file = { url: 'mxc://test/encrypted-preview', iv: 'iv', key: { k: 'key' }, hashes: { sha256: 'hash' } }
     expect(eventToMatrixMessage(event({ thumbnail_file: file }), ROOM)?.media?.thumbnail?.file).toEqual(file)
   })
+
+  it('marks GIF videos (own and mautrix flags) and image/gif files, and keeps their title', () => {
+    const video = (info: Record<string, unknown>) =>
+      eventToMatrixMessage(messageEvent({ msgtype: 'm.video', body: 'Party', filename: 'Party.mp4', url: 'mxc://test/gif', info }), ROOM)
+    expect(video({ mimetype: 'video/mp4', 'fi.mau.gif': true })).toMatchObject({ kind: 'video', body: 'Party', media: { gif: true } })
+    expect(video({ 'fi.mau.loop': true, 'fi.mau.autoplay': true })?.media?.gif).toBe(true)
+    const plain = video({ 'fi.mau.loop': true })
+    expect(plain?.body).toBe('Party.mp4')
+    expect(plain?.media?.gif).toBeUndefined()
+    const image = (mimetype: string) => eventToMatrixMessage(messageEvent({ msgtype: 'm.image', body: 'a', url: 'mxc://test/a', info: { mimetype } }), ROOM)
+    expect(image('image/gif')?.media?.gif).toBe(true)
+    expect(image('image/png')?.media?.gif).toBeUndefined()
+  })
 })
 
 describe("stripReplyFallback", () => {
@@ -139,5 +152,12 @@ describe('sticker timeline events', () => {
     expect(eventToMatrixMessage(event, ROOM)?.kind).toBe('redacted')
     const unsafe = eventToMatrixMessage(messageEvent({ body: 'Fallback', url: 'https://tracker/pixel', info: { w: -50, h: Infinity } }, { type: 'm.sticker' }), ROOM)
     expect(unsafe).toMatchObject({ kind: 'sticker', body: 'Fallback', media: { mxc: undefined, width: undefined, height: undefined } })
+  })
+})
+
+describe('summarizeEvent', () => {
+  it('summarizes GIFs as GIF', () => {
+    expect(summarizeEvent(messageEvent({ msgtype: 'm.video', body: 'Party', info: { 'fi.mau.gif': true } }))).toBe('GIF')
+    expect(summarizeEvent(messageEvent({ msgtype: 'm.image', body: 'x.gif', info: { mimetype: 'image/gif' } }))).toBe('GIF')
   })
 })

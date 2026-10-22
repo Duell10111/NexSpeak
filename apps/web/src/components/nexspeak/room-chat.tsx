@@ -33,7 +33,9 @@ import { useTypingMembers, useTypingNotifier } from "@/hooks/useTyping"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { sendPoll } from "@nexspeak/core/matrix/polls"
-import { deleteMessage, sendAttachment, sendTextMessage, sendSticker } from "@nexspeak/core/matrix/messages"
+import { deleteMessage, sendAttachment, sendGif, sendTextMessage, sendSticker } from "@nexspeak/core/matrix/messages"
+import type { Gif } from "@nexspeak/core/gifs"
+import { prepareGifUpload } from "@/lib/gif-upload"
 import { MessageComposer, type ComposedMessage, type MessageComposerHandle } from "@/components/nexspeak/message-composer"
 import { ReportDialog } from "@/components/nexspeak/report-dialog"
 import { usePinnedEventIds } from "@/hooks/usePinnedEvents"
@@ -237,6 +239,23 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread, targ
     }
   }
 
+  // Downloaded and uploaded like an attachment, so recipients never contact the GIF provider.
+  const sendPickedGif = async (gif: Gif) => {
+    if (!client || !canSend) return
+    const options = { replyTo: replyTo?.event, ...threadTarget() }
+    setReplyTo(null)
+    setIsUploading(true)
+    stickToBottomRef.current = true
+    try {
+      await sendGif(client, roomId, await prepareGifUpload(gif), isEncryptedRoom, options)
+      resumeAfterSend()
+    } catch (error) {
+      toast.error(describeMatrixError(error, t("gif.sendFailed")))
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setIsDragging(false)
@@ -415,6 +434,7 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread, targ
             })
             resumeAfterSend()
           }}
+          onGif={(gif) => void sendPickedGif(gif)}
           onFiles={(files) => void uploadFiles(files)}
           isUploading={isUploading}
           attachLabel={isEncryptedRoom ? t("chat.attachFileEncrypted") : t("chat.attachFile")}

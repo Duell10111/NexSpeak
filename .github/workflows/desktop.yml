@@ -86,6 +86,7 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_LIVEKIT_SERVICE_URL: ${{ vars.NEXT_PUBLIC_LIVEKIT_SERVICE_URL }}
+          NEXT_PUBLIC_KLIPY_API_KEY: ${{ vars.NEXT_PUBLIC_KLIPY_API_KEY }}
 
       - name: Package desktop app
         working-directory: apps/desktop
