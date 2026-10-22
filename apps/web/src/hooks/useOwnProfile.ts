@@ -4,6 +4,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { UserEvent, type MatrixClient } from 'matrix-js-sdk'
 import {
   loadOwnPresence,
+  loadOwnStatus,
+  subscribeOwnStatus,
   subscribeOwnPresence,
   subscribeOwnProfileChanges,
   type OwnPresence,
@@ -53,4 +55,8 @@ export function useOwnProfile(client: MatrixClient | null): OwnProfile | null {
 
 export function useOwnPresence(): OwnPresence {
   return useSyncExternalStore(subscribeOwnPresence, loadOwnPresence, () => 'online')
+}
+
+export function useOwnStatus(client: MatrixClient | null): string {
+  return useSyncExternalStore(subscribeOwnStatus, () => loadOwnStatus(client), () => '')
 }

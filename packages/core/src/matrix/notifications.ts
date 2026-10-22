@@ -12,6 +12,7 @@ import {
   type MatrixEvent,
   type Room,
 } from 'matrix-js-sdk'
+import { loadOwnPresence } from './profile'
 import { isDirectRoom } from './direct'
 import { summarizeEvent } from './types'
 
@@ -33,6 +34,8 @@ export interface MessageNotification {
 const NOTIFYING_TYPES = new Set(['m.room.message', 'm.sticker'])
 
 export function notificationFor(client: MatrixClient, event: MatrixEvent, room: Room): MessageNotification | null {
+  // Leave push rules/read receipts untouched, preserving unread counts in DND.
+  if (loadOwnPresence() === 'dnd') return null
   const sender = event.getSender()
   if (!sender || sender === client.getUserId() || client.isUserIgnored(sender)) return null
   if (!NOTIFYING_TYPES.has(event.getType())) return null

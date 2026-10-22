@@ -20,6 +20,7 @@ import { useSecurity } from "@/components/nexspeak/security-context"
 import { SecurityPanel } from "@/components/nexspeak/security-panel"
 import { SoundCueSettings } from "@/components/nexspeak/sound-cue-settings"
 import { CallInputSettings } from "@/components/nexspeak/call-shortcut-settings"
+import { LinkPreviewSettingsPanel } from "@/components/nexspeak/link-preview-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
 import { CameraSettings } from "@/components/nexspeak/camera-settings"
@@ -39,7 +40,7 @@ import {
   subscribeAudioSettings,
 } from "@/lib/audio-settings"
 
-export type SettingsTab = "profile" | "audio" | "video" | "notifications" | "security" | "account" | "about"
+export type SettingsTab = "profile" | "audio" | "video" | "notifications" | "security" | "account" | "about" | "messages"
 
 interface SettingsDialogProps {
   open: boolean
@@ -110,6 +111,7 @@ function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: Set
             <TabsTrigger value="profile">{t("settings.profile")}</TabsTrigger>
             <TabsTrigger value="audio">{t("settings.audio")}</TabsTrigger>
             <TabsTrigger value="video">{t("settings.video")}</TabsTrigger>
+            <TabsTrigger value="messages">{t("linkPreview.messages")}</TabsTrigger>
             <TabsTrigger value="notifications">{t("settings.notifications")}</TabsTrigger>
             <TabsTrigger value="security">{t("settings.security")}</TabsTrigger>
             <TabsTrigger value="account">{t("settings.account")}</TabsTrigger>
@@ -126,6 +128,10 @@ function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: Set
 
           <TabsContent value="about">
             <AboutPanel />
+          </TabsContent>
+
+          <TabsContent value="messages">
+            <LinkPreviewSettingsPanel />
           </TabsContent>
 
           <TabsContent value="notifications">

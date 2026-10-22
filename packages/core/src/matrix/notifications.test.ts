@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { MatrixEvent, type MatrixClient, type Room } from "matrix-js-sdk"
+import { clearStoredPresence, setOwnPresence } from "./profile"
 import { notificationFor } from "./notifications"
 
 const OWN = "@me:example.org"
@@ -70,4 +71,23 @@ describe("notificationFor", () => {
     const image = event({ msgtype: "m.image", body: "IMG_1.jpg" })
     expect(notificationFor(client({ notify: true }), image, room)?.body).not.toBe("IMG_1.jpg")
   })
+})
+
+it("silences DND alerts without changing Matrix push rules or unread counts", async () => {
+  const storage = new Map<string, string>()
+  vi.stubGlobal("localStorage", { getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) })
+  const own = { setSyncPresence: vi.fn(async () => {}), setPresence: vi.fn(async () => {}), getUserId: () => OWN } as unknown as MatrixClient
+  const notify = client({ notify: true, tweaks: { highlight: true } })
+  const message = event({ body: "Mention" })
+  try {
+    await setOwnPresence(own, "dnd")
+    expect(notificationFor(notify, message, room)).toBeNull()
+    expect(notify.getPushActionsForEvent(message, true)).toEqual({ notify: true, tweaks: { highlight: true } })
+    await setOwnPresence(own, "online")
+    expect(notificationFor(notify, message, room)?.isHighlight).toBe(true)
+  } finally {
+    clearStoredPresence()
+    vi.unstubAllGlobals()
+  }
 })

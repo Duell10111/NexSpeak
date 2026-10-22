@@ -187,14 +187,14 @@ export function RoomChat({ roomId, compact = false, threadId, onOpenThread, targ
     if (threadId) onOpenThread?.(threadId)
   }
 
-  const handleSend = ({ body, mentions, mentionsRoom, customEmojis }: ComposedMessage) => {
+  const handleSend = ({ body, mentions, mentionsRoom, customEmojis, hideLinkPreviews }: ComposedMessage) => {
     if (!client || !canSend) return
     const replyEvent = replyTo?.event
     setReplyTo(null)
     stickToBottomRef.current = true
 
     // The local echo shows up immediately; failures stay in the timeline with a retry action.
-    sendTextMessage(client, roomId, body, { replyTo: replyEvent, mentions, mentionsRoom, customEmojis, ...threadTarget() }).catch((error: unknown) => {
+    sendTextMessage(client, roomId, body, { replyTo: replyEvent, mentions, mentionsRoom, customEmojis, hideLinkPreviews, ...threadTarget() }).catch((error: unknown) => {
       toast.error(describeMatrixError(error, t("chat.sendFailed")))
     })
     resumeAfterSend()

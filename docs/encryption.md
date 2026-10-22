@@ -4,6 +4,11 @@ Direct messages and encrypted channels are end-to-end encrypted: only the people
 can read them, not your homeserver. Attachments and, in encrypted channels, calls are encrypted
 too. NexSpeak uses the same encryption as Element, so both can read each other's messages.
 
+Link previews in encrypted rooms are off by default and require a separate opt-in. If enabled,
+the link is sent to your homeserver to request its preview, outside end-to-end encryption.
+Custom status text is also public presence data. See [Settings](settings.md) and
+[Link previews](chat.md#link-previews).
+
 Every device you sign in on (browser, desktop app, Element on your phone) has its own keys. Two
 things make sure you can read your messages everywhere:
 

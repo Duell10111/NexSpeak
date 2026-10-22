@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import { clearStoredPresence, setOwnPresence } from "@nexspeak/core/matrix/profile"
+import type { MatrixClient } from "matrix-js-sdk"
 import type { CallCue } from "@nexspeak/core/matrix/call-session"
 import { getDefaultAudioSettings } from "./audio-settings"
 import { encodeWav, isCueEnabled, renderCue } from "./call-sounds"
@@ -55,4 +57,22 @@ describe("call sound cues", () => {
     expect(view.getUint32(40, true)).toBe(wav.length - 44)
     expect(wav.length).toBeLessThan(20_000)
   })
+})
+
+it("silences all call cues in DND without changing audio preferences", async () => {
+  const storage = new Map<string, string>()
+  vi.stubGlobal("localStorage", { getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) })
+  const own = { setSyncPresence: async () => {}, setPresence: async () => {}, getUserId: () => "@sound:example.org" } as unknown as MatrixClient
+  const settings = getDefaultAudioSettings()
+  try {
+    await setOwnPresence(own, "dnd")
+    expect(CUES.every((cue) => !isCueEnabled(settings, cue))).toBe(true)
+    expect(settings.soundCues).toBe(true)
+    await setOwnPresence(own, "online")
+    expect(CUES.every((cue) => isCueEnabled(settings, cue))).toBe(true)
+  } finally {
+    clearStoredPresence()
+    vi.unstubAllGlobals()
+  }
 })

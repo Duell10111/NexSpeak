@@ -9,11 +9,15 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
-import { useOwnPresence, useOwnProfile } from "@/hooks/useOwnProfile"
+import { useOwnPresence, useOwnProfile, useOwnStatus } from "@/hooks/useOwnProfile"
 import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import {
   MAX_DISPLAY_NAME_LENGTH,
+  MAX_STATUS_LENGTH,
+  STATUS_EXPIRY_OPTIONS,
+  setOwnStatus,
+  type StatusExpiry,
   OWN_PRESENCE_OPTIONS,
   setOwnAvatar,
   setOwnDisplayName,
@@ -26,23 +30,26 @@ const MAX_AVATAR_BYTES = 10 * 1024 * 1024
 
 export const PRESENCE_DOT: Record<OwnPresence, string> = {
   online: "bg-nx-online",
+  dnd: "bg-destructive",
   unavailable: "bg-nx-idle",
   offline: "bg-nx-offline",
 }
 
 export const PRESENCE_LABEL: Record<OwnPresence, MessageKey> = {
   online: "presence.online",
+  dnd: "presence.dnd",
   unavailable: "presence.away",
   offline: "presence.invisible",
 }
 
 export const PRESENCE_HINT: Record<OwnPresence, MessageKey> = {
   online: "presence.onlineHint",
+  dnd: "presence.dndHint",
   unavailable: "presence.awayHint",
   offline: "presence.invisibleHint",
 }
 
-/** Online, away or invisible, shared by the settings and the user panel menu. */
+/** Presence choices, shared by the settings and the user panel menu. */
 export function PresencePicker({ onPicked }: { onPicked?: () => void }) {
   const { t } = useTranslation()
   const { client } = useMatrixClient()
@@ -77,6 +84,48 @@ export function PresencePicker({ onPicked }: { onPicked?: () => void }) {
         </button>
       ))}
     </div>
+  )
+}
+
+export function CustomStatusEditor() {
+  const { t } = useTranslation()
+  const { client } = useMatrixClient()
+  const status = useOwnStatus(client)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [expiry, setExpiry] = useState<StatusExpiry>("never")
+  const [saving, setSaving] = useState(false)
+
+  const save = async (message: string) => {
+    if (!client || saving) return
+    setSaving(true)
+    try {
+      await setOwnStatus(client, message, expiry)
+      setDraft(null)
+      toast.success(t("profile.saved"))
+    } catch (error) {
+      toast.error(describeMatrixError(error, t("profile.presenceFailed")))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void save(draft ?? status) }}>
+      <Label htmlFor="custom-status">{t("profile.customStatus")}</Label>
+      <Input id="custom-status" value={draft ?? status} maxLength={MAX_STATUS_LENGTH}
+        placeholder={t("profile.customStatusPlaceholder")} disabled={saving || !client}
+        onChange={(event) => setDraft(event.target.value)} />
+      <p className="text-xs text-muted-foreground">{t("profile.customStatusHint")}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor="status-expiry">{t("profile.clearAfter")}</Label>
+        <select id="status-expiry" value={expiry} disabled={saving}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          onChange={(event) => setExpiry(event.target.value as StatusExpiry)}>
+          {STATUS_EXPIRY_OPTIONS.map((option) => <option key={option} value={option}>{t(`profile.expiry.${option}`)}</option>)}
+        </select>
+        <Button type="submit" size="sm" disabled={saving || !client || !(draft ?? status).trim()}>{t("profile.saveStatus")}</Button>
+        <Button type="button" size="sm" variant="ghost" disabled={saving || !status}
+          onClick={() => void save("")}>{t("profile.clearStatus")}</Button>
+      </div>
+    </form>
   )
 }
 
@@ -168,6 +217,8 @@ export function ProfilePanel() {
         </div>
         <p className="text-xs text-muted-foreground">{t("profile.displayNameHint")}</p>
       </form>
+
+      <CustomStatusEditor />
 
       <div className="space-y-2">
         <p className="text-sm font-semibold text-foreground">{t("profile.presence")}</p>
