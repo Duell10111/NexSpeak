@@ -137,9 +137,11 @@ See [Troubleshooting](troubleshooting.md) if a call doesn't connect.
 ## Soundboard
 
 Open **Soundboard** in the call controls and choose a sound to play it for everyone in the
-voice channel. NexSpeak includes **Celebrate**, **Chime**, and **Drum**; servers can add their
-own sounds in **Server settings**. Each person can play one sound every two seconds, including
-when using several devices.
+voice channel. Sounds are grouped by server, with NexSpeak's built-in **Celebrate**, **Chime**,
+and **Drum** under **NexSpeak sounds**; servers can add their own sounds in **Server settings**.
+Type in **Find the perfect sound** to filter by name, and use the speaker button next to it to
+adjust the soundboard **Volume**. Playing another sound replaces the one you are playing, so a
+repeated click starts the sound again from the beginning.
 
 In **Settings → Audio**, next to the sound cues, turn **Soundboard** off or adjust its
 **Volume** locally. Deafening also stops soundboard playback. Sounds from ignored people are
