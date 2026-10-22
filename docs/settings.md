@@ -24,9 +24,10 @@ depends on your homeserver.
 - **Share system audio**: include sound when starting a screen share. The choice is remembered and
   applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
   depends on the browser and capture source. See [Calls and screen sharing](calls.md).
-- **Sound cues in calls**: short sounds when you join or leave, when others join or leave, and when
-  a stream starts or stops. Turn them all off, or each one (**When you join or leave**, **When
-  others join or leave**, **When a stream starts or stops**). They play on the output device at the
+- **Sound cues in calls**: short sounds when you join or leave, when others join or leave, when
+  a stream starts or stops, and when someone starts or stops watching your stream. Turn them all
+  off, or each one (**When you join or leave**, **When others join or leave**, **When a stream
+  starts or stops**, **When someone watches your stream**). They play on the output device at the
   call volume, and not while you are deafened.
 
 - **Soundboard**: enable or disable sounds played by call participants, and adjust their **Volume**
