@@ -156,7 +156,7 @@ test("notification level per channel, profile, presence and the about page", asy
   await page.getByRole("button", { name: "Profil und Status" }).click()
   await page.getByRole("button", { name: "Profil bearbeiten" }).click()
   await page.getByLabel("Anzeigename").fill("Alice Wunderland")
-  await page.getByRole("button", { name: "Speichern" }).click()
+  await page.getByRole("button", { name: "Speichern", exact: true }).click()
   await expect(page.getByText("Profil gespeichert")).toBeVisible()
   const profile = await matrixApi<{ displayname: string }>(alice, "GET", `/profile/${encodeURIComponent(alice.userId)}`)
   expect(profile.displayname).toBe("Alice Wunderland")
