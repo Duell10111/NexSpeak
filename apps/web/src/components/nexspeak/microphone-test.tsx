@@ -15,7 +15,7 @@ function levelPercent(db: number): number {
 }
 
 /** Only captures while explicitly testing; sensitivity changes reach the running worklet. */
-export function MicrophoneTest({ settings }: { settings: AudioSettings }) {
+export function MicrophoneTest({ settings, onAccess }: { settings: AudioSettings; onAccess?: () => void }) {
   const { t } = useTranslation()
   const [running, setRunning] = useState(false)
   const [level, setLevel] = useState(0)
@@ -61,6 +61,7 @@ export function MicrophoneTest({ settings }: { settings: AudioSettings }) {
           },
         })
         if (stopped) { stop(); return }
+        onAccess?.()
         const opened = openProcessingSource(stream.getAudioTracks()[0])
         context = opened.context
         const analyser = context.createAnalyser()
@@ -101,7 +102,7 @@ export function MicrophoneTest({ settings }: { settings: AudioSettings }) {
     }
     void start()
     return stop
-  }, [running, inputDeviceId, noiseSuppression, echoCancellation, autoGainControl])
+  }, [running, inputDeviceId, noiseSuppression, echoCancellation, autoGainControl, onAccess])
 
   return (
     <div className="space-y-2">

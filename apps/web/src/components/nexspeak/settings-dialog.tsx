@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useState, useSyncExternalStore } from "react"
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,7 @@ import { DesktopAutostartSetting } from "@/components/nexspeak/desktop-settings"
 import { SystemAudioSetting } from "@/components/nexspeak/system-audio-setting"
 import { IgnoredUsersList } from "@/components/nexspeak/ignored-users"
 import { useTranslation } from "@/hooks/useTranslation"
+import { useAudioDevices } from "@/hooks/useAudioDevices"
 import { LOCALE_NAMES, LOCALES, type Locale } from "@nexspeak/i18n"
 import { VoiceProcessingSettings } from "@/components/nexspeak/voice-processing-settings"
 import { MicrophoneTest } from "@/components/nexspeak/microphone-test"
@@ -49,50 +50,6 @@ interface SettingsDialogProps {
 
 // Radix Select doesn't allow an empty string as item value.
 const DEFAULT_DEVICE = "__default__"
-
-function useAudioDevices(open: boolean) {
-  const [devices, setDevices] = useState<{ inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }>({
-    inputs: [],
-    outputs: [],
-  })
-  const [permissionError, setPermissionError] = useState(false)
-
-  useEffect(() => {
-    if (!open || !navigator.mediaDevices) return
-    let cancelled = false
-
-    const loadDevices = async () => {
-      try {
-        // Device labels are only exposed after microphone permission was granted.
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        stream.getTracks().forEach((track) => track.stop())
-        if (!cancelled) setPermissionError(false)
-      } catch {
-        if (!cancelled) setPermissionError(true)
-      }
-
-      try {
-        const all = await navigator.mediaDevices.enumerateDevices()
-        if (cancelled) return
-        setDevices({
-          inputs: all.filter((device) => device.kind === "audioinput" && device.deviceId !== "default"),
-          outputs: all.filter((device) => device.kind === "audiooutput" && device.deviceId !== "default"),
-        })
-      } catch (error) {
-        console.error("Failed to enumerate devices:", error)
-      }
-    }
-
-    void loadDevices()
-    navigator.mediaDevices.addEventListener("devicechange", loadDevices)
-    return () => {
-      cancelled = true
-      navigator.mediaDevices.removeEventListener("devicechange", loadDevices)
-    }
-  }, [open])
-
-  return { ...devices, permissionError }
-}
 
 function playTestTone(volume: number, outputDeviceId: string) {
   const audioContext = new AudioContext()
@@ -123,7 +80,7 @@ function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: Set
   const { status: securityStatus } = useSecurity()
   const settings = useSyncExternalStore(subscribeAudioSettings, loadAudioSettings, getDefaultAudioSettings)
   const [activeTab, setActiveTab] = useState(initialTab)
-  const { inputs, outputs, permissionError } = useAudioDevices(open && activeTab === "audio")
+  const { inputs, outputs, permissionError, namesHidden, refresh } = useAudioDevices(open && activeTab === "audio")
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const supportsOutputSelection = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype
 
@@ -185,6 +142,9 @@ function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: Set
                 {t("settings.noMicAccess")}
               </p>
             )}
+            {namesHidden && !permissionError && (
+              <p className="text-xs text-muted-foreground">{t("settings.audioDeviceNamesHidden")}</p>
+            )}
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -215,7 +175,7 @@ function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: Set
 
             <VoiceProcessingSettings settings={settings} />
 
-            <MicrophoneTest settings={settings} />
+            <MicrophoneTest settings={settings} onAccess={refresh} />
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
