@@ -11,9 +11,12 @@ import {
 import { emptyCallShortcutBindings, parseCallShortcutBindings, type CallShortcutBindings } from '@nexspeak/core/global-shortcuts'
 
 export type InputMode = 'voice-activity' | 'push-to-talk'
-/** Sound cues in calls: our own join/leave, others joining/leaving, screen shares starting/stopping. */
-export type SoundCueGroup = 'own' | 'others' | 'screenshare'
-export const SOUND_CUE_GROUPS: readonly SoundCueGroup[] = ['own', 'others', 'screenshare']
+/**
+ * Sound cues in calls: our own join/leave, others joining/leaving, screen shares starting/stopping,
+ * people starting/stopping to watch our screen share.
+ */
+export type SoundCueGroup = 'own' | 'others' | 'screenshare' | 'viewers'
+export const SOUND_CUE_GROUPS: readonly SoundCueGroup[] = ['own', 'others', 'screenshare', 'viewers']
 
 export interface AudioSettings {
   /** Empty string means the system default device. */
@@ -57,7 +60,7 @@ const DEFAULT_SETTINGS: AudioSettings = {
   soundboardEnabled: true,
   soundboardVolume: 100,
   soundCues: true,
-  soundCueGroups: { own: true, others: true, screenshare: true },
+  soundCueGroups: { own: true, others: true, screenshare: true, viewers: true },
   noiseSuppression: DEFAULT_AUDIO_PROCESSING.noiseSuppression,
   echoCancellation: DEFAULT_AUDIO_PROCESSING.echoCancellation,
   autoGainControl: DEFAULT_AUDIO_PROCESSING.autoGainControl,
@@ -99,6 +102,7 @@ export function loadAudioSettings(): AudioSettings {
         own: parsed.soundCueGroups?.own !== false,
         others: parsed.soundCueGroups?.others !== false,
         screenshare: parsed.soundCueGroups?.screenshare !== false,
+        viewers: parsed.soundCueGroups?.viewers !== false,
       },
       noiseSuppression: NOISE_SUPPRESSION_MODES.includes(parsed.noiseSuppression as NoiseSuppressionMode)
         ? (parsed.noiseSuppression as NoiseSuppressionMode)

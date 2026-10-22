@@ -70,6 +70,7 @@ import {
 import { t } from '@nexspeak/i18n'
 import { SoundboardTransport } from '../soundboard-transport'
 import { callSounds, SOUNDBOARD_TOPIC } from './soundboard'
+import { encodeWatching, parseWatching, WATCHING_ATTRIBUTE } from './stream-viewers'
 import { CallTimings } from './call-timings'
 import { localFlag } from '../local-flag'
 
@@ -139,6 +140,9 @@ export type CallCue =
   | 'participant-leave'
   | 'screenshare-start'
   | 'screenshare-stop'
+  /** Someone starts or stops watching our screenshare. */
+  | 'viewer-join'
+  | 'viewer-leave'
 
 export type CallConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 /** Our connection quality as rated by the SFU. */
@@ -151,6 +155,8 @@ export interface CallSnapshot {
   isEncrypted: boolean
   participants: CallParticipant[]
   videoFeeds: CallVideoFeed[]
+  /** Who watches our screenshare, by name; only NexSpeak clients announce it. Empty while not sharing. */
+  screenshareViewers: CallParticipant[]
   isMicMuted: boolean
   isCameraOn: boolean
   isScreensharing: boolean
@@ -248,6 +254,10 @@ export class CallSession {
   private readonly soundboard: SoundboardTransport
   private readonly onSound?: (id: string, sender: string) => void
   private cuesQuietUntil = 0
+  /** Identities of the remote participants watching our screenshare. */
+  private viewers = new Set<string>()
+  /** Last value we sent for WATCHING_ATTRIBUTE. */
+  private watchingAttribute = ''
   private readonly cleanups: Array<() => void> = []
   private speakingChangeQueued = false
   private readonly speaking = new SpeakingState(() => {
@@ -539,7 +549,10 @@ export class CallSession {
       if (room.remoteParticipants.get(participant.identity) === participant) this.cue('screenshare-stop')
     }
     const onLocalScreenshareCue = (publication: LocalTrackPublication, started: boolean) => {
-      if (publication.source === Track.Source.ScreenShare) this.cue(started ? 'screenshare-start' : 'screenshare-stop')
+      if (publication.source !== Track.Source.ScreenShare) return
+      this.cue(started ? 'screenshare-start' : 'screenshare-stop')
+      // Watch states that are already there when the stream starts get no cue.
+      this.refreshViewers(false)
     }
     const onLocalScreenshareStarted = (publication: LocalTrackPublication) => onLocalScreenshareCue(publication, true)
     const onLocalScreenshareStopped = (publication: LocalTrackPublication) => onLocalScreenshareCue(publication, false)
@@ -549,6 +562,30 @@ export class CallSession {
     room.on(LivekitRoomEvent.TrackUnpublished, onRemoteScreenshareStopped)
     room.on(LivekitRoomEvent.LocalTrackPublished, onLocalScreenshareStarted)
     room.on(LivekitRoomEvent.LocalTrackUnpublished, onLocalScreenshareStopped)
+
+    // Watching: what we announce follows our subscriptions, what others announce our viewer list.
+    const onAttributesChanged = (changed: Record<string, string>, participant: Participant) => {
+      if (participant !== room.localParticipant && WATCHING_ATTRIBUTE in changed) this.refreshViewers(true)
+    }
+    // Someone joining (or rejoining after a reconnect) while watching isn't a new viewer; someone
+    // leaving gets the participant leave cue only.
+    const onViewerPresence = () => {
+      this.refreshViewers(false)
+      this.publishWatching()
+    }
+    const onRemoteTrackUnpublished = (publication: RemoteTrackPublication) => {
+      if (publication.source === Track.Source.ScreenShare) this.publishWatching()
+    }
+    const onReconnected = () => {
+      // After a full reconnect the SFU has a new participant without our attributes.
+      this.watchingAttribute = room.localParticipant.attributes[WATCHING_ATTRIBUTE] ?? ''
+      this.publishWatching()
+    }
+    room.on(LivekitRoomEvent.ParticipantAttributesChanged, onAttributesChanged)
+    room.on(LivekitRoomEvent.ParticipantConnected, onViewerPresence)
+    room.on(LivekitRoomEvent.ParticipantDisconnected, onViewerPresence)
+    room.on(LivekitRoomEvent.TrackUnpublished, onRemoteTrackUnpublished)
+    room.on(LivekitRoomEvent.Reconnected, onReconnected)
 
     const onKey = (key: Uint8Array<ArrayBuffer>, index: number, _membership: unknown, rtcBackendIdentity: string) => {
       this.soundboard.setKey(key, index, rtcBackendIdentity)
@@ -596,6 +633,11 @@ export class CallSession {
       room.off(LivekitRoomEvent.TrackUnpublished, onRemoteScreenshareStopped)
       room.off(LivekitRoomEvent.LocalTrackPublished, onLocalScreenshareStarted)
       room.off(LivekitRoomEvent.LocalTrackUnpublished, onLocalScreenshareStopped)
+      room.off(LivekitRoomEvent.ParticipantAttributesChanged, onAttributesChanged)
+      room.off(LivekitRoomEvent.ParticipantConnected, onViewerPresence)
+      room.off(LivekitRoomEvent.ParticipantDisconnected, onViewerPresence)
+      room.off(LivekitRoomEvent.TrackUnpublished, onRemoteTrackUnpublished)
+      room.off(LivekitRoomEvent.Reconnected, onReconnected)
       this.rtcSession.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipsChanged, onMemberships)
       this.rtcSession.off(MatrixRTCSessionEvent.MembershipManagerError, onManagerError)
@@ -649,6 +691,46 @@ export class CallSession {
       if (this.connectionState !== 'connected' || this.isDeafened || Date.now() < this.cuesQuietUntil) return
       this.onCue?.(cue)
     })
+  }
+
+  /**
+   * Announces whose screenshares we watch (stream-viewers.ts): one attribute update per change,
+   * derived from our subscriptions so ended streams and departed streamers drop out by themselves.
+   */
+  private publishWatching(): void {
+    const room = this.livekitRoom
+    if (this.isLeaving || room.state !== ConnectionState.Connected) return
+    const watched: string[] = []
+    room.remoteParticipants.forEach((participant) => {
+      if (participant.getTrackPublication(Track.Source.ScreenShare)?.isDesired) watched.push(participant.identity)
+    })
+    const value = encodeWatching(watched)
+    if (value === this.watchingAttribute) return
+    this.watchingAttribute = value
+    room.localParticipant.setAttributes({ [WATCHING_ATTRIBUTE]: value }).catch((error: unknown) => {
+      // Needs canUpdateOwnMetadata in the LiveKit token; watching itself works without it.
+      console.warn('Failed to announce watched streams:', error)
+    })
+  }
+
+  /** Who announced watching our screenshare; cues only for changes, not for states picked up. */
+  private refreshViewers(withCues: boolean): void {
+    const room = this.livekitRoom
+    const viewers = new Set<string>()
+    if (room.localParticipant.isScreenShareEnabled) {
+      room.remoteParticipants.forEach((participant) => {
+        if (parseWatching(participant.attributes[WATCHING_ATTRIBUTE]).includes(this.ownIdentity)) {
+          viewers.add(participant.identity)
+        }
+      })
+    }
+    const joined = [...viewers].some((identity) => !this.viewers.has(identity))
+    const left = [...this.viewers].some((identity) => !viewers.has(identity))
+    if (!joined && !left) return
+    this.viewers = viewers
+    if (withCues && joined) this.cue('viewer-join')
+    if (withCues && left) this.cue('viewer-leave')
+    this.changed()
   }
 
   private memberName(userId: string): { name: string; avatarMxc?: string } {
@@ -756,6 +838,9 @@ export class CallSession {
         (a, b) => Number(b.isLocal) - Number(a.isLocal) || a.name.localeCompare(b.name),
       ),
       videoFeeds,
+      screenshareViewers: [...this.viewers]
+        .flatMap((identity) => byIdentity.get(identity) ?? [])
+        .sort((a, b) => a.name.localeCompare(b.name)),
       isMicMuted: !local.isMicrophoneEnabled,
       isCameraOn: local.isCameraEnabled,
       isScreensharing: local.isScreenShareEnabled,
@@ -790,6 +875,7 @@ export class CallSession {
     for (const source of [Track.Source.ScreenShare, Track.Source.ScreenShareAudio]) {
       participant.getTrackPublication(source)?.setSubscribed(watched)
     }
+    this.publishWatching()
     this.changed()
   }
 

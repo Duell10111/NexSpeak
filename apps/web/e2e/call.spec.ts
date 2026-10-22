@@ -338,6 +338,71 @@ test("sound cues for joining, leaving and streams, not for those already there",
   await expect.poll(() => cues(bobPage)).toEqual(["self-join", "screenshare-start", "participant-leave"])
 })
 
+test("streamers see who watches and hear cues when someone starts or stops watching", async ({ browser }) => {
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Zuschauer ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob] })
+
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  for (const page of [alicePage, bobPage]) {
+    await page.addInitScript(() => {
+      const cues: string[] = []
+      ;(window as unknown as { __cues: string[] }).__cues = cues
+      const play = HTMLMediaElement.prototype.play
+      HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+        if (this.dataset.cue) cues.push(this.dataset.cue)
+        return play.call(this)
+      }
+    })
+  }
+  const viewerCues = (page: Page) =>
+    page.evaluate(() => (window as unknown as { __cues: string[] }).__cues.filter((cue) => cue.startsWith("viewer-")))
+
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, roomName)
+  await joinVoice(alicePage)
+  await joinVoice(bobPage)
+  await expect(tiles(alicePage)).toHaveCount(2, { timeout: 30_000 })
+
+  await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+  await alicePage.getByRole("dialog", { name: "Bildschirm teilen" }).getByRole("button", { name: "Live gehen" }).click()
+  await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible({ timeout: 30_000 })
+  const viewers = alicePage.getByTestId("stream-viewers")
+  await expect(viewers).toHaveCount(0)
+
+  // Bob watches: Alice sees him in the count and the list, and hears the cue.
+  const watchButton = tiles(bobPage).getByRole("button", { name: "Stream ansehen" })
+  await watchButton.click({ timeout: 30_000 })
+  await expect(viewers).toHaveAccessibleName("1 Zuschauer", { timeout: 15_000 })
+  await expect.poll(() => viewerCues(alicePage)).toEqual(["viewer-join"])
+  await viewers.hover()
+  const list = alicePage.getByRole("dialog").filter({ hasText: "Zuschauer deines Streams" })
+  await expect(list).toContainText(bob.username)
+
+  await tiles(bobPage).filter({ hasText: "Live" }).first().click({ button: "right" })
+  await bobPage.getByRole("menuitem", { name: "Nicht mehr ansehen" }).click()
+  await expect(viewers).toHaveCount(0, { timeout: 15_000 })
+  await expect.poll(() => viewerCues(alicePage)).toEqual(["viewer-join", "viewer-leave"])
+
+  // Leaving the call while watching is only a participant leave.
+  await alicePage.waitForTimeout(1_600) // CUE_THROTTLE_MS in call-sounds.ts
+  await watchButton.click()
+  await expect(viewers).toHaveAccessibleName("1 Zuschauer", { timeout: 15_000 })
+  await expect.poll(() => viewerCues(alicePage)).toEqual(["viewer-join", "viewer-leave", "viewer-join"])
+  await bobPage.getByRole("button", { name: "Anruf verlassen" }).click()
+  await expect(viewers).toHaveCount(0, { timeout: 30_000 })
+  await expect
+    .poll(() => alicePage.evaluate(() => (window as unknown as { __cues: string[] }).__cues.at(-1)))
+    .toBe("participant-leave")
+  expect(await viewerCues(alicePage)).toEqual(["viewer-join", "viewer-leave", "viewer-join"])
+  // Only the streamer hears them.
+  expect(await viewerCues(bobPage)).toEqual([])
+})
+
 test("screenshare with chosen resolution and frame rate, adjustable while live", async ({ browser }) => {
   const alice = await registerUser("alice")
   const bob = await registerUser("bob")

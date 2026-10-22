@@ -46,6 +46,7 @@ import { supportsVideoPopout } from "@/lib/video-popout"
 import { Spinner } from "@/components/ui/spinner"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -92,9 +93,11 @@ interface CallTile {
   participant: CallParticipant
   feed?: CallVideoFeed
   isScreenshare: boolean
+  /** Our own screenshare only: who watches it. */
+  viewers?: CallParticipant[]
 }
 
-function buildTiles(participants: CallParticipant[], feeds: CallVideoFeed[]): CallTile[] {
+function buildTiles(participants: CallParticipant[], feeds: CallVideoFeed[], viewers: CallParticipant[]): CallTile[] {
   const tiles: CallTile[] = participants.map((participant) => ({
     id: participant.identity,
     participant,
@@ -105,7 +108,9 @@ function buildTiles(participants: CallParticipant[], feeds: CallVideoFeed[]): Ca
     .filter((feed) => feed.isScreenshare)
     .forEach((feed) => {
       const participant = participants.find((candidate) => candidate.identity === feed.identity)
-      if (participant) tiles.push({ id: feed.id, participant, feed, isScreenshare: true })
+      if (participant) {
+        tiles.push({ id: feed.id, participant, feed, isScreenshare: true, viewers: participant.isLocal ? viewers : undefined })
+      }
     })
   // Remote screenshares that aren't watched (yet): a placeholder with "Watch stream".
   participants
@@ -365,6 +370,55 @@ function StreamPlaceholder({
   )
 }
 
+/** Discord's viewer count on our own stream; names and avatars on hover or click. */
+function StreamViewers({ viewers }: { viewers: CallParticipant[] }) {
+  const { t } = useTranslation()
+  const [isOpen, setIsOpen] = useState(false)
+  const hover = (open: boolean) => (event: React.PointerEvent) => {
+    if (event.pointerType === "mouse") setIsOpen(open)
+  }
+
+  return (
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <button
+          data-testid="stream-viewers"
+          onClick={(event) => {
+            event.stopPropagation()
+            // Keeps it open after hovering instead of Radix toggling it closed.
+            event.preventDefault()
+            setIsOpen(true)
+          }}
+          onPointerEnter={hover(true)}
+          onPointerLeave={hover(false)}
+          className="flex shrink-0 items-center gap-1 rounded px-1 tabular-nums hover:bg-white/15"
+          aria-label={t("call.viewerCount", { count: viewers.length })}
+        >
+          <Eye className="h-3.5 w-3.5" />
+          {viewers.length}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-56 p-2"
+        onClick={(event) => event.stopPropagation()}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <p className="px-1 pb-1 text-xs font-semibold text-muted-foreground">{t("call.viewersTitle")}</p>
+        <ul>
+          {viewers.map((viewer) => (
+            <li key={viewer.identity} className="flex items-center gap-2 px-1 py-1 text-sm">
+              <MatrixAvatar mxcUrl={viewer.avatarMxc} name={viewer.name} size={24} className="text-xs" />
+              <span className="truncate">{viewer.name}</span>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function TileOverlayButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -470,6 +524,7 @@ function CallTileView({
           {isScreenshare && (
             <span className="rounded bg-nx-dnd px-1 text-[10px] font-bold uppercase tracking-wide">{t("call.live")}</span>
           )}
+          {tile.viewers && tile.viewers.length > 0 && <StreamViewers viewers={tile.viewers} />}
           {!isScreenshare && participant.isMicMuted && !participant.isConnecting && (
             <MicOff className="h-3.5 w-3.5 shrink-0 text-nx-dnd" aria-label={t("call.muted")} />
           )}
@@ -841,7 +896,7 @@ export function CallArea({ onOpenNavigation }: { onOpenNavigation: () => void })
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [focusChoice, setFocusChoice] = useState<string | null>(null)
 
-  const tiles = useMemo(() => (call ? buildTiles(call.participants, call.videoFeeds) : []), [call])
+  const tiles = useMemo(() => (call ? buildTiles(call.participants, call.videoFeeds, call.screenshareViewers) : []), [call])
   const focused = tiles.find((tile) => tile.id === focusChoice) ?? null
 
   // Like Discord: a stream is only downloaded once someone here wants to watch it.

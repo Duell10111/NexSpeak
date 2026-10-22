@@ -11,8 +11,8 @@ Element Call. In encrypted channels the audio and video are end-to-end encrypted
   **Screen** and **Disconnect**.
 - **Mute** and **Deafen** (next to your name) also work before you join.
 - People in a voice channel are listed below it in the channel list.
-- A short sound plays when you join or leave, when someone else joins or leaves, and when someone
-  starts or stops a stream. Turn the sounds off in **Settings** → **Audio** → **Sound cues in
+- A short sound plays when you join or leave, when someone else joins or leaves, when someone
+  starts or stops a stream, and while you stream, when someone starts or stops watching it. Turn the sounds off in **Settings** → **Audio** → **Sound cues in
   calls**, see [Settings](settings.md#audio).
 - Active calls show their duration on the right of the channel entry, as `M:SS` or `H:MM:SS`.
   It uses the oldest current MatrixRTC membership, including calls started in Element Call.
@@ -86,6 +86,11 @@ the preview to save your resources."), so the preview costs no graphics card tim
 choice is remembered on this device. While NexSpeak isn't the focused window (for example while you
 play), or is minimized or hidden, the preview is always paused. Your viewers aren't affected.
 
+Next to **Live** on your own stream tile, an eye with a number shows how many people are watching;
+hover over it or click it to see who. A short sound plays when someone starts or stops watching
+(only you hear it, and not when they leave the call, which has its own sound). Only NexSpeak counts
+viewers: people watching in Element Call don't show up.
+
 ### Pop out a video or stream
 
 On a camera or a stream you are watching, choose **Pop out** from the tile's controls or
@@ -107,6 +112,9 @@ Streams of others aren't downloaded until you choose to watch them: their tile s
 **Watch stream** button, and a notice tells you when someone went live. Watching shows the stream
 large. **Stop watching** (on the tile, or right-click it) stops downloading it again, which saves
 bandwidth and graphics card time while you play.
+
+Like on Discord, everyone in the call can see whose stream you are watching: the streamer sees you
+in their viewer list.
 
 ### Performance
 

@@ -186,7 +186,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
   blocked on server enforcement and the companion-service decision (#49), see
   [implementation prerequisites](voice-moderation-design.md)
 - [x] Sound cues for join, leave and screensharing, can be turned off (#22)
-- Stream viewers: who is watching your stream, and sound cues when someone starts or stops watching (#79)
+- [x] Stream viewers: who is watching your stream, and sound cues when someone starts or stops watching (#79)
 - [x] Soundboard like Discord: server sounds played on each client, can be turned off (#26)
 - [x] Call duration next to active voice channels in the sidebar (#29)
 - [x] Incoming-call prompt with join/decline for direct calls (#34)

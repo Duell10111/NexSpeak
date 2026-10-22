@@ -1,5 +1,5 @@
 /**
- * Sound cues in calls (join, leave, screen sharing), like Discord's.
+ * Sound cues in calls (join, leave, screen sharing, viewers of our stream), like Discord's.
  * The sounds are synthesized on first use instead of shipped as files: nothing to download or
  * license, and nothing exists before the first call.
  */
@@ -18,6 +18,8 @@ const CUE_GROUPS: Record<CallCue, SoundCueGroup> = {
   "participant-leave": "others",
   "screenshare-start": "screenshare",
   "screenshare-stop": "screenshare",
+  "viewer-join": "viewers",
+  "viewer-leave": "viewers",
 }
 
 interface Note {
@@ -42,6 +44,9 @@ const CUE_NOTES: Record<CallCue, { notes: Note[]; gain: number }> = {
     notes: [note(659.25, 0, 0.09), note(523.25, 0.06, 0.09), note(392, 0.12, 0.18)],
     gain: 0.3,
   },
+  // Higher and shorter than the others: a quiet hint while streaming, e.g. a game.
+  "viewer-join": { notes: [note(1046.5, 0, 0.07), note(1318.51, 0.05, 0.12)], gain: 0.22 },
+  "viewer-leave": { notes: [note(1318.51, 0, 0.07), note(1046.5, 0.05, 0.12)], gain: 0.22 },
 }
 
 function note(frequency: number, start: number, duration: number): Note {

@@ -10,6 +10,8 @@ const CUES: CallCue[] = [
   "participant-leave",
   "screenshare-start",
   "screenshare-stop",
+  "viewer-join",
+  "viewer-leave",
 ]
 
 describe("call sound cues", () => {
@@ -27,6 +29,11 @@ describe("call sound cues", () => {
     expect(isCueEnabled(noOthers, "participant-leave")).toBe(false)
     expect(isCueEnabled(noOthers, "self-join")).toBe(true)
     expect(isCueEnabled(noOthers, "screenshare-start")).toBe(true)
+
+    const noViewers = { ...defaults, soundCueGroups: { ...defaults.soundCueGroups, viewers: false } }
+    expect(isCueEnabled(noViewers, "viewer-join")).toBe(false)
+    expect(isCueEnabled(noViewers, "viewer-leave")).toBe(false)
+    expect(isCueEnabled(noViewers, "participant-leave")).toBe(true)
   })
 
   it("renders short sounds that don't clip", () => {

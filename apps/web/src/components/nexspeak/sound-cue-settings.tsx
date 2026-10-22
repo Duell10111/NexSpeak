@@ -11,6 +11,7 @@ const GROUP_LABELS: Record<SoundCueGroup, MessageKey> = {
   own: "settings.soundCueOwn",
   others: "settings.soundCueOthers",
   screenshare: "settings.soundCueScreenshare",
+  viewers: "settings.soundCueViewers",
 }
 
 export function SoundCueSettings({ settings }: { settings: AudioSettings }) {
