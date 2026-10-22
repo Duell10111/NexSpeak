@@ -15,6 +15,7 @@ pinned sources. Glyphs are rendered by the operating system; no emoji artwork is
 ## Bundled soundboard sounds
 
 `apps/web/public/sounds/celebrate.mp3`, `chime.mp3`, and `drum.mp3` are original
-NexSpeak recordings synthesized from sine waves using FFmpeg. No third-party recordings,
+NexSpeak sounds synthesized from oscillators and seeded noise by
+`apps/web/scripts/generate-sounds.py` and encoded with FFmpeg. No third-party recordings,
 samples, or sound libraries are included. They are distributed under the project's
 AGPL-3.0-or-later license.

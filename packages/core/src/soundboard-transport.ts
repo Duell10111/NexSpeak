@@ -1,7 +1,7 @@
 /** Sound triggers use a distinct AES-GCM key derived from MatrixRTC media key material.
  * LiveKit's media E2EE does not encrypt data channels, so encrypted rooms never send plain data.
  */
-import { SOUND_COOLDOWN_MS } from './matrix/soundboard'
+import { SOUND_MIN_INTERVAL_MS } from './matrix/soundboard'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -79,7 +79,7 @@ export class SoundboardTransport {
       // One budget per Matrix user, including their other devices.
       const userId = sender.slice(0, sender.lastIndexOf(':'))
       const last = this.lastPlayed.get(userId)
-      if (last !== undefined && now - last < SOUND_COOLDOWN_MS) return null
+      if (last !== undefined && now - last < SOUND_MIN_INTERVAL_MS) return null
       this.lastPlayed.set(userId, now)
       return value.id
     } catch { return null }
@@ -87,7 +87,7 @@ export class SoundboardTransport {
 
   forget(identity: string): void {
     this.keys.delete(identity)
-    // Keep recent nonces and the user cooldown through reconnects, until their freshness expires.
+    // Keep recent nonces and the user rate limit through reconnects, until their freshness expires.
     this.prune()
   }
 
@@ -101,7 +101,7 @@ export class SoundboardTransport {
       nonces.forEach((time, nonce) => { if (now - time >= 10_000) nonces.delete(nonce) })
       if (nonces.size === 0) this.seen.delete(identity)
     })
-    this.lastPlayed.forEach((time, user) => { if (now - time >= SOUND_COOLDOWN_MS) this.lastPlayed.delete(user) })
+    this.lastPlayed.forEach((time, user) => { if (now - time >= SOUND_MIN_INTERVAL_MS) this.lastPlayed.delete(user) })
   }
 
   dispose(): void {

@@ -7,7 +7,8 @@ export const SOUNDBOARD_TOPIC = 'io.nexspeak.soundboard.v1'
 export const MAX_SOUND_BYTES = 512 * 1024
 export const MAX_SOUND_SECONDS = 5
 export const MAX_SERVER_SOUNDS = 32
-export const SOUND_COOLDOWN_MS = 2_000
+/** Flood guard only: a new sound from a person replaces their previous one (like Discord). */
+export const SOUND_MIN_INTERVAL_MS = 150
 
 export interface BoardSound {
   id: string

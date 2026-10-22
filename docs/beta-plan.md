@@ -188,6 +188,8 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Sound cues for join, leave and screensharing, can be turned off (#22)
 - Stream viewers: who is watching your stream, and sound cues when someone starts or stops watching (#79)
 - [x] Soundboard like Discord: server sounds played on each client, can be turned off (#26)
+- [x] Richer default soundboard sounds with even loudness (#111)
+- [x] Soundboard replays like Discord, with a searchable, grouped picker (#112)
 - [x] Call duration next to active voice channels in the sidebar (#29)
 - [x] Incoming-call prompt with join/decline for direct calls (#34)
 - [x] Keep malformed session storage from restoring a previously cached login (#104)
@@ -212,6 +214,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [ ] Record and send voice messages (#57)
 - [ ] Named threads and a better thread list (#58)
 - [ ] Appearance settings: theme, font size, compact mode (#59)
+- [ ] Soundboard sounds from other servers (#114)
 
 ### Milestone "0.5 – Moderation"
 

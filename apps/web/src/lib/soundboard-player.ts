@@ -8,6 +8,8 @@ export function createSoundboardPlayer(client: MatrixClient) {
   const urls = new Set<string>()
   const controller = new AbortController()
   const playing = new Map<HTMLAudioElement, { sound: BoardSound; allowed: () => boolean }>()
+  // Like Discord, a person's new sound replaces their previous one instead of overlapping it.
+  const bySender = new Map<string, HTMLAudioElement>()
   let disposed = false
   let generation = 0
 
@@ -51,7 +53,7 @@ export function createSoundboardPlayer(client: MatrixClient) {
   }
 
   return {
-    async play(sound: BoardSound, volume: number, outputDeviceId: string, allowed: () => boolean = () => true) {
+    async play(sound: BoardSound, sender: string, volume: number, outputDeviceId: string, allowed: () => boolean = () => true) {
       if (disposed || volume <= 0) return
       const started = generation
       let ready = cache.get(sound.url)
@@ -69,8 +71,11 @@ export function createSoundboardPlayer(client: MatrixClient) {
       try {
         const audio = await ready
         if (disposed || generation !== started || !allowed()) return
+        const previous = bySender.get(sender)
+        if (previous && previous !== audio) { previous.pause(); playing.delete(previous) }
+        bySender.set(sender, audio)
         playing.set(audio, { sound, allowed })
-        audio.onended = () => playing.delete(audio)
+        audio.onended = () => { playing.delete(audio); if (bySender.get(sender) === audio) bySender.delete(sender) }
         audio.volume = Math.max(0, Math.min(1, sound.volume * volume))
         audio.currentTime = 0
         if ('setSinkId' in audio && audio.sinkId !== outputDeviceId) await audio.setSinkId(outputDeviceId).catch(() => {})
@@ -89,6 +94,7 @@ export function createSoundboardPlayer(client: MatrixClient) {
     stop() {
       generation += 1
       playing.clear()
+      bySender.clear()
       cache.forEach((ready) => { void ready.then((audio) => audio.pause()).catch(() => {}) })
     },
     dispose() {
@@ -96,6 +102,7 @@ export function createSoundboardPlayer(client: MatrixClient) {
       controller.abort()
       generation += 1
       playing.clear()
+      bySender.clear()
       cache.forEach((ready) => { void ready.then((audio) => { audio.pause(); audio.src = '' }).catch(() => {}) })
       cache.clear()
       urls.forEach((url) => URL.revokeObjectURL(url))

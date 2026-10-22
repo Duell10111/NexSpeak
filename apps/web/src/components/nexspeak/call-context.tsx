@@ -229,7 +229,7 @@ export function CallProvider({ client, activeChannelId, onOpenRoom, children }: 
             if (!current.soundboardEnabled) return
             const sound = callSounds(client, roomId).find((item) => item.id === id)
             if (!sound) return
-            void boardPlayer.play(sound, current.outputVolume * current.soundboardVolume / 10_000, current.outputDeviceId,
+            void boardPlayer.play(sound, sender, current.outputVolume * current.soundboardVolume / 10_000, current.outputDeviceId,
               () => sessionRef.current?.roomId === roomId && !sessionRef.current.getSnapshot().isDeafened && !client.isUserIgnored(userIdFromIdentity(sender)) && loadAudioSettings().soundboardEnabled)
           },
           onCue: (cue) => {

@@ -87,25 +87,24 @@ for (const encrypted of [false, true]) {
     await play(alicePage, 'Glocke')
     await expect.poll(() => played(alicePage)).toEqual(['default:chime'])
     await expect.poll(() => played(bobPage)).toEqual(['default:chime'])
+    // No cooldown: a new sound replaces the previous one right away, like Discord.
     await play(alicePage, 'Trommel')
-    // The sender is rate-limited before it publishes the second trigger.
-    await expect.poll(() => played(alicePage)).toEqual(['default:chime'])
+    await expect.poll(() => played(alicePage)).toEqual(['default:chime', 'default:drum'])
+    await expect.poll(() => played(bobPage)).toEqual(['default:chime', 'default:drum'])
 
     await bobPage.getByRole('button', { name: 'Ton stummschalten', exact: true }).last().click()
-    await alicePage.waitForTimeout(2_100)
     await play(alicePage, 'Jubel')
-    await expect.poll(() => played(alicePage)).toEqual(['default:chime', 'default:celebrate'])
-    await expect.poll(() => played(bobPage)).toEqual(['default:chime'])
+    await expect.poll(() => played(alicePage)).toEqual(['default:chime', 'default:drum', 'default:celebrate'])
+    await expect.poll(() => played(bobPage)).toEqual(['default:chime', 'default:drum'])
     await bobPage.getByRole('button', { name: 'Ton aktivieren', exact: true }).last().click()
 
     await bobPage.getByRole('button', { name: 'Einstellungen', exact: true }).click()
     await bobPage.getByRole('tab', { name: 'Audio', exact: true }).click()
     await bobPage.getByRole('switch', { name: 'Soundboard', exact: true }).click()
     await bobPage.keyboard.press('Escape')
-    await alicePage.waitForTimeout(2_100)
     await play(alicePage, 'Trommel')
-    await expect.poll(() => played(alicePage)).toHaveLength(3)
-    await expect.poll(() => played(bobPage)).toEqual(['default:chime'])
+    await expect.poll(() => played(alicePage)).toHaveLength(4)
+    await expect.poll(() => played(bobPage)).toEqual(['default:chime', 'default:drum'])
 
     await bobPage.getByRole('button', { name: 'Einstellungen', exact: true }).click()
     await bobPage.getByRole('tab', { name: 'Audio', exact: true }).click()
@@ -115,8 +114,8 @@ for (const encrypted of [false, true]) {
     // Wait for the ignore-list sync before sending another sound.
     await bobPage.waitForTimeout(2_100)
     await play(alicePage, 'Glocke')
-    await expect.poll(() => played(alicePage)).toHaveLength(4)
-    await expect.poll(() => played(bobPage)).toEqual(['default:chime'])
+    await expect.poll(() => played(alicePage)).toHaveLength(5)
+    await expect.poll(() => played(bobPage)).toEqual(['default:chime', 'default:drum'])
 
     await alicePage.getByRole('button', { name: 'Anruf verlassen' }).click()
     await bobPage.getByRole('button', { name: 'Anruf verlassen' }).click()
