@@ -35,7 +35,7 @@ import {
   startMatrixClient,
 } from '@nexspeak/core/matrix/client'
 import { describeLoginError, resolveHomeserverUrl, serverNameFromUserId } from '@nexspeak/core/matrix/errors'
-import { clearStoredPresence } from '@nexspeak/core/matrix/profile'
+import { clearStoredPresence, stopOwnPresence } from '@nexspeak/core/matrix/profile'
 import { t } from '@nexspeak/i18n'
 import { desktopBridge } from '@/lib/desktop'
 
@@ -61,6 +61,7 @@ const MatrixContext = createContext<MatrixContextType | undefined>(undefined)
 async function teardownClient(client: MatrixClient | null): Promise<void> {
   if (!client) return
   try {
+    stopOwnPresence(client)
     client.stopClient()
     await client.clearStores()
   } catch (error) {

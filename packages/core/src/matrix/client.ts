@@ -8,7 +8,7 @@
 
 import { createClient, PendingEventOrdering, type TokenRefreshCallback } from 'matrix-js-sdk'
 import { secretStorageCallbacks } from './secret-storage'
-import { applyStoredPresence } from './profile'
+import { applyStoredPresence, stopOwnPresence } from './profile'
 import type { MatrixClient } from 'matrix-js-sdk'
 
 export interface MatrixClientConfig {
@@ -126,6 +126,7 @@ export function startMatrixClient(client: MatrixClient): Promise<boolean> {
 export function disposeMatrixClient(): void {
   if (matrixClientInstance) {
     try {
+      stopOwnPresence(matrixClientInstance)
       matrixClientInstance.stopClient()
       matrixClientInstance.removeAllListeners()
     } catch (error) {

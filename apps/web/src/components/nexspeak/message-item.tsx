@@ -8,6 +8,7 @@ import {
   CornerUpLeft,
   Download,
   FileIcon,
+  EyeOff,
   Flag,
   Lock,
   MessagesSquare,
@@ -25,7 +26,7 @@ import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { downloadMedia, useMediaUrl } from "@/hooks/useMediaUrl"
 import { Trans, useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
-import { editTextMessage, toggleReaction } from "@nexspeak/core/matrix/messages"
+import { editTextMessage, hideLinkPreview, toggleReaction } from "@nexspeak/core/matrix/messages"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
 import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
@@ -44,6 +45,8 @@ import type { MatrixMessage } from "@nexspeak/core/matrix/types"
 import { formattedLinks } from "@nexspeak/core/matrix/formatted-body"
 import { FormattedMessage, LinkifiedText } from "@/components/nexspeak/formatted-message"
 import { PollMessage } from "@/components/nexspeak/poll-message"
+import { MessageLinkPreview } from "@/components/nexspeak/link-preview"
+import { firstPreviewUrl, HIDE_LINK_PREVIEWS } from "@nexspeak/core/matrix/link-previews"
 import { jumpToMessage } from "@/lib/jump-to-message"
 
 export interface MessageActions {
@@ -135,17 +138,17 @@ function MessageBody({ message }: { message: MatrixMessage }) {
     case "poll":
       return <PollMessage message={message} />
     case "text":
-      return <TextBody message={message} />
+      return <><TextBody message={message} /><MessageLinkPreview message={message} /></>
     case "notice":
       return (
         <span className="text-muted-foreground">
-          <TextBody message={message} />
+          <TextBody message={message} /><MessageLinkPreview message={message} />
         </span>
       )
     case "emote":
       return (
         <span className="italic">
-          * {message.senderName} <TextBody message={message} />
+          * {message.senderName} <TextBody message={message} /><MessageLinkPreview message={message} />
         </span>
       )
     case "image":
@@ -400,6 +403,13 @@ function MoreActions({
   actions: MessageActions
 }) {
   const { t } = useTranslation()
+  const { client } = useMatrixClient()
+  const hidePreview = () => {
+    if (!client) return
+    void hideLinkPreview(client, message.roomId, message.event).catch((error: unknown) => {
+      toast.error(describeMatrixError(error, t("chat.editFailed")))
+    })
+  }
   const copyText = () => {
     navigator.clipboard.writeText(message.body).then(
       () => toast.success(t("common.copied")),
@@ -420,6 +430,9 @@ function MoreActions({
             <Copy className="h-4 w-4" />
             {t("chat.copyText")}
           </DropdownMenuItem>
+        )}
+        {isOwn && message.status === "sent" && ["text", "notice", "emote"].includes(message.kind) && message.event.getContent()[HIDE_LINK_PREVIEWS] !== true && firstPreviewUrl(message.body, message.formatted) && (
+          <DropdownMenuItem onSelect={hidePreview}><EyeOff className="h-4 w-4" />{t("linkPreview.hide")}</DropdownMenuItem>
         )}
         {canPin && (
           <DropdownMenuItem onSelect={() => actions.onSetPinned(message, !isPinned)}>

@@ -19,6 +19,26 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
   you move the pointer to it. Escape closes it without adding a reaction.
 - A message that failed to send can be **resent** or **discarded**.
 
+## Link previews
+
+Link previews are off by default. Enable **Show link previews** under **Settings → Messages**
+to show a card for the first web link in a message. **Also preview links in encrypted rooms**
+requires a separate opt-in, also off by default.
+Requesting a preview sends the link to your homeserver, which may fetch the linked website;
+this reveals that URL even when the message itself is encrypted.
+
+Cards load only for visible messages and share a preview cache for the current session.
+Preview images are static and do not autoplay. Some homeservers do not offer link previews;
+in that case the original clickable link remains available.
+
+Before requesting a preview, NexSpeak checks the current message and its latest edit with the
+homeserver. This prevents an older restored chat snapshot from revealing a link whose preview
+the sender has already hidden. If the homeserver cannot provide that information, no card loads.
+
+Before sending, choose **Hide link preview for this message** above the message field, or use
+**More → Hide link preview** on your own sent message. NexSpeak saves that choice with the
+message so other NexSpeak clients respect it too. Other Matrix clients may ignore this preference.
+
 ## Audio and video
 
 Audio and video attachments have an inline player. Choose **Play** to load the file,

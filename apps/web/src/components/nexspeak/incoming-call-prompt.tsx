@@ -5,6 +5,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useOwnPresence } from "@/hooks/useOwnProfile"
 import { useTranslation } from "@/hooks/useTranslation"
 import { desktopBridge } from "@/lib/desktop"
 import type { IncomingCall } from "@/lib/incoming-calls"
@@ -19,6 +20,7 @@ export function IncomingCallPrompt({ incoming, onJoin, onDecline, onOpenRoom }: 
   onOpenRoom: (roomId: string) => void
 }) {
   const { t } = useTranslation()
+  const presence = useOwnPresence()
   const { enabled, showContent } = useSyncExternalStore(
     subscribeNotificationSettings, loadNotificationSettings, getDefaultNotificationSettings,
   )
@@ -26,7 +28,7 @@ export function IncomingCallPrompt({ incoming, onJoin, onDecline, onOpenRoom }: 
   const [initial] = useState(incoming)
   const openConversation = useEffectEvent(() => { onOpenRoom(initial.roomId) })
   useEffect(() => {
-    if (!enabled || document.hasFocus() || typeof Notification === "undefined" || Notification.permission !== "granted") return
+    if (presence === "dnd" || !enabled || document.hasFocus() || typeof Notification === "undefined" || Notification.permission !== "granted") return
     let notification: Notification
     try {
       // Electron presents web notifications through the OS, just like message notifications.
@@ -45,7 +47,7 @@ export function IncomingCallPrompt({ incoming, onJoin, onDecline, onOpenRoom }: 
       notification.close()
     }
     return () => { notification.close() }
-  }, [initial, enabled, showContent, t])
+  }, [initial, enabled, showContent, t, presence])
 
   return (
     <AlertDialog open onOpenChange={(open) => { if (!open) onDecline() }}>

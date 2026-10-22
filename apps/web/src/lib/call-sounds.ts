@@ -4,6 +4,7 @@
  * license, and nothing exists before the first call.
  */
 
+import { loadOwnPresence } from "@nexspeak/core/matrix/profile"
 import type { CallCue } from "@nexspeak/core/matrix/call-session"
 import type { AudioSettings, SoundCueGroup } from "@/lib/audio-settings"
 
@@ -49,7 +50,7 @@ function note(frequency: number, start: number, duration: number): Note {
 }
 
 export function isCueEnabled(settings: AudioSettings, cue: CallCue): boolean {
-  return settings.soundCues && settings.soundCueGroups[CUE_GROUPS[cue]]
+  return loadOwnPresence() !== "dnd" && settings.soundCues && settings.soundCueGroups[CUE_GROUPS[cue]]
 }
 
 /** Mono samples in -1..1: soft sine tones with a short attack and an exponential decay. */
@@ -119,6 +120,7 @@ export function createCallSoundPlayer(now: () => number = Date.now): CallSoundPl
 
   return {
     play(cue, { volume, outputDeviceId }) {
+      if (loadOwnPresence() === "dnd") return
       const time = now()
       const last = lastPlayed.get(cue)
       if (last !== undefined && time - last < CUE_THROTTLE_MS) return
@@ -139,7 +141,7 @@ export function createCallSoundPlayer(now: () => number = Date.now): CallSoundPl
           ? audio.setSinkId(outputDeviceId).catch(() => {})
           : Promise.resolve()
       void sinkReady
-        .then(() => audio.play())
+        .then(() => { if (loadOwnPresence() !== "dnd") return audio.play() })
         .catch((error: unknown) => console.warn("Failed to play call sound:", error))
     },
   }

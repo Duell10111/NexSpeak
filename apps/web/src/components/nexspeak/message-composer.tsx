@@ -10,7 +10,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react"
-import { ChartNoAxesColumn, AtSign, Hash, PlusCircle, SendHorizonal, Smile, X } from "lucide-react"
+import { EyeOff, ChartNoAxesColumn, AtSign, Hash, PlusCircle, SendHorizonal, Smile, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Spinner } from "@/components/ui/spinner"
@@ -30,6 +30,7 @@ import {
 } from "@nexspeak/core/matrix/mentions"
 import type { MessageMention } from "@nexspeak/core/matrix/messages"
 
+import { firstPreviewUrl } from "@nexspeak/core/matrix/link-previews"
 import { PollComposer } from "@/components/nexspeak/poll-composer"
 import type { PollDraft } from "@nexspeak/core/matrix/polls"
 
@@ -40,6 +41,7 @@ export interface ComposedMessage {
   mentions: MessageMention[]
   mentionsRoom: boolean
   customEmojis: Array<{ text: string; url: string }>
+  hideLinkPreviews: boolean
 }
 
 export interface MessageComposerHandle {
@@ -146,6 +148,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
   const { client } = useMatrixClient()
   const [pollOpen, setPollOpen] = useState(false)
   const [value, setValue] = useState("")
+  const [hideLinkPreviews, setHideLinkPreviews] = useState(false)
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
   const [emojiTrigger, setEmojiTrigger] = useState<{ start: number; end: number; query: string; selected: number } | null>(null)
   const emojis = useServerEmojis(Boolean(emojiTrigger))
@@ -224,11 +227,12 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       client && client.getRoom(roomId)?.currentState.mayTriggerNotifOfType("room", client.getUserId() ?? ""),
     )
     const customEmojis = selectedEmojisRef.current.filter((emoji) => body.includes(emoji.text))
-    onSend({ body, mentions, customEmojis, mentionsRoom: mayNotifyRoom && new RegExp(`(^|\\s)${ROOM_MENTION}(?!\\w)`).test(body) })
+    onSend({ body, mentions, customEmojis, hideLinkPreviews, mentionsRoom: mayNotifyRoom && new RegExp(`(^|\\s)${ROOM_MENTION}(?!\\w)`).test(body) })
     mentionsRef.current = []
     selectedEmojisRef.current = []
     setEmojiTrigger(null)
     setValue("")
+    setHideLinkPreviews(false)
     setSuggestions(null)
     onStopTyping?.()
     requestAnimationFrame(resize)
@@ -347,6 +351,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           </button>
         </div>
       )}
+      {firstPreviewUrl(value) && <button type="button" aria-pressed={hideLinkPreviews} disabled={disabled} onClick={() => setHideLinkPreviews(!hideLinkPreviews)} className="mb-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><EyeOff className="h-3 w-3" />{t(hideLinkPreviews ? "linkPreview.hiddenForMessage" : "linkPreview.hideForMessage")}</button>}
       {pollOpen && onPoll && <PollComposer onClose={() => setPollOpen(false)} onCreate={onPoll} />}
       <div className={cn("flex items-start gap-1 bg-nx-chat-input pr-2 pl-1", replyToName ? "rounded-b-lg" : "rounded-lg", compact && "pl-0")}>
         {onFiles && (

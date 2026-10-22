@@ -31,7 +31,7 @@ import {
 import { useCallContext, type RoomCallInfo } from "@/components/nexspeak/call-context"
 import { CallDuration } from "@/components/nexspeak/call-duration"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
-import { useOwnPresence, useOwnProfile } from "@/hooks/useOwnProfile"
+import { useOwnPresence, useOwnProfile, useOwnStatus } from "@/hooks/useOwnProfile"
 import { useTranslation } from "@/hooks/useTranslation"
 import { usePolledStats } from "@/hooks/usePolledStats"
 import { PING_HISTORY_LENGTH } from "@nexspeak/core/connection-stats"
@@ -834,6 +834,7 @@ export function ChannelSidebar({
   const [newDmOpen, setNewDmOpen] = useState(false)
   const { client } = useMatrixClient()
   const profile = useOwnProfile(client)
+  const customStatus = useOwnStatus(client)
   const openDirectMessage = useOpenDirectMessage()
   const { isMicMuted, isDeafened, toggleMicrophone, toggleDeafen } = useCallContext()
   const incomingRequests = useFriends().filter((friend) => friend.status === "incoming").length
@@ -939,7 +940,7 @@ export function ChannelSidebar({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm leading-tight font-semibold text-foreground">{profile?.name || "…"}</p>
                   <p className="truncate text-xs leading-tight text-muted-foreground">
-                    <span className="group-hover:hidden">{t(PRESENCE_LABEL[ownPresence])}</span>
+                    <span className="group-hover:hidden">{customStatus || t(PRESENCE_LABEL[ownPresence])}</span>
                     <span className="hidden group-hover:inline">{profile?.userId}</span>
                   </p>
                 </div>

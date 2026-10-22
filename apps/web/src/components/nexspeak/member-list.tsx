@@ -25,7 +25,8 @@ import { useCallContext } from "@/components/nexspeak/call-context"
 import { useOpenDirectMessage } from "@/components/nexspeak/navigation-context"
 import { useFriendActions, useFriendOf } from "@/components/nexspeak/friends-context"
 import { PresenceAvatar, USER_PRESENCE_LABELS } from "@/components/nexspeak/presence-avatar"
-import { getUserPresence, type UserPresence } from "@nexspeak/core/matrix/presence"
+import { loadOwnStatus, subscribeOwnStatus } from "@nexspeak/core/matrix/profile"
+import { getUserStatus, getUserPresence, type UserPresence } from "@nexspeak/core/matrix/presence"
 import { displayRole, MEMBER_ROLES_EVENT, memberRoles, readAssignedRoleIds, readRoles, ROLES_EVENT, type ServerRoleInfo } from "@nexspeak/core/matrix/roles"
 import { RoleDot, roleLabel, RolePicker } from "@/components/nexspeak/server-roles"
 import type { MessageKey } from "@nexspeak/i18n"
@@ -41,6 +42,7 @@ interface UiMember {
   userId: string
   name: string
   avatarMxc?: string
+  status: string
   presence: UserPresence
   powerLevel: number
   /** Highest first. */
@@ -65,6 +67,7 @@ function readMembers(client: MatrixClient, roomId: string, serverId: string | un
         userId: member.userId,
         name: member.name || member.userId,
         avatarMxc: member.getMxcAvatarUrl() || undefined,
+        status: member.userId === client.getUserId() ? loadOwnStatus(client) : getUserStatus(client, member.userId),
         presence: getUserPresence(client, member.userId),
         powerLevel,
         roles: shown,
@@ -108,6 +111,8 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string, serverId:
     client.on(RoomStateEvent.NewMember, refresh)
     client.on(RoomMemberEvent.Membership, refresh)
     client.on(RoomMemberEvent.Name, refresh)
+    const unsubscribeStatus = subscribeOwnStatus(refresh)
+    client.on(UserEvent.LastPresenceTs, refresh)
     client.on(UserEvent.Presence, refresh)
     client.on(UserEvent.CurrentlyActive, refresh)
 
@@ -118,6 +123,8 @@ function useJoinedMembers(client: MatrixClient | null, roomId: string, serverId:
       client.removeListener(RoomStateEvent.NewMember, refresh)
       client.removeListener(RoomMemberEvent.Membership, refresh)
       client.removeListener(RoomMemberEvent.Name, refresh)
+      unsubscribeStatus()
+      client.removeListener(UserEvent.LastPresenceTs, refresh)
       client.removeListener(UserEvent.Presence, refresh)
       client.removeListener(UserEvent.CurrentlyActive, refresh)
     }
@@ -248,6 +255,7 @@ function MemberProfile({ member, serverId, isSelf, onDone }: { member: UiMember;
           {presenceLabel && <p className="text-xs text-muted-foreground">{t(presenceLabel)}</p>}
         </div>
       </div>
+      {member.status && <p className="break-words text-sm text-foreground">{member.status}</p>}
       {serverId && (
         <div className="space-y-1.5">
           <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t("members.roles")}</p>
@@ -286,7 +294,7 @@ function MemberItem({ member, serverId, voiceRoomName, isSelf }: { member: UiMem
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "group mx-2 flex h-[42px] items-center gap-3 rounded px-2 text-left transition-colors hover:bg-nx-hover",
+            "group mx-2 flex min-h-[42px] items-center gap-3 rounded px-2 text-left transition-colors hover:bg-nx-hover",
             isAway && !voiceRoomName && "opacity-40 hover:opacity-100",
             open && "bg-nx-hover opacity-100",
           )}
@@ -305,6 +313,7 @@ function MemberItem({ member, serverId, voiceRoomName, isSelf }: { member: UiMem
             >
               {member.name}
             </p>
+            {member.status && <p className="truncate text-xs leading-4 text-muted-foreground" title={member.status}>{member.status}</p>}
             {voiceRoomName && (
               <p className="flex items-center gap-1 truncate text-xs leading-4 text-muted-foreground">
                 <Volume2 className="h-3 w-3 shrink-0 text-nx-online" />

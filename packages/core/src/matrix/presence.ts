@@ -12,3 +12,9 @@ export function getUserPresence(client: MatrixClient, userId: string): UserPrese
   if (user.presence === 'online' || user.currentlyActive) return 'online'
   return user.presence === 'unavailable' ? 'unavailable' : 'offline'
 }
+
+/** Read the latest event: SDK presenceStatusMsg retains an old value when status_msg is cleared. */
+export function getUserStatus(client: MatrixClient, userId: string): string {
+  const status = client.getUser(userId)?.events.presence?.getContent().status_msg
+  return typeof status === 'string' ? status : ''
+}

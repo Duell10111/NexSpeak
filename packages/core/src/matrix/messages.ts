@@ -16,6 +16,7 @@ import { encryptAttachment } from './attachments'
 import { markdownToHtml, type MarkdownEmoji } from './markdown'
 import { formattedEmojis, parseFormattedBody } from './formatted-body'
 import { parseMatrixLink } from './links'
+import { HIDE_LINK_PREVIEWS } from './link-previews'
 import { t } from '@nexspeak/i18n'
 import { isEmojiMxc, stickerInfo, type Sticker } from './custom-emojis'
 
@@ -39,6 +40,7 @@ export interface SendOptions {
   customEmojis?: MarkdownEmoji[]
   /** "@room" was picked and we may notify the whole room. */
   mentionsRoom?: boolean
+  hideLinkPreviews?: boolean
 }
 
 const HTML_FORMAT = 'org.matrix.custom.html'
@@ -86,6 +88,7 @@ export function sendTextMessage(
     ...textContent(isEmote ? body.slice(4) : body, isEmote ? MsgType.Emote : MsgType.Text, options.mentions, options.customEmojis),
     ...relation(options),
     ...intentionalMentions(client, options),
+    ...(options.hideLinkPreviews && { [HIDE_LINK_PREVIEWS]: true }),
   } as RoomMessageEventContent
   return client.sendMessage(roomId, content)
 }
@@ -113,13 +116,14 @@ export function editTextMessage(
   original: MatrixEvent,
   body: string,
   links: MessageMention[] = [],
+  hideLinkPreviews = original.getContent()[HIDE_LINK_PREVIEWS] === true,
 ): Promise<unknown> {
   const eventId = original.getId()
   if (!eventId) throw new Error(t('error.messageNotSent'))
   const msgtype = original.getContent().msgtype === MsgType.Emote ? MsgType.Emote : MsgType.Text
   const formatted = original.getContent().formatted_body
   const emojis = typeof formatted === 'string' ? formattedEmojis(parseFormattedBody(formatted)) : []
-  const newContent = textContent(body, msgtype, links, emojis)
+  const newContent = { ...textContent(body, msgtype, links, emojis), ...(hideLinkPreviews && { [HIDE_LINK_PREVIEWS]: true }) }
   const mentionedUserIds = links.flatMap((link) => {
     if (!body.includes(link.text)) return []
     const target = parseMatrixLink(link.href)
@@ -135,6 +139,26 @@ export function editTextMessage(
     'm.mentions': {},
     'm.relates_to': { rel_type: 'm.replace', event_id: eventId },
   } as RoomMessageEventContent
+  return sendMessageEdit(client, roomId, eventId, content)
+}
+
+/** Preserve rich content and all relations when the sender suppresses a card. */
+export function hideLinkPreview(client: MatrixClient, roomId: string, original: MatrixEvent): Promise<unknown> {
+  const eventId = original.getId()
+  if (!eventId) return Promise.reject(new Error(t('error.messageNotSent')))
+  const newContent = { ...original.getContent<RoomMessageEventContent>(), [HIDE_LINK_PREVIEWS]: true }
+  const content = {
+    ...newContent,
+    body: `* ${newContent.body ?? ''}`,
+    ...('formatted_body' in newContent && typeof newContent.formatted_body === 'string' && { formatted_body: `* ${newContent.formatted_body}` }),
+    'm.new_content': newContent,
+    'm.mentions': {},
+    'm.relates_to': { rel_type: 'm.replace', event_id: eventId },
+  } as RoomMessageEventContent
+  return sendMessageEdit(client, roomId, eventId, content)
+}
+
+function sendMessageEdit(client: MatrixClient, roomId: string, eventId: string, content: RoomMessageEventContent): Promise<unknown> {
   return client.sendMessage(roomId, content).catch((error: unknown) => {
     // The inline editor owns the retry draft. A failed local edit must not keep replacing
     // the original message or block later sends in the SDK's pending-event queue.

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { EventStatus, MatrixError, MatrixEvent, type MatrixClient } from "matrix-js-sdk"
-import { editTextMessage, sendTextMessage, sendSticker } from "./messages"
+import { editTextMessage, hideLinkPreview, sendTextMessage, sendSticker } from "./messages"
 
 function fakeClient() {
   return { getUserId: () => "@me:example.org", sendMessage: vi.fn().mockResolvedValue({ event_id: "$new" }) }
@@ -113,5 +113,29 @@ describe('sendSticker', () => {
     })
     await expect(sendSticker(client as unknown as MatrixClient, '!r', { ...sticker, url: 'https://tracker/pixel' })).rejects.toThrow('Invalid sticker')
     expect(client.sendEvent).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('sender link preview suppression', () => {
+  it('includes the sender preference in the original message content', async () => {
+    const client = fakeClient()
+    await sendTextMessage(client as unknown as MatrixClient, '!r', 'https://example.org', { hideLinkPreviews: true })
+    expect(client.sendMessage.mock.calls[0][1]).toMatchObject({ 'org.nexspeak.hide_link_previews': true })
+  })
+  it('preserves sender suppression through later edits', async () => {
+    const client = fakeClient()
+    const original = new MatrixEvent({ event_id: '$original', content: { msgtype: 'm.text', body: 'https://old.example', 'org.nexspeak.hide_link_previews': true } })
+    await editTextMessage(client as unknown as MatrixClient, '!r', original, 'https://new.example')
+    expect(client.sendMessage.mock.calls[0][1]['m.new_content']).toMatchObject({ body: 'https://new.example', 'org.nexspeak.hide_link_previews': true })
+  })
+  it('hides without changing rich notice content, thread/reply relations or notification intent', async () => {
+    const client = fakeClient()
+    const originalContent = { msgtype: 'm.notice', body: 'https://example.org label', format: 'org.matrix.custom.html', formatted_body: '<strong><a href="https://example.org">label</a></strong>', 'm.mentions': { user_ids: ['@alice:example.org'] }, 'm.relates_to': { rel_type: 'm.thread', event_id: '$root', 'm.in_reply_to': { event_id: '$reply' } } }
+    const original = new MatrixEvent({ event_id: '$original', content: originalContent })
+    await hideLinkPreview(client as unknown as MatrixClient, '!r', original)
+    expect(client.sendMessage.mock.calls[0][1]).toMatchObject({
+      msgtype: 'm.notice', 'm.mentions': {}, 'm.relates_to': { rel_type: 'm.replace', event_id: '$original' },
+      'm.new_content': { ...originalContent, 'org.nexspeak.hide_link_previews': true },
+    })
   })
 })

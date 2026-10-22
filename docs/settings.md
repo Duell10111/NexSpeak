@@ -5,9 +5,19 @@ status**.
 
 ## Profile
 
-**Display name** and avatar apply in all rooms and servers. **Status**: **Online**, **Away** or
-**Invisible** (you appear offline but can use everything as usual). Whether others see your status
-depends on your homeserver.
+**Display name** and avatar apply in all rooms and servers. **Status**: **Online**, **Away**,
+**Do not disturb** or **Invisible** (you appear offline but can use everything as usual).
+Whether others see your presence depends on your homeserver.
+
+**Do not disturb** is remembered on this device. It silences system notifications and alert
+sounds locally; unread messages and mentions still count. Matrix has no standard DND presence,
+so other clients see you as online. It does not mute the people speaking in a call.
+
+Set a **Custom status** to share a short text, including emoji, on member cards and in the
+member list. Choose **Clear after**: **30 minutes**, **1 hour**, **4 hours**, **Today** (local
+midnight), or **Never**. Status text uses Matrix presence and is visible outside encrypted
+conversations too; it is not end-to-end encrypted. Automatic clearing works while NexSpeak is
+running, or when you next sign in on this device if the deadline passed while it was closed.
 
 ## Audio
 
@@ -156,6 +166,12 @@ window title and as a badge on the app icon.
 
 Selecting **All messages**, **Only mentions** or **Muted** activates that mode even if another Matrix
 client previously disabled the matching notification rule.
+
+## Messages
+
+**Show link previews** is off by default. **Also preview links in encrypted rooms** needs a
+separate opt-in. Preview requests reveal the link to your homeserver, including links from
+encrypted messages. See [Link previews](chat.md#link-previews).
 
 ## Security
 
