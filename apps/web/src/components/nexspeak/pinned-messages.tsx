@@ -10,6 +10,7 @@ import { jumpToMessage } from "@/lib/jump-to-message"
 import { MatrixAvatar } from "@/components/nexspeak/matrix-avatar"
 import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { usePinnedEventIds } from "@/hooks/usePinnedEvents"
+import { useIgnoredUsers } from "@/hooks/useIgnoredUsers"
 import { useTranslation } from "@/hooks/useTranslation"
 import { describeMatrixError } from "@nexspeak/core/matrix/errors"
 import { canPinMessages, loadPinnedEvent, setPinned } from "@nexspeak/core/matrix/pins"
@@ -24,6 +25,7 @@ interface PinnedEntry {
 function PinnedList({ roomId, pinnedIds, onJump }: { roomId: string; pinnedIds: string[]; onJump: () => void }) {
   const { t, intl } = useTranslation()
   const { client } = useMatrixClient()
+  const ignored = useIgnoredUsers(client)
   const [entries, setEntries] = useState<{ key: string; list: PinnedEntry[] } | null>(null)
   const key = pinnedIds.join("|")
   const room = client?.getRoom(roomId)
@@ -62,9 +64,12 @@ function PinnedList({ roomId, pinnedIds, onJump }: { roomId: string; pinnedIds: 
     setPinned(client, roomId, eventId, false).catch((error: unknown) => toast.error(describeMatrixError(error, t("pins.failed"))))
   }
 
+  const visible = entries.list.filter(({ message }) => !message || !ignored.includes(message.senderId))
+  if (!visible.length) return <p className="p-4 text-center text-sm text-muted-foreground">{t("pins.empty")}</p>
+
   return (
     <ul className="max-h-[60vh] divide-y divide-border overflow-y-auto">
-      {entries.list.map(({ eventId, message, summary }) => (
+      {visible.map(({ eventId, message, summary }) => (
         <li key={eventId} className="group flex gap-2 px-3 py-2">
           <button
             className="flex min-w-0 flex-1 gap-2 text-left"

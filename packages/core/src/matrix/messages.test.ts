@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { MatrixEvent, type MatrixClient } from "matrix-js-sdk"
+import { EventStatus, MatrixError, MatrixEvent, type MatrixClient } from "matrix-js-sdk"
 import { editTextMessage, sendTextMessage, sendSticker } from "./messages"
 
 function fakeClient() {
@@ -51,6 +51,23 @@ describe("editTextMessage", () => {
     })
     expect(content["m.mentions"]).toEqual({})
     expect(content["m.relates_to"]).toEqual({ rel_type: "m.replace", event_id: "$orig" })
+  })
+
+  it('removes only the failed local edit so retrying does not get blocked behind it', async () => {
+    const error = new MatrixError({ errcode: 'M_FORBIDDEN', error: 'Rejected edit' }, 403)
+    const original = new MatrixEvent({ event_id: '$orig', type: 'm.room.message', content: { msgtype: 'm.text', body: 'Original' } })
+    const pending = (id: string) => {
+      const event = new MatrixEvent({ type: 'm.room.message', content: { 'm.relates_to': { rel_type: 'm.replace', event_id: id } } })
+      event.status = EventStatus.NOT_SENT
+      event.error = error
+      return event
+    }
+    const unrelated = pending('$other')
+    const failed = pending('$orig')
+    const client = { ...fakeClient(), getRoom: () => ({ getPendingEvents: () => [unrelated, failed] }), cancelPendingEvent: vi.fn() }
+    client.sendMessage.mockRejectedValue(error)
+    await expect(editTextMessage(client as unknown as MatrixClient, '!r', original, 'Keep this draft')).rejects.toBe(error)
+    expect(client.cancelPendingEvent).toHaveBeenCalledExactlyOnceWith(failed)
   })
 })
 

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { MatrixEvent } from "matrix-js-sdk"
-import { eventToMatrixMessage, stripReplyFallback } from "./types"
+import { describe, expect, it, vi } from "vitest"
+import { MatrixEvent, type Room, type Thread } from "matrix-js-sdk"
+import { eventToMatrixMessage, stripReplyFallback, threadSummary } from "./types"
 
 const ROOM = "!room:example.org"
 
@@ -59,6 +59,30 @@ describe("eventToMatrixMessage", () => {
     const message = eventToMatrixMessage(event, ROOM)
     expect(message?.body).toBe("Gut, danke!")
     expect(message?.replyTo?.eventId).toBe("$parent")
+  })
+
+  it('hides a loaded reply quotation when its author is ignored and restores it after unignoring', () => {
+    const parent = messageEvent({ msgtype: 'm.text', body: 'Hidden quotation' })
+    const reply = messageEvent({ msgtype: 'm.text', body: 'Visible reply', 'm.relates_to': { 'm.in_reply_to': { event_id: '$event1' } } }, { sender: '@bob:example.org', event_id: '$reply' })
+    const ignored = vi.fn().mockReturnValue(true)
+    const room = { client: { isUserIgnored: ignored }, findEventById: () => parent,
+      relations: { getChildEventsForEvent: () => undefined } } as unknown as Room
+    expect(eventToMatrixMessage(reply, ROOM, { room })).toMatchObject({ body: 'Visible reply', replyTo: undefined })
+    ignored.mockReturnValue(false)
+    expect(eventToMatrixMessage(reply, ROOM, { room })?.replyTo?.body).toBe('Hidden quotation')
+  })
+
+  it('keeps thread reply counts while hiding an ignored latest reply', () => {
+    const root = messageEvent({ msgtype: 'm.text', body: 'Visible root' })
+    const latest = messageEvent({ msgtype: 'm.text', body: 'Hidden thread reply' })
+    root.setThread({ id: root.getId(), rootEvent: root, replyToEvent: latest, length: 1,
+      hasCurrentUserParticipated: false, on: vi.fn() } as unknown as Thread)
+    const ignored = vi.fn().mockReturnValue(true)
+    const room = { client: { isUserIgnored: ignored }, relations: { getChildEventsForEvent: () => undefined } } as unknown as Room
+    expect(eventToMatrixMessage(root, ROOM, { room })?.thread).toMatchObject({ count: 1, latestBody: '', latestSenderName: '' })
+    ignored.mockReturnValue(false)
+    expect(eventToMatrixMessage(root, ROOM, { room })?.thread?.latestBody).toBe('Hidden thread reply')
+    expect(threadSummary(root)?.count).toBe(1)
   })
 
   it("maps encrypted attachments with their decryption info", () => {

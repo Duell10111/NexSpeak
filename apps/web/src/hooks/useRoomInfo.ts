@@ -17,13 +17,14 @@ export interface RoomInfo {
   name: string
   topic: string
   isEncrypted: boolean
+  canSendMessages: boolean
   /** Direct message: shown with the person instead of a channel "#". */
   isDirect: boolean
 }
 
 function readRoomInfo(client: MatrixClient, roomId: string): RoomInfo {
   const room = client.getRoom(roomId)
-  if (!room) return { roomId, exists: false, name: '', topic: '', isEncrypted: false, isDirect: false }
+  if (!room) return { roomId, exists: false, name: '', topic: '', isEncrypted: false, canSendMessages: false, isDirect: false }
 
   const topic = room.currentState.getStateEvents('m.room.topic', '')?.getContent().topic
   return {
@@ -32,6 +33,7 @@ function readRoomInfo(client: MatrixClient, roomId: string): RoomInfo {
     name: room.name || room.getCanonicalAlias() || t('room.unnamed'),
     topic: typeof topic === 'string' ? topic : '',
     isEncrypted: room.hasEncryptionStateEvent(),
+    canSendMessages: room.maySendMessage(),
     isDirect: isDirectRoom(client, room),
   }
 }

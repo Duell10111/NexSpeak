@@ -9,6 +9,12 @@ export function isIgnored(client: MatrixClient, userId: string): boolean {
   return client.isUserIgnored(userId)
 }
 
+/** Loaded events can still appear in previews after their author is ignored. */
+export function isIgnoredEvent(client: MatrixClient | undefined, event: MatrixEvent | null | undefined): boolean {
+  const sender = event?.getSender()
+  return Boolean(client && sender && client.isUserIgnored(sender))
+}
+
 export async function setIgnored(client: MatrixClient, userId: string, ignored: boolean): Promise<void> {
   const current = client.getIgnoredUsers()
   if (ignored === current.includes(userId)) return

@@ -154,6 +154,9 @@ Set it per channel with the bell in the channel header (or right-click the chann
 server via the server menu → **Notifications for all channels**. Unread mentions also appear in the
 window title and as a badge on the app icon.
 
+Selecting **All messages**, **Only mentions** or **Muted** activates that mode even if another Matrix
+client previously disabled the matching notification rule.
+
 ## Security
 
 Recovery key, device verification and key backup, see [Encryption](encryption.md).

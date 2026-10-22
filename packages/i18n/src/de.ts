@@ -253,6 +253,7 @@ export const de = {
   'chat.reactionFailed': 'Reaktion konnte nicht gesendet werden.',
   'chat.downloadFailed': 'Download fehlgeschlagen.',
   'chat.loadingRoom': 'Raum wird geladen…',
+  'chat.readOnly': 'Du darfst in diesem Raum keine Nachrichten senden.',
   'chat.cryptoUnavailable': 'Verschlüsselung ist nicht verfügbar – Senden nicht möglich',
   'chat.messageTo': 'Nachricht an {room}',
   'chat.dropFiles': 'Dateien hier ablegen, um sie an {room} zu senden',

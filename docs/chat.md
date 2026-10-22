@@ -6,7 +6,8 @@ Hover over a message for its actions: **Add reaction**, **Reply**, **Create thre
 **Open thread**, **Edit** and **Delete** (your own messages; moderators can delete others' too) and
 **More** with **Copy text**, **Pin** and **Report message**.
 
-- **Edit:** Escape cancels, Enter saves. Edited messages show **(edited)**.
+- **Edit:** Escape cancels, Enter saves. The editor stays open while saving and keeps your draft if
+  saving fails, so you can retry or cancel. Edited messages show **(edited)**.
 - **Files:** attach them with the clip, drag and drop them into the chat, or paste them. Up to 100 MB;
   in encrypted channels files are encrypted too.
 - **Emoji:** the emoji button in the message field, or reactions on messages, opens the same
@@ -76,8 +77,13 @@ invites you again. Leaving a direct message with a friend also ends the friendsh
 
 ## Safety
 
-- **Ignore** someone (in their profile or the member list): you won't see their messages, invites or
-  notifications anymore, in any room. They aren't told. **Settings → Account** lists ignored people.
+- **Ignore** someone (in their profile or the member list): you won't see their messages, invites,
+  notifications or typing indicators anymore, in any room. Typing indicators update as soon as you
+  ignore or unignore someone, including from another device. They aren't told. **Settings → Account**
+  lists ignored people.
+- Ignoring also hides their text from reply quotations, thread previews and pinned-message previews.
+  Threads they started disappear from the thread list. Already open lists update when the ignore
+  list changes; unignoring restores previews for messages that are still loaded.
 - **Report** a message or channel: the report goes to the admins of your homeserver. They can only
   read the message if it isn't encrypted.
 

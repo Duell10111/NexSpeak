@@ -1,5 +1,10 @@
 # Troubleshooting
 
+## Sign-in
+
+If your saved sign-in data is unreadable, NexSpeak treats you as signed out instead of reusing a
+previously loaded session. Sign in again to save a valid session.
+
 ## Calls
 
 "Your homeserver doesn't offer voice channels"

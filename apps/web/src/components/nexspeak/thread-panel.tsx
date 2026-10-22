@@ -11,6 +11,7 @@ import { useMatrixClient } from "@/hooks/useMatrixClient"
 import { useTranslation } from "@/hooks/useTranslation"
 import { fetchThreadList, sortedThreads } from "@nexspeak/core/matrix/threads"
 import { summarizeEvent } from "@nexspeak/core/matrix/types"
+import { isIgnoredEvent, subscribeIgnoredUsers } from "@nexspeak/core/matrix/safety"
 
 export type ThreadPanelView = { kind: "list" } | { kind: "thread"; rootId: string }
 
@@ -20,7 +21,7 @@ function useThreads(roomId: string): { threads: Thread[]; isLoading: boolean } {
 
   useEffect(() => {
     const room = client?.getRoom(roomId)
-    if (!room) return
+    if (!client || !room) return
     let cancelled = false
     let frame: number | null = null
     const refresh = (loaded: boolean) => {
@@ -37,6 +38,7 @@ function useThreads(roomId: string): { threads: Thread[]; isLoading: boolean } {
     }
 
     queueMicrotask(() => refresh(false))
+    const unsubscribeIgnored = subscribeIgnoredUsers(client, scheduleRefresh)
     fetchThreadList(room)
       .catch((error: unknown) => console.warn("Loading the thread list failed:", error))
       .finally(() => refresh(true))
@@ -45,6 +47,7 @@ function useThreads(roomId: string): { threads: Thread[]; isLoading: boolean } {
     return () => {
       cancelled = true
       if (frame !== null) cancelAnimationFrame(frame)
+      unsubscribeIgnored()
       room.removeListener(ThreadEvent.New, scheduleRefresh)
       room.removeListener(ThreadEvent.Update, scheduleRefresh)
     }
@@ -56,6 +59,7 @@ function useThreads(roomId: string): { threads: Thread[]; isLoading: boolean } {
 
 function ThreadList({ roomId, onOpen }: { roomId: string; onOpen: (rootId: string) => void }) {
   const { t, intl } = useTranslation()
+  const { client } = useMatrixClient()
   const { threads, isLoading } = useThreads(roomId)
 
   if (threads.length === 0) {
@@ -75,7 +79,7 @@ function ThreadList({ roomId, onOpen }: { roomId: string; onOpen: (rootId: strin
     <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
       {threads.map((thread) => {
         const root = thread.rootEvent!
-        const latest = thread.replyToEvent
+        const latest = isIgnoredEvent(client ?? undefined, thread.replyToEvent) ? undefined : thread.replyToEvent
         const senderName = root.sender?.name || root.getSender() || ""
         return (
           <li key={thread.id}>
