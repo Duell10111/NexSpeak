@@ -21,6 +21,11 @@ direct messages, voice/video calls and screen sharing. Available as a web app an
 **User documentation:** [nexspeak.readthedocs.io](https://nexspeak.readthedocs.io) – getting started, installing,
 calls, settings, encryption and [nightly builds](https://nexspeak.readthedocs.io/en/latest/nightly.html).
 
+![NexSpeak showing a server with channels, a conversation with emoji reactions and the member list](docs/images/server-chat.png)
+
+The web and desktop apps share this interface. See the [user documentation](https://nexspeak.readthedocs.io)
+for screenshots of signing in, threads, calls and settings. All screenshots use sample accounts.
+
 - **Chat:** replies, threads, reactions, editing, deletion, pinned messages, Markdown (Discord flavoured,
   sent as `formatted_body` and rendered sanitized), mentions with autocompletion (@person, #channel, @room),
   typing indicator, files (also via drag & drop/paste), read receipts, invites

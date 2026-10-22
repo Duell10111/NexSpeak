@@ -9,6 +9,15 @@ NexSpeak runs in the browser and as a desktop app for macOS, Windows and Linux. 
 system-wide push to talk (also while a game has the focus), a tray icon, autostart and automatic
 updates.
 
+:::{figure} images/server-chat.png
+:alt: NexSpeak showing the Weekend crew server, its channels, a conversation with reactions, and the member list.
+:width: 100%
+
+The main window: servers on the far left, channels beside them, the conversation in the middle and
+members on the right. The screenshots in this guide use the English web app with sample accounts;
+the desktop app shares the same interface.
+:::
+
 :::{tip}
 New here? Start with [Getting started](getting-started.md). Want to try the newest features before a
 release? See [Nightly builds](nightly.md).

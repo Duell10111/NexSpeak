@@ -11,6 +11,14 @@ depends on your homeserver.
 
 ## Audio
 
+:::{figure} images/audio-settings.png
+:alt: Settings with the Audio tab selected, showing the microphone device, input mode, input sensitivity and voice processing.
+:width: 512px
+
+**Settings → Audio** groups device selection, input mode and voice processing. Scroll down in the
+dialog for the microphone test and sound settings. Output selection depends on browser support.
+:::
+
 - **Input device** and **Output device**, **Call volume** and **Play test tone**. Some browsers can't
   choose the output device. Opening settings and refreshing the device list do not activate the
   microphone. If your browser hides device names, use **Test microphone** and grant access, or join

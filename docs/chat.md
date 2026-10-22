@@ -63,6 +63,14 @@ everyone in the channel.
 - **Pinned messages** (pin icon in the channel header) collect important messages. Pin them via
   **More → Pin**.
 
+:::{figure} images/chat-thread.png
+:alt: A channel conversation with emoji reactions and an open Thread panel containing replies to a game-night message.
+:width: 100%
+
+A thread opens beside the channel conversation. Replies stay in the thread, while the original
+message shows its reply count. Emoji reactions appear below the message.
+:::
+
 ## Direct messages
 
 **Direct Messages** at the top of the server list shows your conversations. **Start a direct

@@ -14,6 +14,15 @@ NexSpeak shows Matrix the way Discord is organized, and Element sees the same st
 | Admin, Moderator, Member | Power levels 100, 50, 0 |
 | Custom roles | Power levels in between, names and colors only in NexSpeak |
 
+:::{figure} images/server-chat.png
+:alt: The Weekend crew server with a Community category containing general, game-night and clips-and-highlights channels, and a member list on the right.
+:width: 100%
+
+Select a server in the far-left bar, then a channel in its channel list. The current channel's
+name and topic appear above the conversation. Your profile, microphone controls and Settings are
+at the bottom left.
+:::
+
 ## Creating a server
 
 1. Choose **Add a server** (the plus button in the server list), then **Create a server**.
