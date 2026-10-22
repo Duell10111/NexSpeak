@@ -22,6 +22,7 @@ import { SoundCueSettings } from "@/components/nexspeak/sound-cue-settings"
 import { CallInputSettings } from "@/components/nexspeak/call-shortcut-settings"
 import { LinkPreviewSettingsPanel } from "@/components/nexspeak/link-preview-settings"
 import { NotificationSettingsPanel } from "@/components/nexspeak/notification-settings"
+import { GifSettingsPanel } from "@/components/nexspeak/gif-settings"
 import { ProfilePanel } from "@/components/nexspeak/profile-panel"
 import { CameraSettings } from "@/components/nexspeak/camera-settings"
 import { AboutPanel } from "@/components/nexspeak/about-panel"
@@ -130,8 +131,9 @@ function SettingsDialogContent({ open, onOpenChange, initialTab = "audio" }: Set
             <AboutPanel />
           </TabsContent>
 
-          <TabsContent value="messages">
+          <TabsContent value="messages" className="space-y-6">
             <LinkPreviewSettingsPanel />
+            <GifSettingsPanel />
           </TabsContent>
 
           <TabsContent value="notifications">

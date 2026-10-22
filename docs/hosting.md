@@ -96,6 +96,11 @@ When the headers in `security-headers.json` change, update these examples as wel
 values require a new build. A relative path such as `/livekit-jwt` is resolved against the address
 the web app is served from (browser only; the desktop app needs an absolute URL).
 
+`NEXT_PUBLIC_KLIPY_API_KEY` enables the GIF picker. Create a key in the
+[KLIPY partner dashboard](https://partner.klipy.com). It is a public client key that every browser
+receives, so it does not need to be kept secret. Without it, the GIF button is hidden; received GIFs
+still play. Users must turn on GIF search before NexSpeak contacts KLIPY.
+
 ## Planned voice moderation
 
 Server mute, call-only disconnect and moving participants are not available yet. Their server

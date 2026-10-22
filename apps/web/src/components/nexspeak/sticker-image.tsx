@@ -1,84 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMatrixClient } from '@/hooks/useMatrixClient'
-import { loadMediaBlob } from '@/hooks/useMediaUrl'
+import { acquireMedia } from '@/lib/media-cache'
+import { useWindowFocused } from '@/lib/window-focus'
 import { CustomEmojiImage } from './custom-emoji-image'
 import { isEmojiMxc } from '@nexspeak/core/matrix/custom-emojis'
-import type { MatrixClient } from 'matrix-js-sdk'
 
-interface CachedImage { users: number; bytes: number; url: string | null; promise: Promise<string | null> }
-const cachedImages = new WeakMap<MatrixClient, Map<string, CachedImage>>()
 /** Larger originals stay static: decoding them costs too much next to a game. */
 const MAX_ANIMATED_BYTES = 4 * 1024 * 1024
-/** Released originals stay cached up to this size, so refocusing the window does not download them again. */
-const CACHE_BYTES = 32 * 1024 * 1024
-
-function trim(images: Map<string, CachedImage>) {
-  let total = 0
-  for (const entry of images.values()) total += entry.bytes
-  // Map order is least recently used first; images on screen are never evicted.
-  for (const [mxc, entry] of images) {
-    if (total <= CACHE_BYTES) break
-    if (entry.users) continue
-    if (entry.url) URL.revokeObjectURL(entry.url)
-    images.delete(mxc)
-    total -= entry.bytes
-  }
-}
-
-/** Repeated visible stickers share one download; bounded cache instead of refetching on focus. */
-function acquireImage(client: MatrixClient, mxc: string) {
-  let images = cachedImages.get(client)
-  if (!images) { images = new Map(); cachedImages.set(client, images) }
-  const map = images
-  let entry = map.get(mxc)
-  if (entry) map.delete(mxc)
-  else {
-    const next: CachedImage = { users: 0, bytes: 0, url: null, promise: Promise.resolve(null) }
-    next.promise = loadMediaBlob(client, { mxc }).then((blob) => {
-      if (blob.size > MAX_ANIMATED_BYTES) return null
-      next.bytes = blob.size
-      next.url = URL.createObjectURL(blob)
-      trim(map)
-      return next.url
-    }).catch(() => {
-      // Allow a retry on the next mount instead of caching the failure.
-      if (map.get(mxc) === next && !next.users) map.delete(mxc)
-      return null
-    })
-    entry = next
-  }
-  map.set(mxc, entry)
-  const acquired = entry
-  acquired.users++
-  return { promise: acquired.promise, release: () => {
-    if (--acquired.users) return
-    trim(map)
-  } }
-}
-
-// One set of focus listeners for every visible sticker, with no polling or frame loops.
-const listeners = new Set<() => void>()
-function notify() { listeners.forEach((listener) => listener()) }
-function subscribe(listener: () => void) {
-  if (!listeners.size) {
-    window.addEventListener('focus', notify)
-    window.addEventListener('blur', notify)
-    document.addEventListener('visibilitychange', notify)
-  }
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-    if (!listeners.size) {
-      window.removeEventListener('focus', notify)
-      window.removeEventListener('blur', notify)
-      document.removeEventListener('visibilitychange', notify)
-    }
-  }
-}
-const focused = () => document.visibilityState === 'visible' && document.hasFocus()
-const unfocused = () => false
 
 function OriginalSticker({ mxc }: { mxc: string }) {
   const { client } = useMatrixClient()
@@ -87,10 +17,10 @@ function OriginalSticker({ mxc }: { mxc: string }) {
   useEffect(() => {
     if (!client) return
     let cancelled = false
-    const image = acquireImage(client, mxc)
-    void image.promise.then((url) => {
-      if (cancelled || !url) return
-      setSource({ mxc, url })
+    const image = acquireMedia(client, { mxc }, MAX_ANIMATED_BYTES)
+    void image.promise.then((media) => {
+      if (cancelled || !media) return
+      setSource({ mxc, url: media.url })
     })
     return () => {
       cancelled = true
@@ -105,7 +35,7 @@ function OriginalSticker({ mxc }: { mxc: string }) {
 }
 
 function PlayingSticker({ mxc }: { mxc: string }) {
-  const active = useSyncExternalStore(subscribe, focused, unfocused)
+  const active = useWindowFocused()
   return active ? <OriginalSticker key={mxc} mxc={mxc} /> : null
 }
 

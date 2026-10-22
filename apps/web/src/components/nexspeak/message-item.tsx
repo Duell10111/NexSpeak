@@ -32,6 +32,7 @@ import { ServerEmojiPicker } from "@/components/nexspeak/server-emoji-picker"
 import { CustomEmojiImage } from "@/components/nexspeak/custom-emoji-image"
 import { StickerImage } from '@/components/nexspeak/sticker-image'
 import { InlineMediaAttachment } from '@/components/nexspeak/inline-media-attachment'
+import { GifImage, GifVideo } from '@/components/nexspeak/gif-message'
 import { isEmojiMxc } from "@nexspeak/core/matrix/custom-emojis"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -152,10 +153,12 @@ function MessageBody({ message }: { message: MatrixMessage }) {
         </span>
       )
     case "image":
-      return <ImageAttachment message={message} />
+      return message.media?.gif ? <GifImage key={`${message.roomId}:${message.id}`} message={message} /> : <ImageAttachment message={message} />
     case 'sticker':
       return <StickerImage mxc={message.media?.mxc} name={message.body} width={message.media?.width} height={message.media?.height} />
     case "video":
+      if (message.media?.gif) return <GifVideo key={`${message.roomId}:${message.id}`} message={message} />
+      return <InlineMediaAttachment key={`${message.roomId}:${message.id}`} message={message} />
     case "audio":
       return <InlineMediaAttachment key={`${message.roomId}:${message.id}`} message={message} />
     case "file":
