@@ -38,6 +38,34 @@ Check `npm ls --all` for peer conflicts and run `npm audit --omit=dev` separatel
 audit. The full audit can still report unresolved upstream issues in build and lint dependencies;
 do not use `npm audit fix --force` to downgrade Next.js or the desktop packager.
 
+## Documentation screenshots
+
+Screenshots in `docs/images/` show the real English UI with sample accounts on the local development
+homeserver. Refresh them after changes to the pictured UI:
+
+```bash
+nvm use
+docker compose -f dev/docker-compose.yml --profile e2e up -d
+npm run build
+PORT=3100 node apps/web/scripts/serve.mjs
+```
+
+In a second terminal, from the repository root:
+
+```bash
+E2E_BROWSER_WS=ws://localhost:3030/ node apps/web/scripts/capture-docs-screenshots.mjs
+.venv/bin/sphinx-build -W docs docs/_build/html
+```
+
+Create the documentation virtual environment first if needed, using
+`python3 -m venv .venv` and `.venv/bin/pip install -r docs/requirements.txt`.
+The capture script creates a temporary server and sample users, uses fake media devices for the
+voice call, and closes its browser contexts and deactivates its accounts when finished. It only
+connects to the local app and homeserver. Without `E2E_BROWSER_WS`, it uses a locally installed
+Playwright Chromium (`npx playwright install chromium` from `apps/web`). Review every image for
+readability, clipping and accidental personal data before committing. Keep captions and alternative
+text in the matching documentation pages in sync with the images.
+
 ## License
 
 NexSpeak is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).

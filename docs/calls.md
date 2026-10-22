@@ -24,6 +24,14 @@ With **Input sensitivity** enabled, your own indicator follows your microphone's
 Other participants' indicators use the call server's activity detection and bridge brief pauses to
 reduce flicker. Very quiet speech can be audible without meeting the server's activity threshold.
 
+:::{figure} images/voice-call.png
+:alt: An active voice call with Alice and Bob as participant tiles, call controls below, Voice Connected at the bottom left and channel chat on the right.
+:width: 100%
+
+A voice call with **Show chat** enabled. Participant tiles occupy the call area, with microphone,
+camera, screen-sharing and leave controls below; the channel conversation stays alongside it.
+:::
+
 ### Incoming calls in direct messages
 
 When someone starts a call in a direct message, **Incoming call** shows who is calling. Choose

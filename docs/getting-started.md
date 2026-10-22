@@ -32,6 +32,14 @@ with the new login.
 For **Continue with {server}**, finish signing in in the same browser tab within 15 minutes. If
 the login expires, start again from NexSpeak's login page.
 
+:::{figure} images/sign-in.png
+:alt: NexSpeak's sign-in screen with Homeserver, Username and Password fields and a Sign in button.
+:width: 100%
+
+Signing in with a username and password on the local example homeserver. The available sign-in
+options depend on your homeserver.
+:::
+
 ## First steps
 
 - **Set up encryption:** open **Settings → Security** and create a recovery key, or verify this

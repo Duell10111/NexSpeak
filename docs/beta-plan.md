@@ -159,6 +159,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ### Later (0.3+)
 
+- [x] Add real app screenshots to the user documentation and README, with a reproducible local capture script (#117)
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
 - [x] Bind Geist font definitions to the theme and resolve existing lint warnings (#100)
 - [x] Keep the reaction emoji picker anchored while the pointer leaves the message (#90)
