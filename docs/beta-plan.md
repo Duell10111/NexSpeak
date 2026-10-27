@@ -159,6 +159,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ### Later (0.3+)
 
+- [x] Document self-hosting a Matrix homeserver with Synapse, PostgreSQL, HTTPS and MatrixRTC (#119)
 - [x] Add real app screenshots to the user documentation and README, with a reproducible local capture script (#117)
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
 - [x] Bind Geist font definitions to the theme and resolve existing lint warnings (#100)

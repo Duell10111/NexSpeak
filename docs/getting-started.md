@@ -12,6 +12,9 @@
 Use NexSpeak in the browser (on a site where it is hosted, see [Self-hosting](hosting.md)) or
 [install the desktop app](install.md).
 
+To host your own accounts and community infrastructure, follow
+[Hosting a Matrix homeserver](homeserver.md).
+
 ## Sign in
 
 1. Enter your **Homeserver**, e.g. `matrix.org` or `https://matrix.example.com`.

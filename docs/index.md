@@ -45,6 +45,7 @@ troubleshooting
 :maxdepth: 2
 
 hosting
+homeserver
 voice-moderation-design
 ```
 

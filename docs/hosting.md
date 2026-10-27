@@ -4,6 +4,9 @@ The web app is a static export: `npm run build` produces `apps/web/out/`, which 
 serve. There is no Node server and no credentials on the server – the app talks directly to the
 user's homeserver.
 
+To run your own Matrix accounts, rooms and call services, see
+[Hosting a Matrix homeserver](homeserver.md).
+
 ```bash
 npm run build      # → apps/web/out/
 npm start          # local check: apps/web/scripts/serve.mjs on http://localhost:3000
