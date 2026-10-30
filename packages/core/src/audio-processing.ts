@@ -9,7 +9,7 @@
 
 import type { RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor'
 import type { AudioProcessorOptions, Track, TrackProcessor } from 'livekit-client'
-import { VOICE_GATE_PROCESSOR, type VoiceGateConfig, type VoiceGateState } from './voice-gate-worklet'
+import { VOICE_GATE_PROCESSOR, type VoiceGateConfig, type VoiceGateMessage, type VoiceGateState } from './voice-gate-worklet'
 
 /** browser: the browser's built-in suppression; enhanced: RNNoise; off: none at all. */
 export type NoiseSuppressionMode = 'browser' | 'enhanced' | 'off'
@@ -176,6 +176,7 @@ export class AudioProcessingChain {
   }
 
   private async applyVoiceGate(thresholdDb: number | null): Promise<void> {
+    if (this.destroyed) return
     if (thresholdDb !== null && this.gate) {
       this.gate.port.postMessage({ thresholdDb } satisfies VoiceGateConfig)
     } else if (thresholdDb !== null) {
@@ -186,25 +187,35 @@ export class AudioProcessingChain {
         processorOptions: { thresholdDb } satisfies VoiceGateConfig,
       })
       this.gate.port.onmessage = (event: MessageEvent<VoiceGateState>) => this.onGateChange?.(event.data.open)
-      this.tail.disconnect()
+      // Keep other branches, such as the microphone test's analyser, connected.
+      this.tail.disconnect(this.output)
       this.tail.connect(this.gate)
       this.gate.connect(this.output)
       this.onGateChange?.(false)
     } else if (this.gate) {
-      this.tail.disconnect()
-      this.gate.port.onmessage = null
-      this.gate.disconnect()
-      this.gate = null
+      this.tail.disconnect(this.gate)
+      this.destroyVoiceGate()
       this.tail.connect(this.output)
       this.onGateChange?.(true)
     }
   }
 
+  private destroyVoiceGate(): void {
+    if (!this.gate) return
+    this.gate.port.onmessage = null
+    // Disconnecting alone keeps a processor that returns true alive in Chromium.
+    this.gate.port.postMessage({ destroy: true } satisfies VoiceGateMessage)
+    this.gate.port.close()
+    this.gate.disconnect()
+    this.gate = null
+  }
+
   destroy(): void {
+    if (this.destroyed) return
     this.destroyed = true
+    this.destroyVoiceGate()
     this.rnnoise?.destroy()
     this.rnnoise?.disconnect()
-    this.gate?.disconnect()
     this.input.disconnect()
   }
 }

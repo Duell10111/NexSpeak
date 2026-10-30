@@ -37,8 +37,9 @@ dialog for the microphone test and sound settings. Output selection depends on b
 - **Voice processing**: noise suppression, echo cancellation and automatic gain control, see
   [below](#voice-processing).
 - **Test microphone** shows your microphone level with the selected voice processing until you choose
-  **Stop microphone test**. Changes apply while testing. Stopping the test, closing the settings,
-  switching settings tabs or a processing error releases the microphone immediately.
+  **Stop microphone test**. Changes apply while testing; the level meter keeps working when you
+  switch **Input sensitivity** on or off. Stopping the test, closing the settings, switching settings
+  tabs or a processing error releases the microphone immediately.
 - **Share system audio**: include sound when starting a screen share. The choice is remembered and
   applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
   depends on the browser and capture source. See [Calls and screen sharing](calls.md).

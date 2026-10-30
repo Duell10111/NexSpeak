@@ -49,7 +49,11 @@ Other apps become quieter when you join a call
   settings afterward; use echo cancellation with speakers to prevent feedback. Older Firefox
   versions can still initialize system voice processing even with these options off.
   Compare with Chrome or external audio devices if the problem persists. Include your Firefox
-  version, macOS version and input/output devices when reporting it.
+  version, macOS version and input/output devices when reporting it. To narrow down a remaining
+  call-start fade, fully quit and reopen Firefox, then compare the first call join with
+  **Test microphone** using the same devices and voice processing settings. Repeat with capture
+  processing disabled as above, and note whether the fade happens only on first microphone access
+  or on every access.
 
   On Windows, the system can lower other apps when it detects communication activity. Check
   **Sound Control Panel → Communications → Do nothing**; see Microsoft's

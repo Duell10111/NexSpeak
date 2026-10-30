@@ -177,6 +177,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Custom status text with expiry and local "Do not disturb" (#45)
 - [x] Better noise suppression and voice activity detection (#41)
 - [x] Reliable speaking feedback and live microphone sensitivity testing (#94)
+- [x] Preserve the microphone test meter and stop retired voice gates when toggling input sensitivity (#94)
 - [x] Skip redundant service discovery on call joins, cache discovery and add opt-in join timings (#92)
 - [x] Bound pending call discovery and recheck memberships after slow discovery (#92)
 - [ ] Verify remaining call-start audio attenuation on Firefox/macOS after upstream fixes (#94; Mozilla #2054983)

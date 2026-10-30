@@ -123,6 +123,13 @@ test("voice processing and input sensitivity are set up in the settings", async 
   await page.keyboard.press("End")
   await expect(dialog.getByText("0 dB", { exact: true })).toBeVisible()
   await dialog.getByRole("button", { name: "Mikrofon testen" }).click()
+  const meter = dialog.getByRole("progressbar", { name: "Mikrofonpegel" }).locator('[data-slot="progress-indicator"]')
+  const expectMeterSignal = async () => {
+    // Let samples from before a graph change drain before checking the live meter.
+    await page.waitForTimeout(250)
+    await expect.poll(() => meter.getAttribute("style")).not.toContain("translateX(-100%)")
+  }
+  await expectMeterSignal()
   await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
   await expect(dialog.getByText("Wird gesendet", { exact: true })).toHaveCount(0)
   // Deliberately wait past the previous five-second deadline: testing remains active.
@@ -139,8 +146,10 @@ test("voice processing and input sensitivity are set up in the settings", async 
   // Re-enabling sensitivity starts with a closed gate even after the bypass was transmitting.
   await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
   await expect(dialog.getByText("Sprich jetzt…", { exact: true })).toBeVisible()
+  await expectMeterSignal()
   await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
   await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
+  await expectMeterSignal()
   await slider.focus()
   await page.keyboard.press("Home")
   await expect(dialog.getByText("Wird gesendet", { exact: true })).toBeVisible()

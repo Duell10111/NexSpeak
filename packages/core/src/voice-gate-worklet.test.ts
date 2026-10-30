@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { VoiceGate } from './voice-gate-worklet'
+import type { VoiceGateMessage } from './voice-gate-worklet'
+
+afterEach(() => { vi.unstubAllGlobals(); vi.resetModules() })
 
 const RATE = 48_000
 const QUANTUM = 128
@@ -70,4 +73,34 @@ describe('VoiceGate', () => {
     gate.process(quantum(db(-20)), output)
     expect(output[1][0]).toBeCloseTo(db(-20))
   })
+})
+
+it('stops the worklet and closes its port when retired', async () => {
+  const port = {
+    onmessage: null as ((event: { data: VoiceGateMessage }) => void) | null,
+    postMessage: vi.fn(),
+    close: vi.fn(),
+  }
+  const register = vi.fn()
+  vi.stubGlobal('sampleRate', RATE)
+  vi.stubGlobal('registerProcessor', register)
+  vi.stubGlobal('AudioWorkletProcessor', class { readonly port = port })
+  vi.resetModules()
+  await import('./voice-gate-worklet')
+  const Processor = register.mock.calls[0][1] as new (options: { processorOptions: { thresholdDb: number } }) => {
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean
+  }
+  const processor = new Processor({ processorOptions: { thresholdDb: -40 } })
+  expect(processor.process([quantum(db(-50))], [quantum(0)])).toBe(true)
+  expect(port.postMessage).not.toHaveBeenCalled()
+  port.onmessage!({ data: { thresholdDb: -60 } })
+  expect(processor.process([quantum(db(-50))], [quantum(0)])).toBe(true)
+  expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({ open: true })
+  port.postMessage.mockClear()
+  port.onmessage!({ data: { destroy: true } })
+  expect(port.close).toHaveBeenCalledOnce()
+  expect(port.onmessage).toBeNull()
+  expect(processor.process([quantum(db(-20))], [quantum(0)])).toBe(false)
+  expect(processor.process([], [])).toBe(false)
+  expect(port.postMessage).not.toHaveBeenCalled()
 })
