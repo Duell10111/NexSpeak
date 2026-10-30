@@ -105,12 +105,12 @@ test('DND stays local, silences notifications, preserves unread counts and resum
   await expect(page.getByRole('button', { name: 'Profil und Status' })).toContainText('Nicht stören')
   await openRoom(page, quietRoom)
   const muted = `${alice.username}, DND message`
-  await sendTextAs(bob, roomId, muted)
+  await sendTextAs(bob, roomId, muted, [alice.userId])
   await expect(page).toHaveTitle(/^\(1\) /)
   expect(await bodies()).not.toContain(muted)
   await pickPresence(page, 'Online')
   const audible = `${alice.username}, notifications restored`
-  await sendTextAs(bob, roomId, audible)
+  await sendTextAs(bob, roomId, audible, [alice.userId])
   await expect.poll(bodies).toContain(audible)
   expect(await bodies()).not.toContain(muted)
   await expect(page).toHaveTitle(/^\(2\) /)

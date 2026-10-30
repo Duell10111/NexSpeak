@@ -203,11 +203,33 @@ export async function remoteAudioLevel(page: Page): Promise<number> {
 }
 
 /** Sends a text message through the API (no browser needed). */
-export async function sendTextAs(user: TestUser, roomId: string, body: string): Promise<void> {
+export async function sendTextAs(user: TestUser, roomId: string, body: string, mentionedUserIds?: string[]): Promise<void> {
   const txnId = `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`
   await api(user.accessToken, "PUT", `/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}`, {
     msgtype: "m.text",
     body,
+    ...(mentionedUserIds && { "m.mentions": { user_ids: mentionedUserIds } }),
+  })
+}
+
+/** Sustained input: short fake-microphone beeps can fall between activity and meter samples. */
+export async function continuousMicrophone(page: Page) {
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext()
+      const source = context.createOscillator()
+      const gain = context.createGain()
+      const output = context.createMediaStreamDestination()
+      source.frequency.value = 440
+      gain.gain.value = 0.1
+      source.connect(gain).connect(output)
+      source.start()
+      await context.resume()
+      const track = output.stream.getAudioTracks()[0]
+      const stop = track.stop.bind(track)
+      track.stop = () => { stop(); void context.close() }
+      return output.stream
+    }
   })
 }
 

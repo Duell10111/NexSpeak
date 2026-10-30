@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { createRoom, login, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
+import { continuousMicrophone, createRoom, login, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
 
 async function joinVoice(page: Page) {
   await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
@@ -105,6 +105,7 @@ test("audio settings handle hidden device IDs without prompting and refresh afte
 test("voice processing and input sensitivity are set up in the settings", async ({ browser }) => {
   const alice = await registerUser("alice")
   const page = await newPage(browser)
+  await continuousMicrophone(page)
   await login(page, alice)
 
   await page.getByRole("button", { name: "Einstellungen" }).click()
