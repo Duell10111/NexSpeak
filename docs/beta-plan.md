@@ -184,10 +184,6 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [ ] Support LiveKit 1.13.11 single-PC negotiation with the local H.264 Main-profile preference (#122)
 - [x] Skip redundant service discovery on call joins, cache discovery and add opt-in join timings (#92)
 - [x] Bound pending call discovery and recheck memberships after slow discovery (#92)
-- [ ] Verify remaining call-start audio attenuation on Firefox/macOS after upstream fixes (#94; Mozilla #2054983)
-  — reported with Firefox 158.0 and the built-in Mac microphone/speakers; Chrome is unaffected in the same setup.
-  Native Firefox 159 on macOS 27.0.1 honors raw capture and live processing changes on that microphone;
-  this confirms the capture configuration, but a comparison of other apps' audible volume is still pending.
 - [x] Avoid activating the microphone to list audio devices in settings (#94)
 - [x] Camera selection and camera preview (#43)
 - [x] Pop out streams and video into an always-on-top window, reusing the existing track (#47)
@@ -237,6 +233,14 @@ companion service; which one is decided first (#49).
 - [ ] Audit log (#63)
 - [ ] Invite links with expiry, usage limit and revocation (#64)
 - [ ] Incoming webhooks per channel (#65)
+
+#### Deferred bugs
+
+- [ ] Investigate and mitigate brief Firefox/macOS system-audio attenuation on microphone activation (#123; split from #94)
+  — confirmed to persist after PR #121 and deferred to 0.5 by the maintainer. The earlier setup used
+  the built-in MacBook Pro microphone/speakers; Chrome was unaffected. Native Firefox 159 on macOS
+  27.0.1 honors the capture settings, but the remaining audible fade still needs investigation
+  (related upstream report: Mozilla #2054983).
 
 ### Milestone "1.0"
 
