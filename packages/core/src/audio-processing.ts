@@ -8,7 +8,7 @@
  */
 
 import type { RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor'
-import type { AudioProcessorOptions, Track, TrackProcessor } from 'livekit-client'
+import type { AudioProcessorOptions, LocalAudioTrack, Track, TrackProcessor } from 'livekit-client'
 import { VOICE_GATE_PROCESSOR, type VoiceGateConfig, type VoiceGateMessage, type VoiceGateState } from './voice-gate-worklet'
 
 /** browser: the browser's built-in suppression; enhanced: RNNoise; off: none at all. */
@@ -61,6 +61,30 @@ export function sameCaptureConstraints(a: AudioProcessingOptions, b: AudioProces
     left.noiseSuppression === right.noiseSuppression &&
     left.autoGainControl === right.autoGainControl
   )
+}
+
+/** Avoid reopening the device (and retriggering OS voice processing) for live setting changes. */
+export async function updateAudioCapture(
+  track: Pick<LocalAudioTrack, 'applyConstraints' | 'restartTrack'>,
+  source: Pick<MediaStreamTrack, 'getSettings'>,
+  options: AudioProcessingOptions,
+  deviceId: string,
+  shouldRestart?: () => boolean,
+): Promise<void> {
+  const constraints = captureConstraints(options)
+  try {
+    await track.applyConstraints(constraints)
+    const actual = source.getSettings()
+    // Some browsers resolve applyConstraints without applying a supported audio setting.
+    if (Object.entries(constraints).every(([key, value]) => {
+      const setting = actual[key as keyof typeof constraints]
+      return setting === undefined || setting === value
+    })) return
+  } catch {
+    // Older browsers may only support changing processing by reopening the microphone.
+  }
+  if (shouldRestart?.() === false) return
+  await track.restartTrack({ ...constraints, deviceId: { ideal: deviceId } })
 }
 
 // Loaded on first use: the library subclasses AudioWorkletNode when imported, which doesn't exist

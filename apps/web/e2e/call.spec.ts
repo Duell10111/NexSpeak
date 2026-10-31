@@ -254,6 +254,16 @@ test("mute and deafen work before joining and apply to the call", async ({ brows
   await createRoom(alice, { name: roomName, members: [] })
 
   const page = await newPage(browser)
+  await page.addInitScript(() => {
+    const scope = window as typeof window & { microphoneRequests: number }
+    scope.microphoneRequests = 0
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = (constraints) => {
+      if (constraints?.audio) scope.microphoneRequests++
+      return capture(constraints)
+    }
+  })
+  const microphoneRequests = () => page.evaluate(() => (window as typeof window & { microphoneRequests: number }).microphoneRequests)
   await login(page, alice)
   await openRoom(page, roomName)
 
@@ -264,10 +274,13 @@ test("mute and deafen work before joining and apply to the call", async ({ brows
   await joinVoice(page)
   await expect(tiles(page).getByLabel("Stummgeschaltet")).toBeVisible()
   await expect(page.getByRole("button", { name: "Ton aktivieren" }).first()).toBeVisible()
+  // Listening-only joins must not initialize OS microphone processing.
+  expect(await microphoneRequests()).toBe(0)
 
   // Undeafening restores the microphone that deafening turned off.
   await page.getByRole("button", { name: "Ton aktivieren" }).last().click()
   await expect(tiles(page).getByLabel("Stummgeschaltet")).toHaveCount(0, { timeout: 15_000 })
+  await expect.poll(microphoneRequests).toBe(1)
 })
 
 test("sound cues for joining, leaving and streams, not for those already there", async ({ browser }) => {

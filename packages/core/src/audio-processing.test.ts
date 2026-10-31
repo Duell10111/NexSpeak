@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AudioProcessingChain, captureConstraints, DEFAULT_AUDIO_PROCESSING, needsAudioGraph, sameCaptureConstraints } from './audio-processing'
+import { AudioProcessingChain, captureConstraints, DEFAULT_AUDIO_PROCESSING, needsAudioGraph, sameCaptureConstraints, updateAudioCapture } from './audio-processing'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -35,6 +35,51 @@ describe('audio processing options', () => {
         { ...DEFAULT_AUDIO_PROCESSING, noiseSuppression: 'enhanced' },
       ),
     ).toBe(true)
+  })
+})
+
+describe('live microphone capture settings', () => {
+  const options = { ...DEFAULT_AUDIO_PROCESSING, noiseSuppression: 'off' as const, echoCancellation: false, autoGainControl: false }
+
+  it('disables all browser processing on the existing source track without another capture', async () => {
+    const track = { applyConstraints: vi.fn().mockResolvedValue(undefined), restartTrack: vi.fn() }
+    await updateAudioCapture(track, { getSettings: () => captureConstraints(options) }, options, 'microphone')
+    expect(track.applyConstraints).toHaveBeenCalledExactlyOnceWith({ echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+    expect(track.restartTrack).not.toHaveBeenCalled()
+  })
+
+  it.each(['rejected', 'ignored'] as const)('reopens only when the browser %s live changes', async (outcome) => {
+    const track = {
+      applyConstraints: outcome === 'rejected' ? vi.fn().mockRejectedValue(new Error('Not supported')) : vi.fn().mockResolvedValue(undefined),
+      restartTrack: vi.fn().mockResolvedValue(undefined),
+    }
+    await updateAudioCapture(track, { getSettings: () => captureConstraints(DEFAULT_AUDIO_PROCESSING) }, options, 'microphone')
+    expect(track.restartTrack).toHaveBeenCalledExactlyOnceWith({
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false, deviceId: { ideal: 'microphone' },
+    })
+  })
+
+  it('accepts live changes when a browser does not report audio settings', async () => {
+    const track = { applyConstraints: vi.fn().mockResolvedValue(undefined), restartTrack: vi.fn() }
+    await updateAudioCapture(track, { getSettings: () => ({}) }, options, 'default')
+    expect(track.restartTrack).not.toHaveBeenCalled()
+  })
+
+  it('propagates a failed fallback instead of reporting successful microphone processing', async () => {
+    const error = new Error('Device unavailable')
+    const track = { applyConstraints: vi.fn().mockRejectedValue(new Error('Not supported')), restartTrack: vi.fn().mockRejectedValue(error) }
+    await expect(updateAudioCapture(track, { getSettings: () => ({}) }, options, 'missing')).rejects.toBe(error)
+  })
+
+  it('does not reopen a microphone after leaving while a live change is pending', async () => {
+    const pending = Promise.withResolvers<void>()
+    let active = true
+    const track = { applyConstraints: vi.fn(() => pending.promise), restartTrack: vi.fn() }
+    const update = updateAudioCapture(track, { getSettings: () => ({}) }, options, 'default', () => active)
+    active = false
+    pending.reject(new Error('Track stopped'))
+    await update
+    expect(track.restartTrack).not.toHaveBeenCalled()
   })
 })
 

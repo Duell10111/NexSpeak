@@ -55,6 +55,12 @@ Other apps become quieter when you join a call
   processing disabled as above, and note whether the fade happens only on first microphone access
   or on every access.
 
+  NexSpeak applies processing changes to the running microphone where supported, avoiding an
+  additional device open. This reduces avoidable microphone initialization; it cannot disable
+  macOS ducking inside Firefox or guarantee a fade-free first microphone access. With headphones,
+  **Enhanced (RNNoise)** can retain noise suppression while the browser's **Echo cancellation**
+  and **Automatic gain control** are off; RNNoise replaces browser noise suppression.
+
   On Windows, the system can lower other apps when it detects communication activity. Check
   **Sound Control Panel → Communications → Do nothing**; see Microsoft's
   [default ducking documentation](https://learn.microsoft.com/en-us/windows/win32/coreaudio/stream-attenuation).
@@ -93,6 +99,15 @@ Report bugs in the [issue tracker](https://github.com/Duell10111/NexSpeak/issues
 
 For detailed logs in the web app, run `localStorage.setItem("nexspeak:debug", "1")` in the browser
 console and reload; NexSpeak and LiveKit then log verbosely.
+
+When investigating microphone initialization, entries starting with `[call] microphone capture`
+show the requested and reported echo cancellation, noise suppression and automatic gain control,
+plus the reported sample rate and channel count. They are emitted on microphone enablement,
+processing changes and input device selection; there is no background polling. These entries do
+not include microphone audio, device names or device IDs. Some browsers omit individual reported
+settings. Include the entries alongside the browser/OS versions and your input/output setup when
+reporting a fade. A reported setting confirms the capture configuration, not the volume of other
+apps. Remove the flag with `localStorage.removeItem("nexspeak:debug")` and reload after testing.
 
 For slow call joins, run `localStorage.setItem("nexspeak:callTimings", "1")` in the console before
 joining. Entries starting with `[call timing]` show each phase's duration and the elapsed time
