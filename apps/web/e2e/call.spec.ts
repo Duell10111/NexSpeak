@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { createRoom, login, matrixApi, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
+import { continuousMicrophone, createRoom, login, matrixApi, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
 
 async function joinVoice(page: Page) {
   await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
@@ -90,27 +90,6 @@ test("incoming DM calls can be declined, end automatically, and join from a back
   await alicePage.context().close()
   await bobPage.context().close()
 })
-
-/** Sustained, audible input: the default fake mic's brief beeps can miss the SFU's activity window. */
-async function continuousMicrophone(page: Page) {
-  await page.addInitScript(() => {
-    navigator.mediaDevices.getUserMedia = async () => {
-      const context = new AudioContext()
-      const source = context.createOscillator()
-      const gain = context.createGain()
-      const output = context.createMediaStreamDestination()
-      source.frequency.value = 440
-      gain.gain.value = 0.1
-      source.connect(gain).connect(output)
-      source.start()
-      await context.resume()
-      const track = output.stream.getAudioTracks()[0]
-      const stop = track.stop.bind(track)
-      track.stop = () => { stop(); void context.close() }
-      return output.stream
-    }
-  })
-}
 
 for (const encrypted of [false, true]) {
   test(`voice call via MatrixRTC + LiveKit (${encrypted ? "E2EE" : "unencrypted"})`, async ({ browser }) => {
@@ -275,6 +254,16 @@ test("mute and deafen work before joining and apply to the call", async ({ brows
   await createRoom(alice, { name: roomName, members: [] })
 
   const page = await newPage(browser)
+  await page.addInitScript(() => {
+    const scope = window as typeof window & { microphoneRequests: number }
+    scope.microphoneRequests = 0
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = (constraints) => {
+      if (constraints?.audio) scope.microphoneRequests++
+      return capture(constraints)
+    }
+  })
+  const microphoneRequests = () => page.evaluate(() => (window as typeof window & { microphoneRequests: number }).microphoneRequests)
   await login(page, alice)
   await openRoom(page, roomName)
 
@@ -285,10 +274,13 @@ test("mute and deafen work before joining and apply to the call", async ({ brows
   await joinVoice(page)
   await expect(tiles(page).getByLabel("Stummgeschaltet")).toBeVisible()
   await expect(page.getByRole("button", { name: "Ton aktivieren" }).first()).toBeVisible()
+  // Listening-only joins must not initialize OS microphone processing.
+  expect(await microphoneRequests()).toBe(0)
 
   // Undeafening restores the microphone that deafening turned off.
   await page.getByRole("button", { name: "Ton aktivieren" }).last().click()
   await expect(tiles(page).getByLabel("Stummgeschaltet")).toHaveCount(0, { timeout: 15_000 })
+  await expect.poll(microphoneRequests).toBe(1)
 })
 
 test("sound cues for joining, leaving and streams, not for those already there", async ({ browser }) => {
@@ -484,6 +476,7 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   await expect.poll(screenSender, { timeout: 30_000 }).toMatchObject({ maxFramerate: 60, maxBitrate: 4_000_000 })
   expect((await screenSender())!.height).toBeLessThanOrEqual(720)
   expect((await screenSender())!.fmtp).toContain("profile-level-id=4d00")
+  expect((await screenSender())!.fmtp).toContain("packetization-mode=1")
 
   // Bob sees that Alice is live, but nothing is downloaded until he watches.
   await expect(tiles(bobPage)).toHaveCount(3, { timeout: 30_000 })
