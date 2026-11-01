@@ -30,6 +30,8 @@ export interface VoiceGateConfig {
   thresholdDb: number
 }
 
+export type VoiceGateMessage = VoiceGateConfig | { destroy: true }
+
 /** Worklet → main thread, only when the gate opens or closes. */
 export interface VoiceGateState {
   open: boolean
@@ -111,14 +113,24 @@ if (typeof registerProcessor === 'function') {
     VOICE_GATE_PROCESSOR,
     class extends AudioWorkletProcessor {
       private readonly gate: VoiceGate
+      private destroyed = false
 
       constructor(options: { processorOptions: VoiceGateConfig }) {
         super()
         this.gate = new VoiceGate(sampleRate, options.processorOptions.thresholdDb)
-        this.port.onmessage = (event: MessageEvent<VoiceGateConfig>) => this.gate.setThreshold(event.data.thresholdDb)
+        this.port.onmessage = (event: MessageEvent<VoiceGateMessage>) => {
+          if ('destroy' in event.data) {
+            this.destroyed = true
+            this.port.onmessage = null
+            this.port.close()
+          } else {
+            this.gate.setThreshold(event.data.thresholdDb)
+          }
+        }
       }
 
       process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (this.destroyed) return false
         if (this.gate.process(inputs[0] ?? [], outputs[0] ?? [])) {
           this.port.postMessage({ open: this.gate.isOpen } satisfies VoiceGateState)
         }

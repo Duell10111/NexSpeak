@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { createRoom, login, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
+import { continuousMicrophone, createRoom, login, newPage, openRoom, registerUser, remoteAudioLevel } from "./helpers"
 
 async function joinVoice(page: Page) {
   await page.getByRole("button", { name: "Sprachkanal beitreten" }).click()
@@ -105,6 +105,7 @@ test("audio settings handle hidden device IDs without prompting and refresh afte
 test("voice processing and input sensitivity are set up in the settings", async ({ browser }) => {
   const alice = await registerUser("alice")
   const page = await newPage(browser)
+  await continuousMicrophone(page)
   await login(page, alice)
 
   await page.getByRole("button", { name: "Einstellungen" }).click()
@@ -123,6 +124,13 @@ test("voice processing and input sensitivity are set up in the settings", async 
   await page.keyboard.press("End")
   await expect(dialog.getByText("0 dB", { exact: true })).toBeVisible()
   await dialog.getByRole("button", { name: "Mikrofon testen" }).click()
+  const meter = dialog.getByRole("progressbar", { name: "Mikrofonpegel" }).locator('[data-slot="progress-indicator"]')
+  const expectMeterSignal = async () => {
+    // Let samples from before a graph change drain before checking the live meter.
+    await page.waitForTimeout(250)
+    await expect.poll(() => meter.getAttribute("style")).not.toContain("translateX(-100%)")
+  }
+  await expectMeterSignal()
   await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
   await expect(dialog.getByText("Wird gesendet", { exact: true })).toHaveCount(0)
   // Deliberately wait past the previous five-second deadline: testing remains active.
@@ -139,8 +147,10 @@ test("voice processing and input sensitivity are set up in the settings", async 
   // Re-enabling sensitivity starts with a closed gate even after the bypass was transmitting.
   await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
   await expect(dialog.getByText("Sprich jetzt…", { exact: true })).toBeVisible()
+  await expectMeterSignal()
   await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
   await expect(dialog.getByText("Unter der Schwelle – wird nicht gesendet")).toBeVisible()
+  await expectMeterSignal()
   await slider.focus()
   await page.keyboard.press("Home")
   await expect(dialog.getByText("Wird gesendet", { exact: true })).toBeVisible()
@@ -165,6 +175,29 @@ test("enhanced suppression and the voice gate process the microphone in a call",
 
   const alicePage = await newPage(browser)
   const bobPage = await newPage(browser)
+  await alicePage.addInitScript(() => {
+    const captured: MediaStreamTrack[] = []
+    ;(window as typeof window & { capturedMicrophones: MediaStreamTrack[] }).capturedMicrophones = captured
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      const stream = await capture(constraints)
+      captured.push(...stream.getAudioTracks())
+      return stream
+    }
+  })
+  const captureState = () => alicePage.evaluate(() => {
+    const tracks = (window as typeof window & { capturedMicrophones: MediaStreamTrack[] }).capturedMicrophones
+    const track = tracks.at(-1)
+    const settings = track?.getSettings()
+    return {
+      captures: tracks.length,
+      live: tracks.filter((candidate) => candidate.readyState === "live").length,
+      state: track?.readyState,
+      echoCancellation: settings?.echoCancellation,
+      noiseSuppression: settings?.noiseSuppression,
+      autoGainControl: settings?.autoGainControl,
+    }
+  })
   await login(alicePage, alice)
   await login(bobPage, bob)
   await updateAudioSettings(alicePage, { inputSensitivityEnabled: true, inputSensitivityDb: -80 })
@@ -174,6 +207,7 @@ test("enhanced suppression and the voice gate process the microphone in a call",
   await joinVoice(bobPage)
   await expect(bobPage.getByTestId("call-tile")).toHaveCount(2, { timeout: 30_000 })
   await expect.poll(() => bobPage.locator("audio").count(), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(captureState).toMatchObject({ captures: 1, live: 1, state: "live" })
 
   // Gate open: Bob hears the beeps through the processor.
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
@@ -189,6 +223,8 @@ test("enhanced suppression and the voice gate process the microphone in a call",
   const aliceTile = bobPage.getByTestId("call-tile").filter({ hasText: alice.username })
   await expect(aliceTile.getByLabel("Stummgeschaltet")).toHaveCount(0)
   await expect(localAliceTile.locator(".ring-nx-online")).toHaveCount(0)
+  // Sensitivity-only changes must not capture another microphone.
+  await expect.poll(captureState).toMatchObject({ captures: 1, live: 1 })
 
   // LiveKit restores the raw track during replacement. A slow RNNoise load must not bypass the gate.
   let releaseBinary!: () => void
@@ -212,9 +248,49 @@ test("enhanced suppression and the voice gate process the microphone in a call",
   await dialog.getByRole("switch", { name: "Eingangsempfindlichkeit" }).click()
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
 
-  // Echo cancellation can only change by reopening the microphone; the processor survives that.
+  // Apply browser processing where supported; a fallback still leaves just one live capture.
   await dialog.getByRole("switch", { name: "Echounterdrückung" }).click()
+  await dialog.getByRole("switch", { name: "Automatische Lautstärkeanpassung" }).click()
+  await expect.poll(captureState).toMatchObject({
+    live: 1, state: "live", echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+  })
+  expect((await captureState()).captures).toBeLessThanOrEqual(4)
   await expect.poll(() => remoteAudioLevel(bobPage), { timeout: 20_000 }).toBeGreaterThan(5)
+})
+
+test("joining with browser processing disabled preserves the saved capture settings", async ({ browser }) => {
+  const user = await registerUser("raw-microphone")
+  const roomName = `Raw microphone ${Date.now().toString(36)}`
+  await createRoom(user, { name: roomName, members: [], encrypted: true })
+  const page = await newPage(browser)
+  await page.addInitScript(() => {
+    const captured: Array<{ requested: MediaTrackConstraints | boolean; track: MediaStreamTrack }> = []
+    ;(window as typeof window & { rawMicrophones: typeof captured }).rawMicrophones = captured
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      const stream = await capture(constraints)
+      if (constraints?.audio) captured.push({ requested: constraints.audio, track: stream.getAudioTracks()[0] })
+      return stream
+    }
+  })
+  const state = () => page.evaluate(() => {
+    const tracks = (window as typeof window & { rawMicrophones: Array<{ requested: MediaTrackConstraints | boolean; track: MediaStreamTrack }> }).rawMicrophones
+    const settings = tracks.at(-1)?.track.getSettings()
+    return {
+      captures: tracks.length,
+      live: tracks.filter(({ track }) => track.readyState === "live").length,
+      requested: tracks.at(-1)?.requested,
+      actual: { echoCancellation: settings?.echoCancellation, noiseSuppression: settings?.noiseSuppression, autoGainControl: settings?.autoGainControl },
+    }
+  })
+  await login(page, user)
+  await updateAudioSettings(page, { noiseSuppression: "off", echoCancellation: false, autoGainControl: false })
+  await openRoom(page, roomName)
+  await joinVoice(page)
+  const disabled = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  await expect.poll(state).toMatchObject({ captures: 1, live: 1, requested: disabled, actual: disabled })
+  await page.getByRole("button", { name: "Anruf verlassen" }).click()
+  await expect.poll(async () => (await state()).live).toBe(0)
 })
 
 type MicrophoneTestWindow = typeof window & {

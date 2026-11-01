@@ -55,7 +55,7 @@ test("new messages notify, mentions count in the title, a click opens the room",
   await expect(page).not.toHaveTitle(/^\(\d+\)/)
 
   // A mention counts.
-  await sendTextAs(bob, busyRoomId, `${alice.username}, schau mal`)
+  await sendTextAs(bob, busyRoomId, `${alice.username}, schau mal`, [alice.userId])
   await expect.poll(() => notifications(page)).toContainEqual(expect.objectContaining({ body: `${alice.username}, schau mal` }))
   await expect(page).toHaveTitle(/^\(1\) /)
 

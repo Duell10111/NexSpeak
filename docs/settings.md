@@ -37,8 +37,9 @@ dialog for the microphone test and sound settings. Output selection depends on b
 - **Voice processing**: noise suppression, echo cancellation and automatic gain control, see
   [below](#voice-processing).
 - **Test microphone** shows your microphone level with the selected voice processing until you choose
-  **Stop microphone test**. Changes apply while testing. Stopping the test, closing the settings,
-  switching settings tabs or a processing error releases the microphone immediately.
+  **Stop microphone test**. Changes apply while testing; the level meter keeps working when you
+  switch **Input sensitivity** on or off. Stopping the test, closing the settings, switching settings
+  tabs or a processing error releases the microphone immediately.
 - **Share system audio**: include sound when starting a screen share. The choice is remembered and
   applies to the next share. Available on Windows and macOS 13+ in the desktop app; browser support
   depends on the browser and capture source. See [Calls and screen sharing](calls.md).
@@ -64,6 +65,11 @@ quieter sounds. The marker and transmission status update without restarting the
 
 ### Voice processing
 
+In a running call, changes to the browser's echo cancellation, noise suppression and automatic gain
+control are applied to the existing microphone track where supported. NexSpeak reopens the device
+only if the browser rejects or ignores the change. The browser or operating system may still
+reconfigure its voice processing, see [other apps becoming quieter](troubleshooting.md#calls).
+
 **Noise suppression**:
 
 | Option | What it does |
@@ -73,8 +79,7 @@ quieter sounds. The marker and transmission status update without restarting the
 | **Off** | No suppression, e.g. for music or a studio microphone. |
 
 **Echo cancellation** and **Automatic gain control** are on by default; turn echo cancellation off
-only with headphones. Changes also apply to a running call; switching echo cancellation or gain
-control reopens the microphone for a moment.
+only with headphones.
 Transmission pauses while a voice processor is replaced, including while RNNoise loads.
 
 Enhanced suppression and input sensitivity only run during a call (and the microphone test), on the

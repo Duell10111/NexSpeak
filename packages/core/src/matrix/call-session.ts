@@ -65,6 +65,7 @@ import {
   DEFAULT_AUDIO_PROCESSING,
   needsAudioGraph,
   sameCaptureConstraints,
+  updateAudioCapture,
   type AudioProcessingOptions,
 } from '../audio-processing'
 import { t } from '@nexspeak/i18n'
@@ -892,6 +893,7 @@ export class CallSession {
     await this.livekitRoom.localParticipant.setMicrophoneEnabled(enabled)
     this.applyTransmitGate()
     this.microphoneProcessor()?.setActive(enabled)
+    if (enabled) this.logMicrophoneCapture()
     this.changed()
   }
 
@@ -904,9 +906,24 @@ export class CallSession {
     return processor instanceof CallAudioProcessor ? processor : null
   }
 
+  /** Event-driven, opt-in diagnostics; never log audio, device IDs or device names. */
+  private logMicrophoneCapture(): void {
+    if (!isDebugEnabled()) return
+    const track = this.microphoneTrack()
+    const source = this.microphoneProcessor()?.inputTrack ?? track?.mediaStreamTrack
+    if (!source) return
+    const { echoCancellation, noiseSuppression, autoGainControl, sampleRate, channelCount } = source.getSettings()
+    debug('microphone capture', {
+      requested: captureConstraints(this.processing),
+      actual: { echoCancellation, noiseSuppression, autoGainControl, sampleRate, channelCount },
+      readyState: source.readyState,
+    })
+  }
+
   /** Changes noise suppression, echo cancellation, gain control or the voice gate in a running call. */
   setAudioProcessing(options: AudioProcessingOptions): Promise<void> {
     return this.queueAudioProcessing(async () => {
+      if (this.isLeaving) return
       const previous = this.processing
       if (
         sameCaptureConstraints(previous, options) &&
@@ -923,9 +940,11 @@ export class CallSession {
       const track = this.microphoneTrack()
       if (!track) return
       if (!sameCaptureConstraints(previous, options)) {
-        // Browsers apply these only when the microphone is opened.
         const deviceId = this.livekitRoom.getActiveDevice('audioinput') ?? 'default'
-        await track.restartTrack({ ...constraints, deviceId: { ideal: deviceId } })
+        const source = this.microphoneProcessor()?.inputTrack ?? track.mediaStreamTrack
+        await updateAudioCapture(track, source, options, deviceId, () => !this.isLeaving)
+        if (this.isLeaving) { track.stop(); return }
+        this.logMicrophoneCapture()
       }
       await this.applyAudioProcessing()
     })
@@ -1176,7 +1195,10 @@ export class CallSession {
     // Not exact: LiveKit would otherwise keep requiring this device, and every later unmute
     // fails with "Constraints could not be satisfied" once it is gone.
     await this.livekitRoom.switchActiveDevice(kind, target, false)
-    if (kind === 'audioinput') this.applyTransmitGate()
+    if (kind === 'audioinput') {
+      this.applyTransmitGate()
+      this.logMicrophoneCapture()
+    }
   }
 
   async startAudio(): Promise<void> {
