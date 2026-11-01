@@ -58,6 +58,9 @@ selection is remembered and changing it switches the camera during a call withou
 If the camera is disconnected, NexSpeak uses **System default**. Closing a settings preview does
 not turn off the call camera.
 
+Camera and screen sharing can run together. You can stop either one and start it again during
+the same call, including in encrypted channels.
+
 **Screen** opens the stream settings:
 
 **Resolution** and **Frame rate**

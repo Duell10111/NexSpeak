@@ -286,7 +286,7 @@ Add these services under `services:` in the existing `compose.yaml`:
 
 ```yaml
   livekit:
-    image: livekit/livekit-server:v1.13.10
+    image: livekit/livekit-server:v1.13.11
     restart: unless-stopped
     network_mode: host
     command: [--config, /etc/livekit.yaml]

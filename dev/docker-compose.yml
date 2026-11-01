@@ -24,9 +24,7 @@ services:
       retries: 30
 
   livekit:
-    # Pin the tested server: 1.13.11's single-PC negotiation conflicts with the
-    # local H.264 Main-profile preference (duplicate payload types; issue #122).
-    image: livekit/livekit-server:v1.13.10
+    image: livekit/livekit-server:v1.13.11
     command: ["--dev", "--bind", "0.0.0.0", "--node-ip", "127.0.0.1"]
     ports:
       - "7880:7880"
