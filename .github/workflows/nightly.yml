@@ -1,4 +1,4 @@
-# Nightly desktop builds ("NexSpeak Nightly", installs next to the stable app; see
+# Nightly desktop and web builds ("NexSpeak Nightly", installs next to the stable app; see
 # apps/desktop/electron-builder.cjs). Runs every night but only builds when app code changed since
 # the last nightly and CI passed for that commit; otherwise it stops after the check.
 #
@@ -60,7 +60,8 @@ jobs:
           fi
 
           if [ "$FORCE" != "true" ] && [ -n "$last_sha" ] && git cat-file -e "$last_sha^{commit}" 2>/dev/null \
-            && git diff --quiet "$last_sha" "$sha" -- apps packages package.json package-lock.json; then
+            && git diff --quiet "$last_sha" "$sha" -- apps packages package.json package-lock.json \
+              .github/workflows/desktop.yml .github/workflows/web.yml .github/workflows/nightly.yml; then
             echo "No app changes since $last_tag ($last_sha)."
             echo "build=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -88,7 +89,7 @@ jobs:
           GH_TOKEN: ${{ secrets.NIGHTLY_RELEASE_TOKEN || github.token }}
           FORCE: ${{ inputs.force }}
 
-  # A draft until all installers are attached: electron-updater ignores drafts.
+  # A draft until all desktop and web artifacts are ready: electron-updater ignores drafts.
   release:
     needs: check
     if: needs.check.outputs.build == 'true'
@@ -122,8 +123,21 @@ jobs:
       repository: Duell10111/NexSpeak-nightly
     secrets: inherit
 
+  web:
+    needs: [check, release]
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/web.yml
+    with:
+      tag: ${{ needs.check.outputs.tag }}
+      ref: ${{ needs.check.outputs.sha }}
+      channel: nightly
+      repository: Duell10111/NexSpeak-nightly
+    secrets: inherit
+
   publish:
-    needs: [check, desktop]
+    needs: [check, desktop, web]
     runs-on: ubuntu-latest
     steps:
       - name: Publish and remove old nightlies

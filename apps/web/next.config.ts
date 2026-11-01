@@ -32,7 +32,7 @@ export default function config(phase: string): NextConfig {
     transpilePackages: ["@nexspeak/core", "@nexspeak/i18n"],
     poweredByHeader: false,
     env: {
-      NEXT_PUBLIC_APP_VERSION: packageJson.version,
+      NEXT_PUBLIC_APP_VERSION: process.env.NEXSPEAK_VERSION || packageJson.version,
       NEXT_PUBLIC_GIT_COMMIT: gitCommit(),
     },
     // A static export cannot send headers; the host does that in production. The dev server sends

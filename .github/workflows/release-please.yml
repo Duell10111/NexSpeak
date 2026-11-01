@@ -1,5 +1,5 @@
 # Opens/updates the release PR from conventional commits on main. Merging it tags the release
-# (vX.Y.Z), creates the GitHub release and then builds the desktop app for it.
+# (vX.Y.Z), creates the GitHub release and then builds desktop and web artifacts for it.
 # Tags pushed with GITHUB_TOKEN do not trigger other workflows, so the build is called from here.
 name: Release Please
 
@@ -30,6 +30,17 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit
+
+  web:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/web.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
     secrets: inherit

@@ -159,6 +159,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 
 ### Later (0.3+)
 
+- [x] Publish web Docker images (AMD64/ARM64) and static export ZIPs with stable and nightly releases (#125)
 - [x] Document self-hosting a Matrix homeserver with Synapse, PostgreSQL, HTTPS and MatrixRTC (#119)
 - [x] Add real app screenshots to the user documentation and README, with a reproducible local capture script (#117)
 - [x] Update application dependencies to current stable releases and migrate Matrix login/call APIs (#88)
@@ -262,6 +263,7 @@ companion service; which one is decided first (#49).
   - On every PR: lint, typecheck, Vitest, build, license check.
   - E2E with the Docker stack on PRs to `main` or by label.
   - Desktop builds as a matrix (macOS, Windows, Linux) on tags.
+  - Web export ZIPs attached to releases and web images published to GHCR for AMD64/ARM64 (#125).
   - Nightly desktop builds (`.github/workflows/nightly.yml`) when app code changed since the last one.
   - User documentation built by Read the Docs from `docs/` (`.readthedocs.yaml`).
 - **Releases:** one shared version for web and desktop, automated with release-please (Conventional
