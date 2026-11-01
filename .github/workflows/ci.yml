@@ -43,3 +43,8 @@ jobs:
 
       - name: Build web app
         run: npm run build
+
+      - name: Check web container
+        run: |
+          docker build -f apps/web/Dockerfile -t nexspeak-web:ci apps/web
+          docker run --rm nexspeak-web:ci nginx -t

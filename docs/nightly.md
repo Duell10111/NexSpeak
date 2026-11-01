@@ -12,7 +12,10 @@ Download them from the
   tests passed. Quiet days produce no new release.
 - Versions look like `0.2.1-nightly.20261018.4`: the next patch version, the build date and a build
   number. Each release names the commit it was built from.
-- Only the newest seven nightlies are kept.
+- Only the newest seven nightly releases are kept.
+- Each nightly also includes a `NexSpeak-web-v<VERSION>.zip` static export and publishes
+  `ghcr.io/duell10111/nexspeak-web:<VERSION>` and `ghcr.io/duell10111/nexspeak-web:nightly` container
+  images. The `latest` image stays on the stable release. See [Hosting the web app](hosting.md).
 
 ## Next to the stable app
 

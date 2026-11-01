@@ -15,6 +15,7 @@
     "postinstall": "npm run -s build:input-hook -w @nexspeak/desktop -- --patch-only",
     "dev": "npm run dev -w @nexspeak/web",
     "build": "npm run build -w @nexspeak/web",
+    "build:docker:web": "npm run build && docker build -f apps/web/Dockerfile -t nexspeak-web apps/web",
     "start": "npm run start -w @nexspeak/web",
     "lint": "eslint",
     "typecheck": "npm run typecheck --workspaces --if-present",

@@ -1,0 +1,125 @@
+# Publishes the same static export as a release ZIP and a multi-platform container image.
+# Called directly by release-please/nightly because GITHUB_TOKEN tags do not start workflows.
+name: Web
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to attach the web export to
+        type: string
+        required: true
+      ref:
+        description: "Commit to build (default: the tag)"
+        type: string
+        default: ""
+      channel:
+        description: stable or nightly
+        type: string
+        default: stable
+      repository:
+        description: "Repository of the release (default: this one); nightlies need NIGHTLY_RELEASE_TOKEN"
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable release tag to build and publish
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || inputs.tag }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Prepare release metadata
+        id: meta
+        run: |
+          channel="${CHANNEL:-stable}"
+          case "$channel" in
+            stable) [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ;;
+            nightly) [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+\.[0-9]+$ ]] ;;
+            *) echo "Unknown release channel: $channel" >&2; exit 1 ;;
+          esac
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-web"
+          {
+            echo "revision=$(git rev-parse HEAD)"
+            echo "version=${TAG#v}"
+            echo "archive=NexSpeak-web-$TAG.zip"
+            echo "tags<<EOF"
+            echo "$image:${TAG#v}"
+            if [ "$channel" = stable ]; then echo "$image:latest"; else echo "$image:nightly"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
+
+      - run: npm ci
+
+      - name: Build web app
+        run: npm run build
+        env:
+          GITHUB_SHA: ${{ steps.meta.outputs.revision }}
+          NEXSPEAK_VERSION: ${{ steps.meta.outputs.version }}
+          NEXT_PUBLIC_LIVEKIT_SERVICE_URL: ${{ vars.NEXT_PUBLIC_LIVEKIT_SERVICE_URL }}
+          NEXT_PUBLIC_KLIPY_API_KEY: ${{ vars.NEXT_PUBLIC_KLIPY_API_KEY }}
+
+      - name: Package static export
+        working-directory: apps/web/out
+        run: zip -r "$RUNNER_TEMP/$ARCHIVE" .
+        env:
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexspeak-web
+          path: ${{ runner.temp }}/${{ steps.meta.outputs.archive }}
+          if-no-files-found: error
+
+      - name: Attach to release
+        run: gh release upload "$TAG" --repo "$RELEASE_REPOSITORY" --clobber "$RUNNER_TEMP/$ARCHIVE"
+        env:
+          GH_TOKEN: ${{ inputs.repository && secrets.NIGHTLY_RELEASE_TOKEN || github.token }}
+          TAG: ${{ inputs.tag }}
+          RELEASE_REPOSITORY: ${{ inputs.repository || github.repository }}
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish web image
+        uses: docker/build-push-action@v7
+        with:
+          # Path context includes the export built above; Git context would ignore it.
+          context: apps/web
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=NexSpeak Web
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later

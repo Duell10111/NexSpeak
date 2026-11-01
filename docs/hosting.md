@@ -7,6 +7,47 @@ user's homeserver.
 To run your own Matrix accounts, rooms and call services, see
 [Hosting a Matrix homeserver](homeserver.md).
 
+## Release downloads
+
+Every [release](https://github.com/Duell10111/NexSpeak/releases) includes a
+`NexSpeak-web-v<VERSION>.zip` alongside the desktop installers. Extract it into your web root;
+`index.html`, the other pages and `_next/` are directly at the archive root. Configure your web
+server as described below, including the security headers.
+
+The same export is published as `ghcr.io/duell10111/nexspeak-web:<VERSION>` for Linux AMD64 and
+ARM64. `latest` follows stable releases; `nightly` follows the newest nightly. Version tags omit
+the leading `v`, for example `0.3.0` or `0.3.1-nightly.20261101.1`.
+
+## Docker
+
+```bash
+docker run -d --name nexspeak-web --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 ghcr.io/duell10111/nexspeak-web:latest
+```
+
+Put an HTTPS reverse proxy in front of `http://127.0.0.1:8080`. The image serves only static files
+using nginx as an unprivileged user. It includes the security headers, clean URLs, WebAssembly and
+worker MIME types, and cache rules described below. No database or persistent volume is needed.
+
+To update, pull the desired tag and recreate the container. `NEXT_PUBLIC_*` options are baked into
+the export; passing them to `docker run` does not change the app. Release builds use the repository's
+Actions variables `NEXT_PUBLIC_LIVEKIT_SERVICE_URL` and `NEXT_PUBLIC_KLIPY_API_KEY`.
+
+For a local image with your own build-time configuration:
+
+```bash
+NEXT_PUBLIC_LIVEKIT_SERVICE_URL=https://matrix.example.org/livekit/jwt npm run build:docker:web
+docker run --rm -p 127.0.0.1:8080:8080 nexspeak-web
+```
+
+The release workflows publish to GitHub Container Registry using `GITHUB_TOKEN` with
+`packages: write`; no Docker Hub credentials are needed. After the first publication, the repository
+owner must set the `nexspeak-web` package's visibility to **Public** in GitHub package settings to
+allow anonymous pulls. The **Web** Actions workflow can also rebuild an existing stable release by
+its tag.
+
+## Build from source
+
 ```bash
 npm run build      # → apps/web/out/
 npm start          # local check: apps/web/scripts/serve.mjs on http://localhost:3000

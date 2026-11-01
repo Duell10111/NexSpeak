@@ -1,0 +1,6 @@
+# Only the already-built export and server configuration belong in the image context.
+**
+!out/
+!out/**
+!nginx.conf
+!security-headers.json
