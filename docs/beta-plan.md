@@ -181,7 +181,7 @@ alternative would be native bindings to matrix-rust-sdk. LiveKit has its own Rea
 - [x] Apply live browser processing changes without reopening supported microphones; add opt-in capture diagnostics (#94)
 - [x] Verify raw capture and live processing toggles on native Firefox 159/macOS 27.0.1 with the built-in microphone (#94)
 - [x] Use continuous microphone input and explicit mention events in E2E fixtures; pin tested server versions (#94, #122)
-- [ ] Support LiveKit 1.13.11 single-PC negotiation with the local H.264 Main-profile preference (#122)
+- [x] Support LiveKit 1.13.11 single-PC negotiation with the local H.264 Main-profile preference (#122)
 - [x] Skip redundant service discovery on call joins, cache discovery and add opt-in join timings (#92)
 - [x] Bound pending call discovery and recheck memberships after slow discovery (#92)
 - [x] Avoid activating the microphone to list audio devices in settings (#94)

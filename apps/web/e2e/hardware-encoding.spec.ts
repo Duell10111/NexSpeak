@@ -8,7 +8,8 @@ import { createRoom, login, newPage, openRoom, registerUser } from "./helpers"
 test.skip(!process.env.E2E_HARDWARE, "set E2E_HARDWARE=1 to run on a machine with a GPU")
 test.use({ channel: "chrome", headless: false })
 
-test("screenshare is encoded in hardware, also for odd window sizes", async ({ browser }) => {
+test("screenshare and camera keep hardware encoding across publishing transitions", async ({ browser }) => {
+  test.setTimeout(180_000)
   const alice = await registerUser("alice")
   const bob = await registerUser("bob")
   const roomName = `Hardware ${Date.now().toString(36)}`
@@ -18,20 +19,33 @@ test("screenshare is encoded in hardware, also for odd window sizes", async ({ b
   const bobPage = await newPage(browser, { viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 })
   // A moving "window" with the odd size of a MacBook window: 1728×1117.
   await alicePage.addInitScript(() => {
+    const connections: RTCPeerConnection[] = []
+    ;(window as unknown as { __pcs: RTCPeerConnection[] }).__pcs = connections
+    const Original = window.RTCPeerConnection
+    window.RTCPeerConnection = class extends Original {
+      constructor(...args: ConstructorParameters<typeof RTCPeerConnection>) {
+        super(...args)
+        connections.push(this)
+      }
+    }
     navigator.mediaDevices.getDisplayMedia = async () => {
       const canvas = document.createElement("canvas")
       canvas.width = 1728
       canvas.height = 1117
       const context = canvas.getContext("2d")!
       let frame = 0
-      setInterval(() => {
+      const timer = setInterval(() => {
         context.fillStyle = `hsl(${frame++ % 360} 60% 40%)`
         context.fillRect(0, 0, canvas.width, canvas.height)
         context.fillStyle = "#fff"
         context.font = "48px sans-serif"
         context.fillText(`Frame ${frame}`, (frame * 9) % 1500, 60 + ((frame * 7) % 1000))
       }, 16)
-      return canvas.captureStream(60)
+      const stream = canvas.captureStream(60)
+      const track = stream.getVideoTracks()[0]
+      const stop = track.stop.bind(track)
+      track.stop = () => { clearInterval(timer); stop() }
+      return stream
     }
   })
   await login(alicePage, alice)
@@ -62,4 +76,43 @@ test("screenshare is encoded in hardware, also for odd window sizes", async ({ b
 
   await bobPage.getByTestId("call-tile").filter({ hasText: "Live" }).first().click({ button: "right" })
   await expect(bobPage.getByTestId("decoder-status")).toContainText(/1116p · [3-6]\d FPS/, { timeout: 30_000 })
+  await bobPage.keyboard.press("Escape")
+  await alicePage.bringToFront()
+  await alicePage.keyboard.press("Escape")
+  await expect(alicePage.getByRole("menu")).toHaveCount(0)
+  await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
+  await expect(alicePage.getByRole("menu")).toBeVisible()
+  await alicePage.getByRole("menuitem", { name: "Stream beenden" }).click()
+  await expect(bobPage.getByTestId("call-tile").filter({ hasText: "Live" })).toHaveCount(0)
+
+  // The previously broken transition: publish a camera after unpublishing the
+  // screen, then reuse the camera transceiver again. Verify actual encoder stats.
+  for (let round = 0; round < 2; round++) {
+    await alicePage.getByRole("button", { name: "Kamera einschalten", exact: true }).last().click()
+    const camera = bobPage.getByTestId("call-tile").filter({ hasText: alice.username }).locator("video")
+    await expect.poll(() => camera.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames), { timeout: 30_000 }).toBeGreaterThan(10)
+    await expect.poll(() => alicePage.evaluate(async () => {
+      const pcs = (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs
+      const encoders: Array<{ hardware: boolean; codec: string; fmtp: string; layers: number }> = []
+      for (const pc of pcs) {
+        for (const sender of pc.getSenders()) {
+          if (sender.track?.kind !== "video") continue
+          const stats = await sender.getStats()
+          stats.forEach((stat) => {
+            if (stat.type !== "outbound-rtp" || stat.framesEncoded < 10) return
+            const codec = stats.get(stat.codecId)
+            encoders.push({ hardware: stat.powerEfficientEncoder, codec: codec.mimeType, fmtp: codec.sdpFmtpLine, layers: sender.getParameters().encodings.length })
+          })
+        }
+      }
+      return encoders
+    }), { timeout: 30_000 }).toEqual(expect.arrayContaining([expect.objectContaining({
+      hardware: true,
+      codec: "video/H264",
+      fmtp: expect.stringContaining("profile-level-id=4d00"),
+      layers: expect.any(Number),
+    })]))
+    await alicePage.getByRole("button", { name: "Kamera ausschalten", exact: true }).last().click()
+    await expect(camera).toHaveCount(0)
+  }
 })

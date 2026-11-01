@@ -453,7 +453,7 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
   await expect(alicePage.locator("video")).toHaveCount(0)
 
   const screenSender = () =>
-    alicePage.evaluate(() => {
+    alicePage.evaluate(async () => {
       const pcs = (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs
       for (const pc of pcs) {
         for (const sender of pc.getSenders()) {
@@ -461,9 +461,14 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
           if (sender.track?.kind !== "video" || !settings?.displaySurface) continue
           const parameters = sender.getParameters()
           const encodings = parameters.encodings
+          const stats = await sender.getStats()
+          let codecId: string | undefined
+          stats.forEach((stat) => {
+            if (stat.type === "outbound-rtp" && stat.framesEncoded > 0) codecId = stat.codecId
+          })
           return {
-            // H.264 Main under LiveKit's baseline payload type, see swapH264ProfilesInOffer.
-            fmtp: parameters.codecs[0]?.sdpFmtpLine ?? "",
+            // The native Main payload is advertised as Baseline to LiveKit.
+            fmtp: codecId ? stats.get(codecId)?.sdpFmtpLine ?? "" : "",
             height: settings.height ?? 0,
             maxFramerate: Math.max(...encodings.map((encoding) => encoding.maxFramerate ?? 0)),
             maxBitrate: Math.max(...encodings.map((encoding) => encoding.maxBitrate ?? 0)),
@@ -475,8 +480,6 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
 
   await expect.poll(screenSender, { timeout: 30_000 }).toMatchObject({ maxFramerate: 60, maxBitrate: 4_000_000 })
   expect((await screenSender())!.height).toBeLessThanOrEqual(720)
-  expect((await screenSender())!.fmtp).toContain("profile-level-id=4d00")
-  expect((await screenSender())!.fmtp).toContain("packetization-mode=1")
 
   // Bob sees that Alice is live, but nothing is downloaded until he watches.
   await expect(tiles(bobPage)).toHaveCount(3, { timeout: 30_000 })
@@ -498,6 +501,9 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
       { timeout: 30_000 },
     )
     .toBeGreaterThan(10)
+
+  expect((await screenSender())!.fmtp).toContain("profile-level-id=4d00")
+  expect((await screenSender())!.fmtp).toContain("packetization-mode=1")
 
   // Viewers see what arrives (right-click on the stream).
   await tiles(bobPage).filter({ hasText: "Live" }).first().click({ button: "right" })
@@ -549,6 +555,114 @@ test("screenshare with chosen resolution and frame rate, adjustable while live",
     audio: true,
     systemAudio: "include",
   }])
+})
+
+test("E2EE video survives repeated publishing and camera/screenshare transitions", async ({ browser }) => {
+  test.setTimeout(180_000)
+  const alice = await registerUser("alice")
+  const bob = await registerUser("bob")
+  const roomName = `Negotiation ${Date.now().toString(36)}`
+  await createRoom(alice, { name: roomName, members: [bob], encrypted: true })
+  const alicePage = await newPage(browser)
+  const bobPage = await newPage(browser)
+  for (const page of [alicePage, bobPage]) {
+    await page.addInitScript(() => {
+      const sockets: WebSocket[] = []
+      ;(window as unknown as { __sockets: WebSocket[] }).__sockets = sockets
+      const OriginalSocket = window.WebSocket
+      window.WebSocket = class extends OriginalSocket {
+        constructor(...args: ConstructorParameters<typeof WebSocket>) {
+          super(...args)
+          if (new URL(this.url).port === "7880") sockets.push(this)
+        }
+      }
+      const connections: RTCPeerConnection[] = []
+      ;(window as unknown as { __pcs: RTCPeerConnection[] }).__pcs = connections
+      const Original = window.RTCPeerConnection
+      window.RTCPeerConnection = class extends Original {
+        constructor(...args: ConstructorParameters<typeof RTCPeerConnection>) {
+          super(...args)
+          connections.push(this)
+        }
+      }
+    })
+  }
+  await login(alicePage, alice)
+  await login(bobPage, bob)
+  await openRoom(alicePage, roomName)
+  await openRoom(bobPage, roomName)
+  await joinVoice(alicePage)
+
+  const startScreen = async () => {
+    await alicePage.getByRole("button", { name: "Bildschirm teilen" }).last().click()
+    await alicePage.getByRole("dialog", { name: "Bildschirm teilen" }).getByRole("button", { name: "Live gehen" }).click()
+    await expect(alicePage.getByRole("button", { name: "Stream-Einstellungen" })).toBeVisible()
+  }
+  const stopScreen = async () => {
+    await alicePage.getByRole("button", { name: "Stream-Einstellungen" }).click()
+    await alicePage.getByRole("menuitem", { name: "Stream beenden" }).click()
+    await expect(tiles(bobPage).filter({ hasText: "Live" })).toHaveCount(0)
+  }
+  const decoded = async (page: Page, name: string, screen: boolean) => {
+    const person = tiles(page).filter({ hasText: name })
+    const tile = screen ? person.filter({ hasText: "Live" }) : person.filter({ hasNotText: "Live" })
+    if (screen) await tile.getByRole("button", { name: "Stream ansehen", exact: true }).click()
+    const video = tile.locator("video")
+    // Check advancing frames, not just a cached first frame or an attached MediaStream.
+    await expect(video).toHaveJSProperty("readyState", 4, { timeout: 30_000 })
+    const before = await video.evaluate((element: HTMLVideoElement) => element.getVideoPlaybackQuality().totalVideoFrames)
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.getVideoPlaybackQuality().totalVideoFrames), { timeout: 30_000 }).toBeGreaterThan(before + 10)
+  }
+  // Publish before the subscriber joins: the initial single-PC recvonly placeholders
+  // must agree with the subsequently added publishing sections on both participants.
+  await startScreen()
+  await joinVoice(bobPage)
+  await decoded(bobPage, alice.username, true)
+  await stopScreen()
+
+  for (let round = 0; round < 2; round++) {
+    await alicePage.getByRole("button", { name: "Kamera einschalten", exact: true }).last().click()
+    await decoded(bobPage, alice.username, false)
+    await startScreen()
+    await decoded(bobPage, alice.username, true)
+    await alicePage.getByRole("button", { name: "Kamera ausschalten", exact: true }).last().click()
+    await stopScreen()
+  }
+  // Both peers publish on the same connections that also carry received video.
+  await bobPage.getByRole("button", { name: "Kamera einschalten", exact: true }).last().click()
+  await decoded(alicePage, bob.username, false)
+  await alicePage.getByRole("button", { name: "Kamera einschalten", exact: true }).last().click()
+  await decoded(bobPage, alice.username, false)
+  // Resume signalling with both cameras live, then publish again. LiveKit reads
+  // the saved local/remote descriptions for its reconnect sync and ICE restart.
+  const socketCount = await alicePage.evaluate(() => {
+    const sockets = (window as unknown as { __sockets: WebSocket[] }).__sockets
+    const count = sockets.length
+    sockets.at(-1)!.close(4000, "E2E signalling interruption")
+    return count
+  })
+  await expect.poll(() => alicePage.evaluate(() =>
+    (window as unknown as { __sockets: WebSocket[] }).__sockets.filter((socket) => socket.readyState === WebSocket.OPEN).length,
+  ), { timeout: 30_000 }).toBe(1)
+  expect(await alicePage.evaluate(() => (window as unknown as { __sockets: WebSocket[] }).__sockets.length)).toBeGreaterThan(socketCount)
+  await decoded(bobPage, alice.username, false)
+  await startScreen()
+  await decoded(bobPage, alice.username, true)
+  await stopScreen()
+
+  for (const page of [alicePage, bobPage]) {
+    const connections = await page.evaluate(() => {
+      const pcs = (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs.filter((pc) => pc.connectionState === "connected")
+      return pcs.map((pc) => ({
+        sending: pc.getSenders().some((sender) => sender.track?.kind === "video"),
+        receiving: pc.getReceivers().some((receiver) => receiver.track.kind === "video"),
+        layers: pc.getSenders().filter((sender) => sender.track?.kind === "video").map((sender) => sender.getParameters().encodings.length),
+      }))
+    })
+    expect(connections).toHaveLength(1)
+    expect(connections[0]).toMatchObject({ sending: true, receiving: true })
+    expect(connections[0].layers.every((count) => count <= 2)).toBe(true)
+  }
 })
 
 test("leaving a room during a call ends the call for the others too", async ({ browser }) => {

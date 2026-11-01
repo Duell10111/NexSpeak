@@ -172,47 +172,24 @@ export function isEncoderOverloaded(encodeMs: number | null, targetFps: number):
 }
 
 /**
- * LiveKit only negotiates H.264 Constrained Baseline (42e01f). Chrome on macOS encodes that
- * profile in software (OpenH264) and only uses VideoToolbox for Main. Main without B-frames
- * (WebRTC encoders never use them) decodes in every browser that decodes H.264.
- *
- * So the publishing connection uses Main under the payload type the SFU negotiated as
- * Constrained Baseline, consistently on both sides of our local JSEP state:
- *  - our local offer swaps the profiles of the Constrained Baseline and Main payload types
- *    (LiveKit still sends its own, unchanged offer to the SFU),
- *  - the SFU's answer is read as Main for that payload type.
- * The SFU forwards the stream unchanged; viewers' SDP is untouched. Rewriting only the answer
- * is not enough: newer Chromium then sends with the payload type of its own Main entry, which
- * the SFU does not know, and viewers receive no frames.
+ * Exchange Main and Constrained Baseline for packetization mode 1, without changing
+ * payload types, RTX associations or levels. This is its own inverse, including when
+ * an answer contains only one of the profiles.
  */
-export function swapH264ProfilesInOffer(sdp: string): string {
+export function swapH264Profiles(sdp: string): string {
   return sdp
     .split(/(?=^m=)/m)
     .map((section) => {
-      if (!section.startsWith("m=video")) return section
-      const lines = section.split("\r\n")
-      const find = (profile: string) =>
-        lines.findIndex(
-          (line) =>
-            line.startsWith("a=fmtp:") &&
-            line.includes("packetization-mode=1") &&
-            new RegExp(`profile-level-id=${profile}[0-9a-f]{2}(;|$)`, "i").test(line),
+      if (!section.startsWith("m=video ")) return section
+      const h264 = new Set(Array.from(section.matchAll(/^a=rtpmap:(\d+) H264\/90000\r?$/gim), (match) => match[1]))
+      return section.replace(/^a=fmtp:(\d+) (.+)$/gm, (line, payload: string, params: string) => {
+        if (!h264.has(payload) || !/(?:^|;)packetization-mode=1(?:;|\r?$)/.test(params)) return line
+        return line.replace(/profile-level-id=(42e0|4d00)([0-9a-f]{2})(?=;|\r?$)/i, (_: string, profile: string, level: string) =>
+          `profile-level-id=${profile.toLowerCase() === "42e0" ? "4d00" : "42e0"}${level}`,
         )
-      const baseline = find("42e0")
-      const main = find("4d00")
-      if (baseline < 0 || main < 0) return section
-      const id = (line: string) => line.match(/profile-level-id=([0-9a-f]{6})/i)![1]
-      const baselineId = id(lines[baseline])
-      const mainId = id(lines[main])
-      lines[baseline] = lines[baseline].replace(baselineId, mainId)
-      lines[main] = lines[main].replace(mainId, baselineId)
-      return lines.join("\r\n")
+      })
     })
     .join("")
-}
-
-export function preferH264MainProfile(sdp: string): string {
-  return sdp.replace(/profile-level-id=42[0-9a-f]{2}([0-9a-f]{2})/gi, "profile-level-id=4d00$1")
 }
 
 function isChromium(userAgent: string): boolean {
@@ -222,42 +199,87 @@ function isChromium(userAgent: string): boolean {
 let mainProfilePatchInstalled = false
 
 /**
- * Applies the profile swap in Chromium. Not for Firefox and Safari: Firefox has no hardware
- * encoder anyway, and Safari already uses VideoToolbox for Baseline. If the browser rejects
- * the rewritten offer, the connection continues with the original one, unchanged.
+ * LiveKit negotiates Constrained Baseline, which Chromium on macOS encodes in
+ * software. Advertise the browser's native Main payload as Baseline to LiveKit,
+ * then translate offers and answers back at the browser boundary. Both sides keep
+ * the same payload numbers; Chromium's own codec registry is never profile-swapped.
+ *
+ * Translating createOffer (also the initial offer-with-join) is essential: changing
+ * only setLocalDescription poisons later offers with the local profiles, and new
+ * transceivers/placeholders then collide with the SFU's existing payload mapping.
+ * The exchange covers every video section in the bundle, including recvonly ones
+ * on single-PC connections. Legacy subscriber connections remain untouched.
+ * No timers, per-frame work or extra encoder sessions are needed.
  */
 export function installH264MainProfilePreference(): void {
   if (mainProfilePatchInstalled || typeof RTCPeerConnection === "undefined") return
   if (!isChromium(navigator.userAgent)) return
   mainProfilePatchInstalled = true
-  // Connections whose current local offer uses the swapped profiles.
-  const swapped = new WeakSet<RTCPeerConnection>()
+  const translated = new WeakSet<RTCPeerConnection>()
+  const preferred = new WeakSet<RTCRtpTransceiver>()
+  const codecs = RTCRtpReceiver.getCapabilities("video")?.codecs ?? []
+  const main = (codec: RTCRtpCodec) => codec.mimeType.toLowerCase() === "video/h264"
+    && /(?:^|;)packetization-mode=1(?:;|$)/.test(codec.sdpFmtpLine ?? "")
+    && /profile-level-id=4d00/i.test(codec.sdpFmtpLine ?? "")
+  const mainCodecs = codecs.filter(main)
+  if (mainCodecs.length === 0) return
+  const preferences = [...mainCodecs, ...codecs.filter((codec) => !main(codec))]
   const prototype = RTCPeerConnection.prototype
-  const setLocal = prototype.setLocalDescription as (this: RTCPeerConnection, ...args: unknown[]) => Promise<void>
-  const setRemote = prototype.setRemoteDescription as (this: RTCPeerConnection, ...args: unknown[]) => Promise<void>
+  const createOffer = prototype.createOffer as (this: RTCPeerConnection, options?: RTCOfferOptions) => Promise<RTCSessionDescriptionInit>
+  const setLocal = prototype.setLocalDescription as (this: RTCPeerConnection, description?: RTCLocalSessionDescriptionInit) => Promise<void>
+  const setRemote = prototype.setRemoteDescription as (this: RTCPeerConnection, description: RTCSessionDescriptionInit) => Promise<void>
 
-  prototype.setLocalDescription = async function (this: RTCPeerConnection, description?: RTCLocalSessionDescriptionInit) {
-    if (description?.type !== "offer" || !description.sdp) return setLocal.call(this, description)
-    const sdp = swapH264ProfilesInOffer(description.sdp)
-    if (sdp !== description.sdp) {
-      try {
-        await setLocal.call(this, { type: "offer", sdp })
-        swapped.add(this)
-        return
-      } catch (error) {
-        console.warn("H.264 Main profile not accepted, keeping Constrained Baseline", error)
-      }
+  prototype.createOffer = async function (this: RTCPeerConnection, options?: RTCOfferOptions) {
+    // The SFU also accepts Baseline packetization mode 0. Put Main mode 1 first
+    // natively so the SFU selects its translated Baseline mode 1 entry, including
+    // on the initial recvonly placeholders and on newly published tracks.
+    for (const transceiver of this.getTransceivers()) {
+      if (transceiver.receiver.track.kind !== "video" || preferred.has(transceiver)) continue
+      transceiver.setCodecPreferences(preferences)
+      preferred.add(transceiver)
     }
-    swapped.delete(this)
+    const offer = await createOffer.call(this, options)
+    if (!offer.sdp) return offer
+    const sdp = swapH264Profiles(offer.sdp)
+    if (sdp === offer.sdp) return offer
+    translated.add(this)
+    return { type: offer.type, sdp }
+  } as typeof prototype.createOffer
+
+  prototype.setLocalDescription = function (this: RTCPeerConnection, description?: RTCLocalSessionDescriptionInit) {
+    if (description?.type === "offer" && description.sdp && translated.has(this)) {
+      return setLocal.call(this, { type: "offer", sdp: swapH264Profiles(description.sdp) })
+    }
     return setLocal.call(this, description)
-  } as typeof prototype.setLocalDescription
+  }
 
   prototype.setRemoteDescription = function (this: RTCPeerConnection, description: RTCSessionDescriptionInit) {
-    if (description?.type === "answer" && description.sdp && swapped.has(this)) {
-      return setRemote.call(this, { type: "answer", sdp: preferH264MainProfile(description.sdp) })
+    if (description.type === "answer" && description.sdp && translated.has(this)) {
+      return setRemote.call(this, { type: "answer", sdp: swapH264Profiles(description.sdp) })
     }
     return setRemote.call(this, description)
-  } as typeof prototype.setRemoteDescription
+  }
+
+  // LiveKit reads these again for reconnect sync and when restarting ICE while
+  // an offer is pending. Keep that SDP in the same wire format as createOffer.
+  for (const [name, type] of [["localDescription", "offer"], ["remoteDescription", "answer"]] as const) {
+    let owner: object | null = prototype
+    let descriptor: PropertyDescriptor | undefined
+    while (owner && !descriptor) {
+      descriptor = Object.getOwnPropertyDescriptor(owner, name)
+      owner = Object.getPrototypeOf(owner)
+    }
+    const get = descriptor?.get
+    if (!get) continue
+    Object.defineProperty(prototype, name, {
+      ...descriptor,
+      get(this: RTCPeerConnection) {
+        const description = get.call(this) as RTCSessionDescription | null
+        if (!description || description.type !== type || !translated.has(this)) return description
+        return new RTCSessionDescription({ type, sdp: swapH264Profiles(description.sdp) })
+      },
+    })
+  }
 }
 
 /**
