@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, memo, useRef, useState, type KeyboardEvent } from "react"
+import { Fragment, memo, useEffect, useRef, useState, type KeyboardEvent } from "react"
 import {
   AlertCircle,
   ChevronRight,
@@ -265,6 +265,11 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
   const editor = useRef<HTMLTextAreaElement>(null)
   const [isSaving, setIsSaving] = useState(false)
 
+  useEffect(() => {
+    // React must re-enable the textarea before it can accept focus after a failed save.
+    if (!isSaving) editor.current?.focus()
+  }, [isSaving])
+
   const save = async () => {
     if (saving.current) return
     const body = value.trim()
@@ -280,7 +285,6 @@ function InlineEditor({ message, onDone }: { message: MatrixMessage; onDone: () 
       onDone()
     } catch (error) {
       toast.error(describeMatrixError(error, t("chat.editFailed")))
-      requestAnimationFrame(() => editor.current?.focus())
     } finally {
       saving.current = false
       setIsSaving(false)
