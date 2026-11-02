@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/Duell10111/NexSpeak/compare/v0.3.0...v0.3.1) (2026-11-02)
+
+
+### 🚀 Continuous Integration
+
+* **web:** publish Docker images and static release archives ([#126](https://github.com/Duell10111/NexSpeak/issues/126)) ([940856a](https://github.com/Duell10111/NexSpeak/commit/940856a6fee458870e5a0065d757b624e3ae1703)), closes [#125](https://github.com/Duell10111/NexSpeak/issues/125)
+
 ## [0.3.0](https://github.com/Duell10111/NexSpeak/compare/v0.2.0...v0.3.0) (2026-11-01)
 
 
